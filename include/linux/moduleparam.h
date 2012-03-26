@@ -42,9 +42,6 @@ struct kernel_param_ops {
 	void (*free)(void *arg);
 };
 
-/* Flag bits for kernel_param.flags */
-#define KPARAM_ISBOOL		2
-
 struct kernel_param {
 	const char *name;
 	const struct kernel_param_ops *ops;
@@ -126,8 +123,7 @@ struct kparam_array
  * The ops can have NULL set or get functions.
  */
 #define module_param_cb(name, ops, arg, perm)				      \
-	__module_param_call(MODULE_PARAM_PREFIX,			      \
-			    name, ops, arg, __same_type((arg), bool *), perm)
+	__module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm)
 
 /* On alpha, ia64 and ppc64 relocations to global data cannot go into
    read-only sections (which is part of respective UNIX ABI on these
@@ -141,7 +137,7 @@ struct kparam_array
 
 /* This is the fundamental function for registering boot/module
    parameters. */
-#define __module_param_call(prefix, name, ops, arg, isbool, perm)	\
+#define __module_param_call(prefix, name, ops, arg, perm)		\
 	/* Default value instead of permissions? */			\
 	static int __param_perm_check_##name __attribute__((unused)) =	\
 	BUILD_BUG_ON_ZERO((perm) < 0 || (perm) > 0777 || ((perm) & 2))	\
@@ -150,8 +146,7 @@ struct kparam_array
 	static struct kernel_param __moduleparam_const __param_##name	\
 	__used								\
     __attribute__ ((unused,__section__ ("__param"),aligned(sizeof(void *)))) \
-	= { __param_str_##name, ops, perm, isbool ? KPARAM_ISBOOL : 0,	\
-	    { arg } }
+	= { __param_str_##name, ops, perm, 0, { arg } }
 
 /* Obsolete - use module_param_cb() */
 #define module_param_call(name, set, get, arg, perm)			\
@@ -159,7 +154,6 @@ struct kparam_array
 		 { (void *)set, (void *)get };				\
 	__module_param_call(MODULE_PARAM_PREFIX,			\
 			    name, &__param_ops_##name, arg,		\
-			    __same_type(arg, bool *),			\
 			    (perm) + sizeof(__check_old_set_param(set))*0)
 
 /* We don't get oldget: it's often a new-style param_get_uint, etc. */
@@ -240,8 +234,7 @@ static inline void __kernel_param_unlock(void)
  */
 #define core_param(name, var, type, perm)				\
 	param_check_##type(name, &(var));				\
-	__module_param_call("", name, &param_ops_##type,		\
-			    &var, __same_type(var, bool), perm)
+	__module_param_call("", name, &param_ops_##type, &var, perm)
 #endif /* !MODULE */
 
 /**
@@ -259,7 +252,7 @@ static inline void __kernel_param_unlock(void)
 		= { len, string };					\
 	__module_param_call(MODULE_PARAM_PREFIX, name,			\
 			    &param_ops_string,				\
-			    .str = &__param_string_##name, 0, perm);	\
+			    .str = &__param_string_##name, perm);	\
 	__MODULE_PARM_TYPE(name, "string")
 
 /* Called on module insert or kernel boot */
@@ -377,7 +370,7 @@ extern int param_get_invbool(char *buffer, const struct kernel_param *kp);
 	__module_param_call(MODULE_PARAM_PREFIX, name,			\
 			    &param_array_ops,				\
 			    .arr = &__param_arr_##name,			\
-			    __same_type(array[0], bool), perm);		\
+			    perm);					\
 	__MODULE_PARM_TYPE(name, "array of " #type)
 
 extern struct kernel_param_ops param_array_ops;
