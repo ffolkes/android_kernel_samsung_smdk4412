@@ -988,6 +988,16 @@ static int mdniemod_create_sysfs(void)
 }
 #endif
 
+//gm
+void mdnie_toggle_negative(void)
+{
+	mutex_lock(&g_mdnie->lock);
+	g_mdnie->negative = !g_mdnie->negative;
+	mutex_unlock(&g_mdnie->lock);
+
+	set_mdnie_value(g_mdnie);
+}
+
 static int mdnie_probe(struct platform_device *pdev)
 {
 #if defined(CONFIG_FB_MDNIE_PWM)
