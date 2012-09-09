@@ -9,7 +9,11 @@
 #define VOODOO_SOUND_VERSION 10
 
 #if defined(CONFIG_MACH_MIDAS)
+<<<<<<< HEAD
 #define Exynos4
+=======
+#define GALAXY_S3
+>>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #endif
 #if defined(CONFIG_MACH_HERRING) || defined (CONFIG_SAMSUNG_GALAXYS)	       \
 	|| defined (CONFIG_SAMSUNG_GALAXYSB)				       \
