@@ -2731,6 +2731,7 @@ static inline unsigned long task_get_effective_timer_slack(
 	return tsk->timer_slack_ns;
 }
 #endif
+
 #endif /* __KERNEL__ */
 
 #endif
