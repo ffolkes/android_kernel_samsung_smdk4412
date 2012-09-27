@@ -34,9 +34,11 @@ extern int migrate_pages(struct list_head *l, new_page_t x,
 			unsigned long private, bool offlining,
 			enum migrate_mode mode, int tries);
 
+
 extern int migrate_replace_cma_page(struct page *oldpage,
 				       struct page **newpage);
 			enum migrate_mode mode, int tries);
+
 #endif
 
 extern int migrate_huge_pages(struct list_head *l, new_page_t x,
@@ -70,6 +72,7 @@ static inline int migrate_pages(struct list_head *l, new_page_t x,
 static inline int migrate_replace_cma_page(struct page *oldpage,
 		struct page **newpage) { return -ENOSYS; }
 		enum migrate_mode mode, int tries) { return -ENOSYS; }
+
 #endif
 
 static inline int migrate_huge_pages(struct list_head *l, new_page_t x,
