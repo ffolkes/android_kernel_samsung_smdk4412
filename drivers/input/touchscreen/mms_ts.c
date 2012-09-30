@@ -149,6 +149,10 @@ enum {
 #define TOUCH_BOOSTER			0
 #endif
 
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+extern void _lcdfreq_lock(int lock);
+#endif
+
 struct device *sec_touchscreen;
 static struct device *bus_dev;
 
@@ -758,6 +762,19 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, !!touch_is_pressed);
 #endif
+
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+	if(!!touch_is_pressed){
+		_lcdfreq_lock(0);
+	}
+#endif
+
+#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
+	if(!!touch_is_pressed){
+		midas_tsp_request_qos();
+	}
+#endif
+
 out:
 	return IRQ_HANDLED;
 }
