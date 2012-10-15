@@ -13,10 +13,14 @@
 
 #if defined(CONFIG_TOUCHSCREEN_MELFAS)
 #include <linux/platform_data/mms_ts.h>
+#else
+#if defined(CONFIG_TOUCHSCREEN_MELFAS_NOTE)
+#include <linux/platform_data/mms152_ts.h>
 #elif defined(CONFIG_TOUCHSCREEN_CYTTSP4)
 #include <linux/platform_data/cypress_cyttsp4.h>
 #else
 #include <linux/melfas_ts.h>
+#endif
 #endif
 
 extern int melfas_power(int on);
@@ -37,7 +41,7 @@ int melfas_mux_fw_flash(bool to_gpios);
 void midas_tsp_set_lcdtype(int lcd_type);
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
-extern void midas_tsp_request_qos(void *data);
+extern void midas_tsp_request_qos(void);
 #else
 #define midas_tsp_request_qos	NULL
 #endif
