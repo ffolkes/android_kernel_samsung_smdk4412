@@ -224,7 +224,7 @@ REGULATOR_INIT(ldo26, "VCC_MOTOR_3.0V", 3000000, 3000000, 0,
 static struct regulator_init_data max77686_buck1_data = {
 	.constraints = {
 		.name = "vdd_mif range",
-		.min_uV = 850000,
+		.min_uV = 750000,
 		.max_uV = 1200000,
 		.always_on = 1,
 		.boot_on = 1,
@@ -265,7 +265,7 @@ static struct regulator_init_data max77686_buck4_data = {
 	.constraints = {
 		.name = "vdd_g3d range",
 		.min_uV = 600000,
-		.max_uV = 1250000,
+		.max_uV = 1200000,
 		.boot_on = 1,
 		.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE |
 		REGULATOR_CHANGE_STATUS,
