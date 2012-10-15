@@ -16,6 +16,8 @@
 #else
 #if defined(CONFIG_TOUCHSCREEN_MELFAS_NOTE)
 #include <linux/platform_data/mms152_ts.h>
+#elif defined(CONFIG_TOUCHSCREEN_CYTTSP4)
+#include <linux/platform_data/cypress_cyttsp4.h>
 #else
 #include <linux/melfas_ts.h>
 #endif

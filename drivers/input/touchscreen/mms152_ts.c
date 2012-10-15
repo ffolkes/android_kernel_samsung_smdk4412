@@ -97,6 +97,10 @@ static spinlock_t gestures_lock;
 
 #include "../keyboard/cypress/cypress-touchkey.h"
 
+#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
+#include <mach/midas-tsp.h>
+#endif
+
 #ifdef CONFIG_INPUT_FBSUSPEND
 #ifdef CONFIG_DRM
 #include <drm/drm_backlight.h>
@@ -211,6 +215,10 @@ enum {
 #define TOUCH_BOOSTER_CHG_TIME		200
 #else
 #define TOUCH_BOOSTER			0
+#endif
+
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+extern void _lcdfreq_lock(int lock);
 #endif
 
 struct device *sec_touchscreen;
@@ -1487,6 +1495,18 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	set_dvfs_lock(info, !!touch_is_pressed);
 #endif
 	
+#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
+	if(!!touch_is_pressed){
+		midas_tsp_request_qos();
+	}
+#endif
+
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+	if(!!touch_is_pressed){
+		_lcdfreq_lock(0);
+	}
+#endif
+
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
 	if(!!touch_is_pressed){
 		midas_tsp_request_qos();
