@@ -453,14 +453,14 @@ static int rmnet_usb_ctrl_write(struct rmnet_ctrl_dev *dev, char *buf,
 	if (!is_dev_connected(dev))
 		return -ENETRESET;
 
-	/* move it to mdm _hsic pm .c, check return code */
-	while (lpa_handling && spin--) {
-		pr_info("%s: lpa wake wait loop\n", __func__);
-		msleep(20);
+	/* check remain urb in tx anchor */
+	if (usb_anchor_len(&dev->tx_submitted) > 50) {
+		dev_err(dev->devicep, "remain tx exceed TX LIMIT\n");
+		mdm_force_fatal();
 	}
 
-	if (lpa_handling) {
-		pr_err("%s: in lpa wakeup, return EAGAIN\n", __func__);
+	/* wait till, LPA wake complete */
+	if (pm_dev_wait_lpa_wake() < 0)
 		return -EAGAIN;
 	}
 
@@ -468,6 +468,10 @@ static int rmnet_usb_ctrl_write(struct rmnet_ctrl_dev *dev, char *buf,
 
 	udev = interface_to_usbdev(dev->intf);
 	usb_mark_last_busy(udev);
+
+	/* wait more 50ms if kernel is in resuming */
+	if (check_request_blocked(rmnet_pm_dev))
+		msleep(50);
 
 	sndurb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!sndurb) {
