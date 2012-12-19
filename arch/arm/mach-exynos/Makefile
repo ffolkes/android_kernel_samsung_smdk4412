@@ -29,13 +29,13 @@ AFLAGS_sleep-exynos4.o :=$(call as-instr,.arch_extension sec,-DREQUIRES_SEC=1)
 
 obj-$(CONFIG_EXYNOS5_PM)	+= pm-exynos5.o sleep-exynos5.o
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq.o
-obj-$(CONFIG_EXYNOS4_CPUFREQ)  += asv.o
+obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= asv.o
 ifeq ($(CONFIG_CPU_EXYNOS4210),y)
-obj-$(CONFIG_EXYNOS4_CPUFREQ)  += asv-4210.o
-obj-$(CONFIG_EXYNOS4_CPUFREQ)  += cpufreq-4210.o
+obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= asv-4210.o
+obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= cpufreq-4210.o
 else
-obj-$(CONFIG_EXYNOS4_CPUFREQ)  += asv-4x12.o
-obj-$(CONFIG_EXYNOS4_CPUFREQ)  += cpufreq-4x12.o
+obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= asv-4x12.o
+obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= cpufreq-4x12.o
 endif
 obj-$(CONFIG_EXYNOS5_CPUFREQ)	+= asv.o asv-5250.o
 obj-$(CONFIG_EXYNOS5_CPUFREQ)	+= cpufreq-5250.o
