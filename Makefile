@@ -354,6 +354,12 @@ LDFLAGS_MODULE = -T $(srctree)/scripts/module-common.lds
 CFLAGS_KERNEL = -fgcse -fsingle-precision-constant -mtune=cortex-a8 -march=armv7-a -mfpu=neon -ftree-vectorize -pipe
 AFLAGS_KERNEL = -fgcse -fsingle-precision-constant -mtune=cortex-a8 -march=armv7-a -mfpu=neon -ftree-vectorize -pipe
 CFLAGS_GCOV  = -fprofile-arcs -ftest-coverage
+CFLAGS_MODULE   =
+AFLAGS_MODULE   =
+LDFLAGS_MODULE  = --strip-debug
+CFLAGS_KERNEL	=
+AFLAGS_KERNEL	=
+CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
