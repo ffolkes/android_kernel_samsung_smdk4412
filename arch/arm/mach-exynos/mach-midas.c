@@ -1545,11 +1545,11 @@ static struct samsung_battery_platform_data samsung_battery_pdata = {
 	.chg_curr_cdp = 1000,
 	.in_curr_cdp = 1000,
 #if defined(CONFIG_MACH_T0_USA_VZW)
-	.chg_curr_wpc = 950,
+	.chg_curr_wpc = 650,
 #else
-	.chg_curr_wpc = 950,
+	.chg_curr_wpc = 475,
 #endif
-	.chg_curr_etc = 950,
+	.chg_curr_etc = 475,
 
 	.chng_interval = 30,
 	.chng_susp_interval = 60,
