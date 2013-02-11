@@ -123,6 +123,14 @@ config CPU_FREQ_DEFAULT_GOV_PEGASUSQ
 	bool "pegasusq"
 	select CPU_FREQ_GOV_PEGASUSQ
 
+config CPU_FREQ_DEFAULT_GOV_AGGRESSIVE
+	bool "aggressive"
+	select CPU_FREQ_GOV_AGGRESSIVE
+
+config CPU_FREQ_DEFAULT_GOV_GALLIMAUFRY
+	bool "gallimaufry"
+	select CPU_FREQ_GOV_GALLIMAUFRY
+
 endchoice
 
 config CPU_FREQ_GOV_PERFORMANCE
@@ -265,6 +273,12 @@ config CPU_FREQ_GOV_ADAPTIVE
 
 config CPU_FREQ_GOV_PEGASUSQ
 	tristate "'pegasusq' cpufreq policy governor"
+
+config CPU_FREQ_GOV_AGGRESSIVE
+	tristate "'aggressive' cpufreq policy governor"
+
+config CPU_FREQ_GOV_GALLIMAUFRY
+	tristate "'gallimaufry' cpufreq policy governor"
 
 config CPU_FREQ_GOV_SLP
 	tristate "'slp' cpufreq policy governor"
