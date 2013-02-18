@@ -6,7 +6,7 @@
  *                      Jun Nakajima <jun.nakajima@intel.com>
  *            (C)  2009 Alexander Clouter <alex@digriz.org.uk>
  *            (C)  2012 Sonicxml <sonicxml@gmail.com>
- *			Shane Douglas <jdkoreclipse@gmail.com>
+ *                 Shane Douglas <jdkoreclipse@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -124,8 +124,8 @@ static inline cputime64_t get_cpu_idle_time(unsigned int cpu, cputime64_t *wall)
 
 	if (idle_time == -1ULL)
 		return get_cpu_idle_time_jiffy(cpu, wall);
-	else
-		idle_time += get_cpu_iowait_time_us(cpu, wall);
+else
+    idle_time += get_cpu_iowait_time_us(cpu, wall);
 
 	return idle_time;
 }
@@ -386,6 +386,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (load > max_load)
 			max_load = load;
 	}
+
 	/*
 	 * break out if we 'cannot' reduce the speed as the user might
 	 * want freq_step to be zero
@@ -438,9 +439,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				CPUFREQ_RELATION_H);
 		return;
 	}
-	if (max_load < 85 && this_dbs_info->requested_freq == 1200000)	
-		__cpufreq_driver_target(policy, 1060000,
-				CPUFREQ_RELATION_H);
+ if (max_load < 85 && this_dbs_info->requested_freq == 1600000)  
+    __cpufreq_driver_target(policy, 1200000,
+        CPUFREQ_RELATION_H);
 }
 
 static void do_dbs_timer(struct work_struct *work)
@@ -531,9 +532,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				return rc;
 			}
 
-
 			min_sampling_rate = 10000;
-			dbs_tuners_ins.sampling_rate = 10000;
+                        dbs_tuners_ins.sampling_rate = 10000;
 
 			cpufreq_register_notifier(
 					&dbs_cpufreq_notifier_block,
@@ -565,6 +565,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		if (!dbs_enable)
 			sysfs_remove_group(cpufreq_global_kobject,
 					   &dbs_attr_group);
+
 		break;
 
 	case CPUFREQ_GOV_LIMITS:
