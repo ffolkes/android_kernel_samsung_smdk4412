@@ -33,7 +33,7 @@
 
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(30)
 #define DEF_FREQUENCY_UP_THRESHOLD		(70)
-#define DEF_SAMPLING_DOWN_FACTOR		(4)
+#define DEF_SAMPLING_DOWN_FACTOR		(3)
 #define MAX_SAMPLING_DOWN_FACTOR		(100000)
 
 #if defined(CONFIG_MACH_SLP_PQ)
@@ -701,7 +701,7 @@ static unsigned int counter = 0;
 
 	/* Check for frequency increase */
 	if (max_load_freq > dbs_tuners_ins.up_threshold * policy->cur) {
-		int inc = (policy->max * dbs_tuners_ins.freq_step) / 100;
+		int inc = 100000;
 		int target = min(policy->max, policy->cur + inc);
    if (counter < 5) {
       counter++;
