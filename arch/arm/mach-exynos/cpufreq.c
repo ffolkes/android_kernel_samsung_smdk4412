@@ -67,6 +67,7 @@ unsigned int exynos_getspeed(unsigned int cpu)
 {
 	// return clk_get_rate(exynos_info->cpu_clk) / 1000;
 	unsigned int ret = clk_get_rate(exynos_info->cpu_clk) / 1000;
+	if(ret >= 2000000) ret = 2200000;
 	if(ret >= 1940000) ret = 2000000;
 	if(ret == 1920000) ret = 1900000;
 	if(ret == 1704000) ret = 1700000;
