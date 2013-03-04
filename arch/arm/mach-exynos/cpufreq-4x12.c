@@ -46,8 +46,8 @@ struct cpufreq_clkdiv {
 unsigned int exynos4x12_volt_table[CPUFREQ_LEVEL_END];
 
 static struct cpufreq_frequency_table exynos4x12_freq_table[] = {
-	{L0, 2250*1000},
-	{L1, 2160*1000},
+	{L0, 2160*1000},
+	{L1, 2080*1000},
 	{L2, 2000*1000},
 	{L3, 1920*1000},
 	{L4, 1800*1000},
@@ -130,10 +130,10 @@ static unsigned int clkdiv_cpu0_4412[CPUFREQ_LEVEL_END][8] = {
 	 * { DIVCORE, DIVCOREM0, DIVCOREM1, DIVPERIPH,
 	 *		DIVATB, DIVPCLK_DBG, DIVAPLL, DIVCORE2 }
 	 */
-	/* ARM L0: 2250Mhz */
+	/* ARM L0: 21600Mhz */
 	{ 0, 4, 7, 0, 7, 1, 8, 0 },
 	
-	/* ARM L1: 21600Mhz */
+	/* ARM L1: 2080Mhz */
 	{ 0, 4, 7, 0, 7, 1, 8, 0 },
 
 	/* ARM L2: 2000Mhz */
@@ -248,71 +248,77 @@ static unsigned int clkdiv_cpu1_4412[CPUFREQ_LEVEL_END][3] = {
 	/* Clock divider value for following
 	 * { DIVCOPY, DIVHPM, DIVCORES }
 	 */
-	/* ARM L0: 2000MHz */
+	/* ARM L0: 2160MHz */
 	{ 7, 0, 7 },
 
-	/* ARM L1: 1920MHz */
+	/* ARM L1: 2080MHz */
 	{ 7, 0, 7 },
 
-	/* ARM L2: 1800MHz */
+	/* ARM L2: 2000MHz */
 	{ 7, 0, 7 },
 
-	/* ARM L3: 1704MHz */
+	/* ARM L3: 1920MHz */
 	{ 7, 0, 7 },
 
-	/* ARM L4: 1600MHz */
+	/* ARM L4: 1800MHz */
+	{ 7, 0, 7 },
+
+	/* ARM L5: 1704MHz */
+	{ 7, 0, 7 },
+
+	/* ARM L6: 1600MHz */
 	{ 6, 0, 7 },
 
-	/* ARM L5: 1500MHz */
+	/* ARM L7: 1500MHz */
 	{ 6, 0, 7 },
 
-	/* ARM L6: 1400MHz */
+	/* ARM L8: 1400MHz */
 	{ 6, 0, 6 },
 
-	/* ARM L7: 1300MHz */
+	/* ARM L9: 1300MHz */
 	{ 5, 0, 6 },
 
-	/* ARM L8: 1200MHz */
+	/* ARM L10: 1200MHz */
 	{ 5, 0, 5 },
 
-	/* ARM L9: 1100MHz */
+	/* ARM L11: 1100MHz */
 	{ 4, 0, 5 },
 
-	/* ARM L10: 1000MHz */
+	/* ARM L12: 1000MHz */
 	{ 4, 0, 4 },
 
-	/* ARM L11: 900MHz */
+	/* ARM L13: 900MHz */
 	{ 3, 0, 4 },
 
-	/* ARM L12: 800MHz */
+	/* ARM L14: 800MHz */
 	{ 3, 0, 3 },
 
-	/* ARM L13: 700MHz */
+	/* ARM L15: 700MHz */
 	{ 3, 0, 3 },
 
-	/* ARM L14: 600MHz */
+	/* ARM L16: 600MHz */
 	{ 3, 0, 2 },
 
-	/* ARM L15: 500MHz */
+	/* ARM L17: 500MHz */
 	{ 3, 0, 2 },
 
-	/* ARM L16: 400MHz */
+	/* ARM L18: 400MHz */
 	{ 3, 0, 1 },
 
-	/* ARM L17: 300MHz */
+	/* ARM L19: 300MHz */
 	{ 3, 0, 1 },
 
-	/* ARM L18: 200MHz */
+	/* ARM L20: 200MHz */
 	{ 3, 0, 0 },
 };
 
 static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
 
-	/* APLL FOUT L0: 2250MHz */
-	((375<<16)|(3<<8)|(0x0)),
+	/* APLL FOUT L0: 2160MHz */
+	((270<<16)|(3<<8)|(0x0)),
 
-	/* APLL FOUT L1: 2160MHz */
-	((360<<16)|(3<<8)|(0x0)),
+	/* APLL FOUT L1: 2080MHz */
+	((260<<16)|(3<<8)|(0x0)),
 
 	/* APLL FOUT L2: 2000MHz */
 	((250<<16)|(3<<8)|(0x0)),
