@@ -37,8 +37,7 @@ extern int migrate_pages(struct list_head *l, new_page_t x,
 
 extern int migrate_replace_cma_page(struct page *oldpage,
 				       struct page **newpage);
-			enum migrate_mode mode, int tries);
-
+			
 #endif
 
 extern int migrate_huge_pages(struct list_head *l, new_page_t x,
