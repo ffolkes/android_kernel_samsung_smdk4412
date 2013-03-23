@@ -35,6 +35,7 @@
 #include <linux/blktrace_api.h>
 #include <linux/hash.h>
 #include <linux/uaccess.h>
+#include <linux/pm_runtime.h>
 
 #include <trace/events/block.h>
 
@@ -595,6 +596,27 @@ void elv_bio_merged(struct request_queue *q, struct request *rq,
 		e->ops->elevator_bio_merged_fn(q, rq, bio);
 }
 
+#ifdef CONFIG_PM_RUNTIME
+static void blk_pm_requeue_request(struct request *rq)
+{
+	if (rq->q->dev && !(rq->cmd_flags & REQ_PM))
+		rq->q->nr_pending--;
+}
+
+static void blk_pm_add_request(struct request_queue *q, struct request *rq)
+{
+	if (q->dev && !(rq->cmd_flags & REQ_PM) && q->nr_pending++ == 0 &&
+	    (q->rpm_status == RPM_SUSPENDED || q->rpm_status == RPM_SUSPENDING))
+		pm_request_resume(q->dev);
+}
+#else
+static inline void blk_pm_requeue_request(struct request *rq) {}
+static inline void blk_pm_add_request(struct request_queue *q,
+				      struct request *rq)
+{
+}
+#endif
+
 void elv_requeue_request(struct request_queue *q, struct request *rq)
 {
 	/*
@@ -608,6 +630,8 @@ void elv_requeue_request(struct request_queue *q, struct request *rq)
 	}
 
 	rq->cmd_flags &= ~REQ_STARTED;
+
+	blk_pm_requeue_request(rq);
 
 	__elv_add_request(q, rq, ELEVATOR_INSERT_REQUEUE);
 }
@@ -692,6 +716,8 @@ void elv_quiesce_end(struct request_queue *q)
 void __elv_add_request(struct request_queue *q, struct request *rq, int where)
 {
 	trace_block_rq_insert(q, rq);
+
+	blk_pm_add_request(q, rq);
 
 	rq->q = q;
 
