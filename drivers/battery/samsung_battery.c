@@ -270,31 +270,6 @@ static int battery_get_vf(struct battery_info *info)
 	case VF_DET_GPIO:
 		present = !gpio_get_value(info->batdet_gpio);
 		break;
-	case VF_DET_ADC_GPIO:
-#if defined(CONFIG_S3C_ADC)
-		adc = s3c_adc_read(info->adc_client, info->pdata->vf_det_ch);
-#else
-		adc = 350;	/* temporary value */
-#endif
-		info->battery_vf_adc = adc;
-
-		if (info->cable_type != POWER_SUPPLY_TYPE_BATTERY) {
-			present = INRANGE(adc, info->pdata->vf_det_th_l,
-				info->pdata->vf_det_th_h);
-		} else {
-			pr_debug("%s: no charger -> LDO disable(adc=%d)\n",
-				__func__, info->battery_vf_adc);
-			present = 1;
-		}
-
-		present &= !gpio_get_value(info->batdet_gpio);
-
-		if (!present)
-			pr_info("%s: adc(%d), out of range(%d ~ %d)\n",
-						__func__, adc,
-						info->pdata->vf_det_th_l,
-						info->pdata->vf_det_th_h);
-		break;
 	default:
 		pr_err("%s: not support src(%d)\n", __func__,
 					info->pdata->vf_det_src);
@@ -1255,13 +1230,6 @@ static void battery_indicator_icon(struct battery_info *info)
 				POWER_SUPPLY_STATUS_CHARGING;
 		}
 
-		/* in case of fast charging with TA, update charge type */
-		if ((info->cable_type == POWER_SUPPLY_TYPE_MAINS) &&
-			(info->charge_type == POWER_SUPPLY_CHARGE_TYPE_FAST) &&
-			(info->input_current < info->pdata->in_curr_limit)) {
-			pr_debug("%s: slow charge state\n", __func__);
-			info->charge_type = POWER_SUPPLY_CHARGE_TYPE_SLOW;
-		}
 		if (info->temper_state == true) {
 			info->charge_virt_state =
 				POWER_SUPPLY_STATUS_NOT_CHARGING;
@@ -1494,9 +1462,6 @@ static void battery_monitor_work(struct work_struct *work)
 	struct battery_info *info = container_of(work, struct battery_info,
 						 monitor_work);
 	int muic_cb_typ;
-#ifdef CONFIG_FAST_BOOT
-	bool low_batt_power_off = false;
-#endif
 	pr_debug("%s\n", __func__);
 
 	mutex_lock(&info->mon_lock);
@@ -1511,27 +1476,6 @@ static void battery_monitor_work(struct work_struct *work)
 	info->cable_type = battery_get_cable(info);
 #endif
 
-	/* adc ldo , vf irq control */
-	if ((info->pdata->vf_det_src == VF_DET_GPIO) ||
-		(info->pdata->vf_det_src == VF_DET_ADC_GPIO)) {
-		info->cable_type = battery_get_cable(info);
-
-		if (info->cable_type == POWER_SUPPLY_TYPE_BATTERY) {
-			if (info->batdet_irq_st) {
-				disable_irq(info->batdet_irq);
-				info->batdet_irq_st = false;
-			}
-			if (info->adc_pwr_st)
-				battery_set_adc_power(info, 0);
-		} else {
-			if (!info->adc_pwr_st)
-				battery_set_adc_power(info, 1);
-			if (!info->batdet_irq_st) {
-				enable_irq(info->batdet_irq);
-				info->batdet_irq_st = true;
-			}
-		}
-	}
 	/* If battery is not connected, clear flag for charge scenario */
 	if ((battery_vf_cond(info) == true) ||
 		(battery_health_cond(info) == true)) {
@@ -1560,7 +1504,24 @@ static void battery_monitor_work(struct work_struct *work)
 
 	/* Check battery state from charger and fuelgauge */
 	battery_update_info(info);
-
+	/* adc ldo , vf irq control */
+	if (info->pdata->vf_det_src == VF_DET_GPIO) {
+		if (info->cable_type == POWER_SUPPLY_TYPE_BATTERY) {
+			if (info->batdet_irq_st) {
+				disable_irq(info->batdet_irq);
+				info->batdet_irq_st = false;
+			}
+			if (info->adc_pwr_st)
+				battery_set_adc_power(info, 0);
+		} else {
+			if (!info->adc_pwr_st)
+				battery_set_adc_power(info, 1);
+			if (!info->batdet_irq_st) {
+				enable_irq(info->batdet_irq);
+				info->batdet_irq_st = true;
+			}
+		}
+	}
 	/* if battery is missed state, do not check charge scenario */
 	if (info->battery_present == 0)
 		goto monitor_finish;
@@ -1656,8 +1617,6 @@ charge_ok:
 	case POWER_SUPPLY_TYPE_DOCK:
 		if (!info->pdata->suspend_chging)
 			wake_lock(&info->charge_wake_lock);
-		/* default dock prop is AC */
-		info->online_prop = ONLINE_PROP_AC;
 		muic_cb_typ = max77693_muic_get_charging_type();
 		switch (muic_cb_typ) {
 		case CABLE_TYPE_AUDIODOCK_MUIC:
@@ -1685,7 +1644,6 @@ charge_ok:
 		case CABLE_TYPE_SMARTDOCK_USB_MUIC:
 			pr_info("%s: smart dock usb(low), %d\n",
 					__func__, DOCK_TYPE_LOW_CURR);
-			info->online_prop = ONLINE_PROP_USB;
 			battery_charge_control(info,
 						DOCK_TYPE_LOW_CURR,
 						DOCK_TYPE_LOW_CURR);
@@ -1726,6 +1684,7 @@ monitor_finish:
 	if (info->pdata->led_indicator == true)
 		battery_indicator_led(info);
 
+	power_supply_changed(&info->psy_bat);
 	pr_info("[%d] bat: s(%d, %d), v(%d, %d), "
 		"t(%d.%d), "
 		"cs(%d, %d), cb(%d), cr(%d, %d)",
@@ -1767,18 +1726,8 @@ monitor_finish:
 	if (info->charge_current_avg < 0)
 		pr_info("%s: charging but discharging, power off\n", __func__);
 
-#ifdef CONFIG_FAST_BOOT
-	pr_debug("%s: state=%d, soc=%d, fake_shut_down=%d\n", __func__,
-		info->charge_virt_state, info->battery_soc, fake_shut_down);
+#if defined(CONFIG_TARGET_LOCALE_KOR) || defined(CONFIG_MACH_M0_CTC)
 
-	if ((info->charge_virt_state == POWER_SUPPLY_STATUS_DISCHARGING)
-		&& (info->battery_soc == 0) && (fake_shut_down)) {
-		low_batt_power_off = true;
-		goto skip_updating_status;
-	}
-#endif
-
-	power_supply_changed(&info->psy_bat);
 	/* prevent suspend for ui-update */
 	if (info->prev_cable_type != info->cable_type ||
 		info->prev_battery_health != info->battery_health ||
@@ -1792,6 +1741,7 @@ monitor_finish:
 	info->prev_battery_health = info->battery_health;
 	info->prev_charge_virt_state = info->charge_virt_state;
 	info->prev_battery_soc = info->battery_soc;
+#endif
 
 	/* if cable is detached in lpm, guarantee some secs for playlpm */
 	if ((info->lpm_state == true) &&
@@ -1802,19 +1752,10 @@ monitor_finish:
 		wake_lock_timeout(&info->monitor_wake_lock, HZ / 4);
 	}
 
-#ifdef CONFIG_FAST_BOOT
-skip_updating_status:
-#endif
+
 	mutex_unlock(&info->mon_lock);
 
-#ifdef CONFIG_FAST_BOOT
-	if (low_batt_power_off == true) {
-		pr_info("%s: Power off the device in fake shutdown mode"\
-			"(soc==0, discharging !!!)\n", __func__);
 
-		kernel_power_off();
-	}
-#endif
 	return;
 }
 
@@ -2109,9 +2050,7 @@ static int samsung_usb_get_property(struct power_supply *ps,
 	val->intval = ((info->charge_virt_state !=
 				POWER_SUPPLY_STATUS_DISCHARGING) &&
 			((info->cable_type == POWER_SUPPLY_TYPE_USB) ||
-			(info->cable_type == POWER_SUPPLY_TYPE_USB_CDP) ||
-			((info->cable_type == POWER_SUPPLY_TYPE_DOCK) &&
-				(info->online_prop == ONLINE_PROP_USB))));
+			(info->cable_type == POWER_SUPPLY_TYPE_USB_CDP)));
 
 	return 0;
 }
@@ -2131,8 +2070,7 @@ static int samsung_ac_get_property(struct power_supply *ps,
 				POWER_SUPPLY_STATUS_DISCHARGING) &&
 			((info->cable_type == POWER_SUPPLY_TYPE_MAINS) ||
 			(info->cable_type == POWER_SUPPLY_TYPE_MISC) ||
-			((info->cable_type == POWER_SUPPLY_TYPE_DOCK) &&
-				(info->online_prop != ONLINE_PROP_USB)) ||
+			(info->cable_type == POWER_SUPPLY_TYPE_DOCK) || 
 			(info->cable_type == POWER_SUPPLY_TYPE_WIRELESS)));
 
 	return 0;
@@ -2290,8 +2228,10 @@ static __devinit int samsung_battery_probe(struct platform_device *pdev)
 	if (!info->pdata->suspend_chging)
 		wake_lock_init(&info->charge_wake_lock,
 			       WAKE_LOCK_SUSPEND, "battery-charging");
+#if defined(CONFIG_TARGET_LOCALE_KOR) || defined(CONFIG_MACH_M0_CTC)
 	wake_lock_init(&info->update_wake_lock, WAKE_LOCK_SUSPEND,
 		       "battery-update");
+#endif
 
 	/* Init wq for battery */
 	INIT_WORK(&info->error_work, battery_error_work);
@@ -2458,7 +2398,9 @@ static int __devexit samsung_battery_remove(struct platform_device *pdev)
 
 	wake_lock_destroy(&info->monitor_wake_lock);
 	wake_lock_destroy(&info->emer_wake_lock);
+#if defined(CONFIG_TARGET_LOCALE_KOR) || defined(CONFIG_MACH_M0_CTC)
 	wake_lock_destroy(&info->update_wake_lock);
+#endif
 
 	if (!info->pdata->suspend_chging)
 		wake_lock_destroy(&info->charge_wake_lock);
@@ -2502,17 +2444,6 @@ static void samsung_battery_complete(struct device *dev)
 	info->monitor_mode = MONITOR_NORM;
 
 	battery_monitor_interval(info);
-#ifdef CONFIG_FAST_BOOT
-	if (((info->cable_type == POWER_SUPPLY_TYPE_MAINS)
-		|| (info->cable_type == POWER_SUPPLY_TYPE_USB)
-		|| (info->cable_type == POWER_SUPPLY_TYPE_USB_CDP))
-		&& (fake_shut_down)) {
-		pr_info("%s: Resetting the device in fake shutdown mode"\
-			"(TA/USB inserted !!!)\n", __func__);
-
-		kernel_power_off();
-	}
-#endif
 }
 
 static int samsung_battery_suspend(struct device *dev)
