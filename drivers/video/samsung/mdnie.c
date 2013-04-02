@@ -118,7 +118,7 @@ struct mdnie_info *g_mdnie;
 static struct mdnie_backlight_value b_value;
 #endif
 
-/*ff struct sysfs_debug_info {
+struct sysfs_debug_info {
 	u8 enable;
 	pid_t pid;
 	char comm[TASK_COMM_LEN];
@@ -128,7 +128,7 @@ static struct mdnie_backlight_value b_value;
 static struct sysfs_debug_info negative[5];
 static u8 negative_idx;
 
-int mdnie_send_sequence(struct mdnie_info *mdnie, const unsigned short *seq)*/
+/*ff int mdnie_send_sequence(struct mdnie_info *mdnie, const unsigned short *seq)*/
 
 extern unsigned short mdnie_reg_hook(unsigned short reg, unsigned short value);
 extern unsigned short *mdnie_sequence_hook(struct mdnie_info *pmdnie, unsigned short *seq);
