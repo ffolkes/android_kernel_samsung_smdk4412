@@ -12,6 +12,7 @@
 
 #ifndef __ASM_ARCH_SMC_H
 #define __ASM_ARCH_SMC_H __FILE__
+#define REQUIRES_SEC
 
 #define SMC_CMD_INIT		(-1)
 #define SMC_CMD_INFO		(-2)
