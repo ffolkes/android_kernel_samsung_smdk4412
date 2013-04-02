@@ -391,17 +391,17 @@ static int touchkey_power_on(bool on)
 
 	if (on) {
 		gpio_direction_output(GPIO_3_TOUCH_INT, 1);
+		
+		ret = touchkey_resume();
 		irq_set_irq_type(gpio_to_irq(GPIO_3_TOUCH_INT),
 			IRQF_TRIGGER_FALLING);
 		s3c_gpio_cfgpin(GPIO_3_TOUCH_INT, S3C_GPIO_SFN(0xf));
 		s3c_gpio_setpull(GPIO_3_TOUCH_INT, S3C_GPIO_PULL_NONE);
-	} else
+	} else {
 		gpio_direction_input(GPIO_3_TOUCH_INT);
 
-	if (on)
-		ret = touchkey_resume();
-	else
 		ret = touchkey_suspend();
+	}
 
 	return ret;
 }
@@ -1519,9 +1519,15 @@ static struct samsung_battery_platform_data samsung_battery_pdata = {
 	.voltage_min = 3400000,
 
 #if defined(CONFIG_MACH_GC1)
+#if defined(CONFIG_MACH_GC1_USA_ATT)
 	.in_curr_limit = 700,
 	.chg_curr_ta = 700,
 	.chg_curr_dock = 700,
+#else
+	.in_curr_limit = 1000,
+	.chg_curr_ta = 1000,
+	.chg_curr_dock = 1000,
+#endif
 	.chg_curr_siop_lv1 = 475,
 	.chg_curr_siop_lv2 = 475,
 	.chg_curr_siop_lv3 = 475,
@@ -1630,9 +1636,9 @@ static struct samsung_battery_platform_data samsung_battery_pdata = {
 	.freeze_recovery_temp = 0,
 #elif defined(CONFIG_MACH_T0_USA_SPR)
 	.overheat_stop_temp = 485,
-	.overheat_recovery_temp = 409,
-	.freeze_stop_temp = -50,
-	.freeze_recovery_temp = 0,
+	.overheat_recovery_temp = 420,
+	.freeze_stop_temp = -40,
+	.freeze_recovery_temp = -10,
 #elif defined(CONFIG_MACH_T0_USA_USCC)
 	.overheat_stop_temp = 600,
 	.overheat_recovery_temp = 400,
@@ -1721,19 +1727,20 @@ static struct samsung_battery_platform_data samsung_battery_pdata = {
 	.covert_adc = convert_adc,
 #endif
 
-#if defined(CONFIG_MACH_M3_USA_VZW)
-	.vf_det_src = VF_DET_UNKNOWN,
-#else
-#if defined(CONFIG_MACH_T0) && defined(CONFIG_TARGET_LOCALE_USA)
+#if (defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_M3_USA_TMO)) && \
+	defined(CONFIG_TARGET_LOCALE_USA)
 	.vf_det_src = VF_DET_GPIO,	/* check H/W rev in battery probe */
+#elif defined(CONFIG_MACH_GC1) && defined(CONFIG_TARGET_LOCALE_USA)
+	.vf_det_src = VF_DET_ADC_GPIO,	/* check H/W rev in battery probe */
 #else
 	.vf_det_src = VF_DET_CHARGER,
 #endif
-#endif
 	.vf_det_ch = 0,	/* if src == VF_DET_ADC */
 	.vf_det_th_l = 100,
-	.vf_det_th_h = 600,
-#if defined(CONFIG_MACH_T0) && defined(CONFIG_TARGET_LOCALE_USA)
+	.vf_det_th_h = 1500,
+#if (defined(CONFIG_MACH_T0) || defined(CONFIG_MACH_GC1) || \
+	defined(CONFIG_MACH_M3_USA_TMO)) && \
+	defined(CONFIG_TARGET_LOCALE_USA)
 	.batt_present_gpio = GPIO_BATT_PRESENT_N_INT,
 #endif
 
@@ -1909,6 +1916,9 @@ static struct i2c_gpio_platform_data i2c9_platdata = {
 #elif defined(CONFIG_SENSORS_CM36651)
 	.sda_pin	= GPIO_RGB_SDA_1_8V,
 	.scl_pin	= GPIO_RGB_SCL_1_8V,
+#elif defined(CONFIG_SENSORS_GP2A)
+	.sda_pin	= GPIO_PS_ALS_SDA_28V,
+	.scl_pin	= GPIO_PS_ALS_SCL_28V,
 #endif
 	.udelay	= 2, /* 250KHz */
 	.sda_is_open_drain	= 0,
@@ -1956,6 +1966,22 @@ static struct platform_device s3c_device_i2c10 = {
 };
 #endif
 
+#ifdef CONFIG_SENSORS_AK8963
+static struct i2c_gpio_platform_data i2c10_platdata = {
+	.sda_pin	= GPIO_MSENSOR_SDA_18V,
+	.scl_pin	= GPIO_MSENSOR_SCL_18V,
+	.udelay	= 2, /* 250KHz */
+	.sda_is_open_drain	= 0,
+	.scl_is_open_drain	= 0,
+	.scl_is_output_only = 0,
+};
+
+static struct platform_device s3c_device_i2c10 = {
+	.name	= "i2c-gpio",
+	.id	= 10,
+	.dev.platform_data	= &i2c10_platdata,
+};
+#endif
 #ifdef CONFIG_SENSORS_LPS331
 static struct i2c_gpio_platform_data i2c11_platdata = {
 	.sda_pin	= GPIO_BSENSE_SDA_18V,
@@ -1999,12 +2025,13 @@ static void otg_accessory_power(int enable)
 
 	/* max77693 otg power control */
 	otg_control(enable);
-
+#if !defined(CONFIG_MACH_M3_USA_TMO)
 	err = gpio_request(GPIO_OTG_EN, "USB_OTG_EN");
 	if (err)
 		printk(KERN_ERR "failed to request USB_OTG_EN\n");
 	gpio_direction_output(GPIO_OTG_EN, on);
 	gpio_free(GPIO_OTG_EN);
+#endif
 	pr_info("%s: otg accessory power = %d\n", __func__, on);
 }
 
@@ -2172,6 +2199,9 @@ static struct platform_device *midas_devices[] __initdata = {
 	&s3c_device_i2c10,
 #endif
 #ifdef CONFIG_SENSORS_AK8963C
+	&s3c_device_i2c10,
+#endif
+#ifdef CONFIG_SENSORS_AK8963
 	&s3c_device_i2c10,
 #endif
 
