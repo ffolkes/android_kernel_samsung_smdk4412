@@ -14,7 +14,7 @@ LOWMEMKILLER_PATH := $(srctree)/drivers/staging/android/lowmemorykiller.c
 ifeq ($(wildcard $(LOWMEMKILLER_PATH)),)
 $(error "Unable to find lowmemorykiller.c at $(LOWMEMKILLER_PATH)")
 endif
-LOWMEMKILLER_MD5 := $(shell md5sum $(LOWMEMKILLER_PATH) | cut -f1 -d\ )
+LOWMEMKILLER_MD5 := $(shell md5 -r $(LOWMEMKILLER_PATH) | cut -f1 -d\ )
 LOWMEMKILLER_SUPPORT := $(srctree)/arch/arm/mvp/mvpkm/lowmemkiller_variant.sh
 LOWMEMKILLER_SHRINK_MD5 := $(shell $(SHELL) $(LOWMEMKILLER_SUPPORT) $(LOWMEMKILLER_PATH) | cut -f1 -d\ )
 LOWMEMKILLER_VARIANT := $(shell $(SHELL) $(LOWMEMKILLER_SUPPORT) $(LOWMEMKILLER_PATH) | cut -f2 -d\ )

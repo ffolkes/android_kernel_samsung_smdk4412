@@ -1,0 +1,14 @@
+=====
+
+For Mac users:
+
+To use multiple cores (where N is the number of cores you want to use): make -jN
+
+---
+
+The automatic module build yields bad modules because it ignores the CFLAGS_MODULE set in the Makefile.
+After building the kernel, make the modules again with this command:
+
+make modules with flags: make modules CFLAGS_MODULE=-fno-pic
+
+=====

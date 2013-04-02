@@ -37,11 +37,11 @@ fi
 tmp_file="lmk_md5sum_$RANDOM"
 
 cat $1 | tr -d '\ \t\n\r' > $tmp_file
-sed -i -e 's/.*\(intother_file.*other_file<\).*/;\1/' \
+sed -i '' -e 's/.*\(intother_file.*other_file<\).*/;\1/' \
        -e 's/[;][^;]*other_file[^;]*/#<#&#>#/g' \
        -e 's/#>#[^#]*//g' $tmp_file
 
-MD5=`md5sum $tmp_file | cut -f1 -d\ `
+MD5=`md5 -r $tmp_file | cut -f1 -d\ `
 
 rm $tmp_file
 
