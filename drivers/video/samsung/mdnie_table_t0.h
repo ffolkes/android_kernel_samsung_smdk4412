@@ -104,13 +104,21 @@ static unsigned short tune_dynamic_video[] = {
 
 static unsigned short tune_dynamic_vt[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x008a,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x008e,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0005,	/*FA cs1 | de8 dnr4 hdr2 fa1*/
 	0x0039, 0x0080,	/*FA dnrWeight*/
 	0x0080, 0x0fff,	/*DNR dirTh*/
 	0x0081, 0x19ff,	/*DNR dirnumTh decon7Th*/
 	0x0082, 0xff16,	/*DNR decon5Th maskTh*/
 	0x0083, 0x0000,	/*DNR blTh*/
+	0x0092, 0x00e0,	/*DE pe*/
+	0x0093, 0x00e0,	/*DE pf*/
+	0x0094, 0x00e0,	/*DE pb*/
+	0x0095, 0x00e0,	/*DE ne*/
+	0x0096, 0x00e0,	/*DE nf*/
+	0x0097, 0x00e0,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0010,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -196,6 +204,12 @@ static unsigned short tune_movie_video[] = {
 	0x0000, 0x0000,	/*BANK 0*/
 	0x0008, 0x00a0,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
+	0x0092, 0x0000,	/*DE pe*/
+	0x0093, 0x0000,	/*DE pf*/
+	0x0094, 0x0000,	/*DE pb*/
+	0x0095, 0x0000,	/*DE ne*/
+	0x0096, 0x0000,	/*DE nf*/
+	0x0097, 0x0000,	/*DE nb*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -229,13 +243,21 @@ static unsigned short tune_movie_video[] = {
 
 static unsigned short tune_movie_vt[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00aa,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ae,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0005,	/*FA cs1 | de8 dnr4 hdr2 fa1*/
 	0x0039, 0x0080,	/*FA dnrWeight*/
 	0x0080, 0x0fff,	/*DNR dirTh*/
 	0x0081, 0x19ff,	/*DNR dirnumTh decon7Th*/
 	0x0082, 0xff16,	/*DNR decon5Th maskTh*/
 	0x0083, 0x0000,	/*DNR blTh*/
+	0x0092, 0x0042,	/*DE pe*/
+	0x0093, 0x0042,	/*DE pf*/
+	0x0094, 0x0042,	/*DE pb*/
+	0x0095, 0x0042,	/*DE ne*/
+	0x0096, 0x0042,	/*DE nf*/
+	0x0097, 0x0042,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0010,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -269,9 +291,17 @@ static unsigned short tune_movie_vt[] = {
 
 static unsigned short tune_standard_gallery[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x0088,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x008c,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0090, 0x0080,	/*DE egth*/
+	0x0092, 0x0030,	/*DE pe*/
+	0x0093, 0x0060,	/*DE pf*/
+	0x0094, 0x0060,	/*DE pb*/
+	0x0095, 0x0030,	/*DE ne*/
+	0x0096, 0x0060,	/*DE nf*/
+	0x0097, 0x0060,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0100,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -316,7 +346,7 @@ static unsigned short tune_standard_ui[] = {
 
 static unsigned short tune_standard_video[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x0088,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x008c,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0092, 0x0060,	/*DE pe*/
 	0x0093, 0x0060,	/*DE pf*/
@@ -359,13 +389,21 @@ static unsigned short tune_standard_video[] = {
 
 static unsigned short tune_standard_vt[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x008a,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x008e,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0005,	/*FA cs1 | de8 dnr4 hdr2 fa1*/
 	0x0039, 0x0080,	/*FA dnrWeight*/
 	0x0080, 0x0fff,	/*DNR dirTh*/
 	0x0081, 0x19ff,	/*DNR dirnumTh decon7Th*/
 	0x0082, 0xff16,	/*DNR decon5Th maskTh*/
 	0x0083, 0x0000,	/*DNR blTh*/
+	0x0092, 0x00c0,	/*DE pe*/
+	0x0093, 0x00c0,	/*DE pf*/
+	0x0094, 0x00c0,	/*DE pb*/
+	0x0095, 0x00c0,	/*DE ne*/
+	0x0096, 0x00c0,	/*DE nf*/
+	0x0097, 0x00c0,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0010,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -387,9 +425,16 @@ static unsigned short tune_standard_vt[] = {
 
 static unsigned short tune_natural_gallery[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00a8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ac,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0090, 0x0080,	/*DE egth*/
+	0x0092, 0x0030,	/*DE pe*/
+	0x0093, 0x0060,	/*DE pf*/
+	0x0094, 0x0060,	/*DE pb*/
+	0x0095, 0x0030,	/*DE ne*/
+	0x0096, 0x0060,	/*DE nf*/
+	0x0097, 0x0060,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
 	0x0099, 0x0100,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
@@ -459,9 +504,17 @@ static unsigned short tune_natural_ui[] = {
 
 static unsigned short tune_natural_video[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00a8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ac,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0090, 0x0080,	/*DE egth*/
+	0x0092, 0x0030,	/*DE pe*/
+	0x0093, 0x0060,	/*DE pf*/
+	0x0094, 0x0060,	/*DE pb*/
+	0x0095, 0x0030,	/*DE ne*/
+	0x0096, 0x0060,	/*DE nf*/
+	0x0097, 0x0060,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0100,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -495,13 +548,21 @@ static unsigned short tune_natural_video[] = {
 
 static unsigned short tune_natural_vt[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00aa,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ae,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0005,	/*FA cs1 | de8 dnr4 hdr2 fa1*/
 	0x0039, 0x0080,	/*FA dnrWeight*/
 	0x0080, 0x0fff,	/*DNR dirTh*/
 	0x0081, 0x19ff,	/*DNR dirnumTh decon7Th*/
 	0x0082, 0xff16,	/*DNR decon5Th maskTh*/
 	0x0083, 0x0000,	/*DNR blTh*/
+	0x0092, 0x00c0,	/*DE pe*/
+	0x0093, 0x00c0,	/*DE pf*/
+	0x0094, 0x00c0,	/*DE pb*/
+	0x0095, 0x00c0,	/*DE ne*/
+	0x0096, 0x00c0,	/*DE nf*/
+	0x0097, 0x00c0,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0010,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -535,9 +596,17 @@ static unsigned short tune_natural_vt[] = {
 
 static unsigned short tune_camera[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x0008,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x000c,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0090, 0x0080,	/*DE egth*/
+	0x0092, 0x0030,	/*DE pe*/
+	0x0093, 0x0060,	/*DE pf*/
+	0x0094, 0x0060,	/*DE pb*/
+	0x0095, 0x0030,	/*DE ne*/
+	0x0096, 0x0060,	/*DE nf*/
+	0x0097, 0x0060,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0100,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg ry*/
 	0x00b1, 0x1010,	/*CS hg gc*/
 	0x00b2, 0x1010,	/*CS hg bm*/
@@ -548,9 +617,17 @@ static unsigned short tune_camera[] = {
 
 static unsigned short tune_camera_outdoor[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x0408,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x040c,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
 	0x0090, 0x0080,	/*DE egth*/
+	0x0092, 0x0030,	/*DE pe*/
+	0x0093, 0x0060,	/*DE pf*/
+	0x0094, 0x0060,	/*DE pb*/
+	0x0095, 0x0030,	/*DE ne*/
+	0x0096, 0x0060,	/*DE nf*/
+	0x0097, 0x0060,	/*DE nb*/
+	0x0098, 0x1000,	/*DE max ratio*/
+	0x0099, 0x0100,	/*DE min ratio*/
 	0x00b0, 0x1010,	/*CS hg RY*/
 	0x00b1, 0x1010,	/*CS hg GC*/
 	0x00b2, 0x1010,	/*CS hg BM*/
@@ -564,7 +641,7 @@ static unsigned short tune_camera_outdoor[] = {
 
 static unsigned short tune_cold[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00e8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ec,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0000, 0x0001,	/*BANK 1*/
 	0x0001, 0x0064,	/*MCM 10000K*/
 	0x0009, 0xa08b,	/*MCM 5cb 1cr W*/
@@ -575,7 +652,7 @@ static unsigned short tune_cold[] = {
 
 static unsigned short tune_cold_outdoor[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x04e8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x04ec,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0000, 0x0001,	/*BANK 1*/
 	0x0001, 0x0064,	/*MCM 10000K*/
 	0x0009, 0xa08b,	/*MCM 5cb 1cr W*/
@@ -588,7 +665,7 @@ static unsigned short tune_cold_outdoor[] = {
 
 static unsigned short tune_normal_outdoor[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x04a8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x04ac,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0000, 0x0001,	/*BANK 1*/
 	0x00d0, 0x01c0,	/*UC y*/
 	0x00d1, 0x01ff,	/*UC cs*/
@@ -598,7 +675,7 @@ static unsigned short tune_normal_outdoor[] = {
 
 static unsigned short tune_warm[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x00e8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x00ec,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0000, 0x0001,	/*BANK 1*/
 	0x0001, 0x0028,	/*MCM 4000K*/
 	0x0007, 0x7878,	/*MCM 1cb 2cb W*/
@@ -609,7 +686,7 @@ static unsigned short tune_warm[] = {
 
 static unsigned short tune_warm_outdoor[] = {
 	0x0000, 0x0000,	/*BANK 0*/
-	0x0008, 0x04e8,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0008, 0x04ec,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
 	0x0000, 0x0001,	/*BANK 1*/
 	0x0001, 0x0028,	/*MCM 4000K*/
 	0x0007, 0x7878,	/*MCM 1cb 2cb W*/
@@ -638,50 +715,49 @@ struct mdnie_tunning_info etc_table[CABC_MAX][OUTDOOR_MAX][TONE_MAX] = {
 struct mdnie_tunning_info tunning_table[CABC_MAX][MODE_MAX][SCENARIO_MAX] = {
 	{
 		{
-			{"DYNAMIC_UI",		(unsigned short *)tune_dynamic_ui},
-			{"DYNAMIC_VIDEO",	(unsigned short *)tune_dynamic_video},
-			{"DYNAMIC_VIDEO",	(unsigned short *)tune_dynamic_video},
-			{"DYNAMIC_VIDEO",	(unsigned short *)tune_dynamic_video},
+			{"DYNAMIC_UI",		(unsigned short *)&tune_dynamic_ui},
+			{"DYNAMIC_VIDEO",	(unsigned short *)&tune_dynamic_video},
+			{"DYNAMIC_VIDEO",	(unsigned short *)&tune_dynamic_video},
+			{"DYNAMIC_VIDEO",	(unsigned short *)&tune_dynamic_video},
 			{"CAMERA",		NULL},
-			{"DYNAMIC_UI",		(unsigned short *)tune_dynamic_ui},
-			{"DYNAMIC_GALLERY",	(unsigned short *)tune_dynamic_gallery},
-			{"DYNAMIC_VT",		(unsigned short *)tune_dynamic_vt},
+			{"DYNAMIC_UI",		(unsigned short *)&tune_dynamic_ui},
+			{"DYNAMIC_GALLERY",	(unsigned short *)&tune_dynamic_gallery},
+			{"DYNAMIC_VT",		(unsigned short *)&tune_dynamic_vt},
 		}, {
-			{"STANDARD_UI",		(unsigned short *)tune_standard_ui},
-			{"STANDARD_VIDEO",	(unsigned short *)tune_standard_video},
-			{"STANDARD_VIDEO",	(unsigned short *)tune_standard_video},
-			{"STANDARD_VIDEO",	(unsigned short *)tune_standard_video},
+			{"STANDARD_UI",		(unsigned short *)&tune_standard_ui},
+			{"STANDARD_VIDEO",	(unsigned short *)&tune_standard_video},
+			{"STANDARD_VIDEO",	(unsigned short *)&tune_standard_video},
+			{"STANDARD_VIDEO",	(unsigned short *)&tune_standard_video},
 			{"CAMERA",		NULL},
-			{"STANDARD_UI",		(unsigned short *)tune_standard_ui},
-			{"STANDARD_GALLERY",	(unsigned short *)tune_standard_gallery},
-			{"STANDARD_VT",		(unsigned short *)tune_standard_vt},
+			{"STANDARD_UI",		(unsigned short *)&tune_standard_ui},
+			{"STANDARD_GALLERY",	(unsigned short *)&tune_standard_gallery},
+			{"STANDARD_VT",		(unsigned short *)&tune_standard_vt},
 		}, {
-			{"NATURAL_UI",		(unsigned short *)tune_natural_ui},
-			{"NATURAL_VIDEO",	(unsigned short *)tune_natural_video},
-			{"NATURAL_VIDEO_WARM",	(unsigned short *)tune_natural_video},
-			{"NATURAL_VIDEO_COLD",	(unsigned short *)tune_natural_video},
+			{"NATURAL_UI",		(unsigned short *)&tune_natural_ui},
+			{"NATURAL_VIDEO",	(unsigned short *)&tune_natural_video},
+			{"NATURAL_VIDEO_WARM",	(unsigned short *)&tune_natural_video},
+			{"NATURAL_VIDEO_COLD",	(unsigned short *)&tune_natural_video},
 			{"CAMERA",		NULL},
-			{"NATURAL_UI",		(unsigned short *)tune_natural_ui},
-			{"NATURAL_GALLERY",	(unsigned short *)tune_natural_gallery},
-			{"NATURAL_VT",		(unsigned short *)tune_natural_vt},
+			{"NATURAL_UI",		(unsigned short *)&tune_natural_ui},
+			{"NATURAL_GALLERY",	(unsigned short *)&tune_natural_gallery},
+			{"NATURAL_VT",		(unsigned short *)&tune_natural_vt},
 		}, {
-			{"MOVIE_UI",		(unsigned short *)tune_movie_ui},
-			{"MOVIE_VIDEO",		(unsigned short *)tune_movie_video},
-			{"MOVIE_VIDEO",		(unsigned short *)tune_movie_video},
-			{"MOVIE_VIDEO",		(unsigned short *)tune_movie_video},
+			{"MOVIE_UI",		(unsigned short *)&tune_movie_ui},
+			{"MOVIE_VIDEO",		(unsigned short *)&tune_movie_video},
+			{"MOVIE_VIDEO",		(unsigned short *)&tune_movie_video},
+			{"MOVIE_VIDEO",		(unsigned short *)&tune_movie_video},
 			{"CAMERA",		NULL},
-			{"MOVIE_UI",		(unsigned short *)tune_movie_ui},
-			{"MOVIE_GALLERY",	(unsigned short *)tune_movie_gallery},
-			{"MOVIE_VT",		(unsigned short *)tune_movie_vt},
+			{"MOVIE_UI",		(unsigned short *)&tune_movie_ui},
+			{"MOVIE_GALLERY",	(unsigned short *)&tune_movie_gallery},
+			{"MOVIE_VT",		(unsigned short *)&tune_movie_vt},
 		},
 	}
 };
 
 struct mdnie_tunning_info camera_table[OUTDOOR_MAX] = {
-	{"CAMERA",		(unsigned short *)tune_camera},
-	{"CAMERA_OUTDOOR",	(unsigned short *)tune_camera_outdoor},
+	{"CAMERA",		(unsigned short *)&tune_camera},
+	{"CAMERA_OUTDOOR",	(unsigned short *)&tune_camera_outdoor},
 };
 
 #endif/* __MDNIE_TABLE_H__ */
-
 
