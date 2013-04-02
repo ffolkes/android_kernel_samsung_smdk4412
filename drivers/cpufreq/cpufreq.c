@@ -34,6 +34,7 @@
 
 // Safe boot speed
 #define SafeBootSpeed 1600000
+#define SafeBootSpeedMin 200000
 
 /**
  * The "cpufreq driver" - the arch- or hardware-dependent low
@@ -960,8 +961,12 @@ static int cpufreq_add_dev(struct sys_device *sys_dev)
 	}
 
 	// Set max speed at boot to 1.6Ghz since is the safest speed to boot
-    	if (policy->max > SafeBootSpeed){
+	if (policy->max > SafeBootSpeed){
         policy->max = SafeBootSpeed;
+	}
+	
+	if (policy->min < SafeBootSpeedMin){
+        policy->min = SafeBootSpeedMin;
 	}
 
 	policy->user_policy.min = policy->min;
