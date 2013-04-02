@@ -67,6 +67,7 @@ static struct cpufreq_frequency_table exynos4x12_freq_table[] = {
 	{L18, 400*1000},
 	{L19, 300*1000},
 	{L20, 200*1000},
+	{L21, 50*1000},
 	{0, CPUFREQ_TABLE_END},
 };
 
@@ -192,6 +193,9 @@ static unsigned int clkdiv_cpu0_4412[CPUFREQ_LEVEL_END][8] = {
 
 	/* ARM L20: 200MHz */
 	{ 0, 1, 3, 0, 1, 1, 1, 0 },
+	
+	/* ARM L21: 50MHz */
+	{ 0, 1, 3, 0, 1, 1, 1, 0 },
 };
 
 static unsigned int clkdiv_cpu1_4212[CPUFREQ_LEVEL_END][2] = {
@@ -310,6 +314,9 @@ static unsigned int clkdiv_cpu1_4412[CPUFREQ_LEVEL_END][3] = {
 
 	/* ARM L20: 200MHz */
 	{ 3, 0, 0 },
+	
+	/* ARM L21: 50MHz */
+	{ 3, 0, 0 },
 };
 
 static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
@@ -376,6 +383,9 @@ static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
 
 	/* APLL FOUT L20: 200MHz */
 	((100<<16)|(3<<8)|(0x2)),
+	
+	/* APLL FOUT L21: 50MHz */
+	((100<<16)|(6<<8)|(0x3)),
 
 };
 
@@ -383,7 +393,7 @@ static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
  * ASV group voltage table
  */
 
-#define NO_ABB_LIMIT	L14
+#define NO_ABB_LIMIT	L20
 
 static const unsigned int asv_voltage_4212[CPUFREQ_LEVEL_END][12] = {
 	/*   ASV0,    ASV1,    ASV2,    ASV3,	 ASV4,	  ASV5,	   ASV6,    ASV7,    ASV8,    ASV9,   ASV10,   ASV11 */
@@ -453,6 +463,7 @@ static const unsigned int asv_voltage_step_12_5_rev2[CPUFREQ_LEVEL_END][13] = {
 	{  950000,  937500,  937500,  937500,  925000,  912500,  900000,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L18 */
 	{  937500,  925000,  925000,  925000,  912500,  900000,  887500,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L19 */
 	{  925000,  912500,  912500,  912500,  900000,  887500,  887500,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L20 */
+	{  925000,  912500,  912500,  912500,  900000,  887500,  887500,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L21 */
 };
 
 static const unsigned int asv_voltage_step_1ghz[CPUFREQ_LEVEL_END][12] = {
@@ -578,7 +589,7 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 
 		if ((samsung_rev() >= EXYNOS4412_REV_2_0)
 			&& (exynos_result_of_asv > 2)
-			&& (old_index > L14) && (new_index <= L14)) {
+			&& (old_index > L20) && (new_index <= L20)) {
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_130V);
 		}
 
@@ -616,7 +627,7 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 		}
 		if ((samsung_rev() >= EXYNOS4412_REV_2_0)
 			&& (exynos_result_of_asv > 2)
-			&& (old_index <= L14) && (new_index > L14)) {
+			&& (old_index <= L20) && (new_index > L20)) {
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_100V);
 		}
 		if (exynos4x12_volt_table[new_index] < 950000 &&
@@ -738,10 +749,10 @@ static void __init set_volt_table(void)
  */
 #ifdef CONFIG_SLP
 static struct dvfs_qos_info exynos4x12_dma_lat_qos[] = {
-	{ 118,	200000, L19 },
-	{ 40,	500000, L16 },
-	{ 24,	800000, L13 },
-	{ 16,	1000000, L11 },
+	{ 118,	200000, L20 },
+	{ 40,	500000, L17 },
+	{ 24,	800000, L14 },
+	{ 16,	1000000, L12 },
 	{},
 };
 #endif
@@ -830,7 +841,7 @@ int exynos4x12_cpufreq_init(struct exynos_dvfs_info *info)
 	info->mpll_freq_khz = rate;
 #ifdef CONFIG_SLP
 	/* S-Boot at 20120406 uses L8 at bootup */
-	info->pm_lock_idx = L13;
+	info->pm_lock_idx = L14;
 
 	/*
 	 * However, the bootup frequency might get changed anytime.
