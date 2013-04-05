@@ -130,7 +130,10 @@ static void wm8958_micd_set_rate(struct snd_soc_codec *codec)
 			    WM8958_MICD_RATE_MASK, val);
 }
 
-static int wm8994_readable(struct snd_soc_codec *codec, unsigned int reg)
+#ifndef CONFIG_SND_WOLFSON_SOUND_CONTROL
+static
+#endif
+int wm8994_readable(struct snd_soc_codec *codec, unsigned int reg)
 {
 	struct wm8994_priv *wm8994 = snd_soc_codec_get_drvdata(codec);
 	struct wm8994 *control = codec->control_data;
@@ -171,7 +174,10 @@ static int wm8994_readable(struct snd_soc_codec *codec, unsigned int reg)
 	return wm8994_access_masks[reg].readable != 0;
 }
 
-static int wm8994_volatile(struct snd_soc_codec *codec, unsigned int reg)
+#ifndef CONFIG_SND_WOLFSON_SOUND_CONTROL
+static
+#endif
+int wm8994_volatile(struct snd_soc_codec *codec, unsigned int reg)
 {
 	if (reg >= WM8994_CACHE_SIZE)
 		return 1;
@@ -234,7 +240,10 @@ static int wm8994_write(struct snd_soc_codec *codec, unsigned int reg,
 	return wm8994_reg_write(codec->control_data, reg, value);
 }
 
-static unsigned int wm8994_read(struct snd_soc_codec *codec,
+#ifndef CONFIG_SND_WOLFSON_SOUND_CONTROL
+static
+#endif
+unsigned int wm8994_read(struct snd_soc_codec *codec,
 				unsigned int reg)
 {
 	unsigned int val;
