@@ -1,10 +1,11 @@
 /*
- * Author: Andrei F. 19.03.2013
- * 	Implementation fork: Code refactoring and sysfs rewrite.
+ * Author: Andrei F. <https://github.com/AndreiLux>
+ *          Complete re-work and refactoring of andip71's implementation
  *
- * Author: andip71, 26.02.2013
- *
- * Version 1.6.0
+ * credits: andip71 for Boeffla sound implementation
+ *          Supercurio for idea and code from first implementation Voodoo Sound,
+ *          Yank555 for great support on problem analysis,
+ *          Gokhanmoral for further modifications to the original code
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,12 +33,20 @@ unsigned int sound_control_hook_wm8994_write(unsigned int reg, unsigned int valu
 
 // Sound control general
 #define SOUND_CONTROL_DEFAULT 	0
-#define SOUND_CONTROL_VERSION 	"Perseus 1.6.0"
+#define SOUND_CONTROL_VERSION 	"Perseus 35"
 
 enum {
 	EQ_SP = 0,
 	EQ_HP,
 	EQ_TYPE_MAX,
+};
+
+enum {
+	OUTPUT_HP = 0,
+	OUTPUT_SPEAKER,
+	OUTPUT_RECEIVER,
+	OUTPUT_OTHER,
+	OUTPUT_MAX
 };
 
 // Debug mode
@@ -94,7 +103,7 @@ enum {
 #define HEADPHONE_DEFAULT 	50
 
 #define HEADPHONE_MAX 		63
-#define HEADPHONE_MIN 		20
+#define HEADPHONE_MIN 		0
 
 // speaker levels
 #define SPEAKER_DEFAULT 	57
@@ -104,6 +113,7 @@ enum {
 
 // Microphone control
 #define MICLEVEL_GENERAL	28
+#define MICLEVEL_CAMERA		26
 #define MICLEVEL_CALL		25
 
 #define MICLEVEL_MIN		0
