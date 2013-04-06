@@ -2145,7 +2145,7 @@ static struct cputopo_power default_cpu_power = {
 	.table = table_default_power, 
 }; 
  
-static unsigned int table_exynos4412_power[17] = { 
+static unsigned int table_exynos4412_power[20] = { 
 	/* Power save mode CA9 MP */ 
 	8192, /*  200 MHz */
 	8192, /*  300 MHz */
@@ -2164,10 +2164,14 @@ static unsigned int table_exynos4412_power[17] = {
 	1024, /* 1600 MHz */
 	1024, /* 1700 MHz */
 	1024, /* 1800 MHz */
+	1024, /* 1920 MHz */
+	1024, /* 2000 MHz */
+	1024, /* 2080 MHz */
+	1024, /* 2160 MHz */
 }; 
  
 static struct cputopo_power exynos4412_cpu_power = { 
-	.max  = 17, 
+	.max  = 20, 
 	.step = 100000, 
 	.table = table_exynos4412_power, 
 }; 
