@@ -467,7 +467,7 @@ static ssize_t cpufreq_max_limit_store(struct kobject *kobj,
 			printk(KERN_ERR "%s: Unlock request is ignored\n",
 				__func__);
 	} else { /* Lock request */
-		if (val < 1400000) {
+		if (val < 1500000) {
 			val = 1000000;
 
 		if (get_cpufreq_level((unsigned int)val, &cpufreq_level)
