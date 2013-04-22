@@ -37,6 +37,9 @@ else
 obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= asv-4x12.o
 obj-$(CONFIG_EXYNOS4_CPUFREQ)	+= cpufreq-4x12.o
 endif
+
+obj-$(CONFIG_ABB_CONTROL)	+= abb_control.o
+
 obj-$(CONFIG_EXYNOS5_CPUFREQ)	+= asv.o asv-5250.o
 obj-$(CONFIG_EXYNOS5_CPUFREQ)	+= cpufreq-5250.o
 obj-$(CONFIG_EXYNOS4_CPUIDLE)	+= cpuidle-exynos4.o idle-exynos4.o

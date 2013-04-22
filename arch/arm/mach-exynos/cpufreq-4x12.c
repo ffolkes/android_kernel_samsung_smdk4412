@@ -477,25 +477,6 @@ static const unsigned int asv_voltage_step_12_5_rev2[CPUFREQ_LEVEL_END][13] = {
 	{  900000,  900000,  900000,  900000,  900000,  900000,	 887500,  887500,  875000,  862500,  862500,  862500,  862500 },	/* L22 */
 };
 
-static const unsigned int asv_voltage_step_1ghz[CPUFREQ_LEVEL_END][12] = {
-	/*   ASV0,    ASV1,    ASV2,    ASV3,	 ASV4,	  ASV5,	   ASV6,    ASV7,    ASV8,    ASV9,   ASV10,   ASV11 */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L0 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L1 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L2 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L3 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L4 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L5 - Not used */
-	{ 1200000, 1200000, 1200000, 1200000, 1125000, 1125000,	1125000, 1075000, 1075000, 1075000, 1075000, 1037500 },
-	{ 1150000, 1150000, 1150000, 1150000, 1075000, 1075000,	1075000, 1037500, 1037500, 1037500, 1037500, 1000000 },
-	{ 1100000, 1100000, 1100000, 1100000, 1025000, 1025000,	1025000,  987500,  987500,  987500,  987500,  975000 },
-	{ 1050000, 1050000, 1050000, 1050000, 1000000, 1000000,	1000000,  987500,  987500,  987500,  987500,  962500 },
-	{ 1025000, 1025000, 1025000, 1025000,  987500,  987500,	 987500,  975000,  975000,  975000,  975000,  950000 },
-	{ 1000000, 1000000, 1000000, 1000000,  975000,  975000,	 975000,  962500,  962500,  962500,  962500,  925000 },
-	{ 1000000, 1000000, 1000000, 1000000,  975000,  975000,	 975000,  950000,  950000,  950000,  950000,  912500 },
-	{  975000,  975000,  975000,  975000,  950000,  950000,	 950000,  925000,  925000,  925000,  925000,  887500 },
-	{  975000,  975000,  975000,  975000,  937500,  937500,	 937500,  925000,  925000,  925000,  925000,  887500 },
-};
-
 static void set_clkdiv(unsigned int div_index)
 {
 	unsigned int tmp;
@@ -597,12 +578,15 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 		if (exynos4x12_volt_table[new_index] >= 950000 &&
 				need_dynamic_ema)
 				__raw_writel(0x101, EXYNOS4_EMA_CONF);
-
+#ifndef CONFIG_ABB_CONTROL
 		if ((samsung_rev() >= EXYNOS4412_REV_2_0)
 			&& (exynos_result_of_asv > 2)
-			&& (old_index > L20) && (new_index <= L20)) {
+			&& (old_index > L14) && (new_index <= L14)) {
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_130V);
 		}
+#else
+		abb_target(ABB_ARM, exynos4x12_freq_table[new_index].frequency);
+#endif
 
 		if (!exynos4x12_pms_change(old_index, new_index)) {
 			/* 1. Change the system clock divider values */
@@ -636,24 +620,31 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 			/* 2. Change the system clock divider values */
 			set_clkdiv(new_index);
 		}
+#ifndef CONFIG_ABB_CONTROL
 		if ((samsung_rev() >= EXYNOS4412_REV_2_0)
 			&& (exynos_result_of_asv > 2)
-			&& (old_index <= L20) && (new_index > L20)) {
+			&& (old_index <= L14) && (new_index > L14)) {
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_100V);
 		}
+#else
+		abb_target(ABB_ARM, exynos4x12_freq_table[new_index].frequency);
+#endif
 		if (exynos4x12_volt_table[new_index] < 950000 &&
 				need_dynamic_ema)
 			__raw_writel(0x404, EXYNOS4_EMA_CONF);
 	}
 
+#ifndef CONFIG_ABB_CONTROL
 	/* ABB value is changed in below case */
 	if (soc_is_exynos4412() && (exynos_result_of_asv > 3)
 		&& (samsung_rev() < EXYNOS4412_REV_2_0)) {
-		if (new_index == L18)
+		if (new_index == L20)
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_100V);
 		else
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_130V);
 	}
+#endif
+
 }
 
 /* Get maximum cpufreq index of chip */
