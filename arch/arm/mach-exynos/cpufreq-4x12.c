@@ -142,7 +142,7 @@ static unsigned int clkdiv_cpu0_4412[CPUFREQ_LEVEL_END][8] = {
 	{ 0, 4, 7, 0, 7, 1, 7, 0 },
 	
 	/* ARM L3: 1920Mhz */
-	{ 0, 3, 7, 0, 6, 1, 7, 0 },
+	{ 0, 4, 7, 0, 6, 1, 7, 0 },
 
 	/* ARM L4: 1800Mhz */
 	{ 0, 3, 7, 0, 6, 1, 7, 0 },
@@ -403,7 +403,7 @@ static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
  * ASV group voltage table
  */
 
-#define NO_ABB_LIMIT	L20
+#define NO_ABB_LIMIT	L17
 
 static const unsigned int asv_voltage_4212[CPUFREQ_LEVEL_END][12] = {
 	/*   ASV0,    ASV1,    ASV2,    ASV3,	 ASV4,	  ASV5,	   ASV6,    ASV7,    ASV8,    ASV9,   ASV10,   ASV11 */
@@ -691,16 +691,10 @@ static void __init set_volt_table(void)
 					exynos4x12_volt_table[i] =
 						asv_voltage_step_12_5_rev2[i][exynos_result_of_asv];
 			} else {
-				if (exynos_armclk_max == 1000000) {
-					for (i = 0 ; i < CPUFREQ_LEVEL_END ; i++)
-						exynos4x12_volt_table[i] =
-							asv_voltage_step_1ghz[i][exynos_result_of_asv];
-				} else {
 					for (i = 0 ; i < CPUFREQ_LEVEL_END ; i++)
 						exynos4x12_volt_table[i] =
 							asv_voltage_step_12_5[i][exynos_result_of_asv];
 				}
-			}
 		} else {
 			pr_err("%s: Can't find SoC type \n", __func__);
 		}
@@ -843,7 +837,8 @@ int exynos4x12_cpufreq_init(struct exynos_dvfs_info *info)
 	info->mpll_freq_khz = rate;
 #ifdef CONFIG_SLP
 	/* S-Boot at 20120406 uses L8 at bootup */
-	info->pm_lock_idx = L14;
+
+	info->pm_lock_idx = L6;
 
 	/*
 	 * However, the bootup frequency might get changed anytime.
@@ -860,7 +855,7 @@ int exynos4x12_cpufreq_init(struct exynos_dvfs_info *info)
 	pr_info("Bootup CPU Frequency = [%d] %dMHz\n", info->pm_lock_idx,
 		rate / 1000);
 #else
-	info->pm_lock_idx = L11;
+	info->pm_lock_idx = L12;
 #endif
 	/*
 	 * ARM clock source will be changed APLL to MPLL temporary
@@ -870,9 +865,9 @@ int exynos4x12_cpufreq_init(struct exynos_dvfs_info *info)
 	 * So, pll_safe_idx set to value based on MPLL clock.(800MHz or 880MHz)
 	 */
 	if (samsung_rev() >= EXYNOS4412_REV_2_0)
-		info->pll_safe_idx = L10;
+		info->pll_safe_idx = L13;
 	else
-		info->pll_safe_idx = L11;
+		info->pll_safe_idx = L14;
 
 	info->max_support_idx = max_support_idx;
 	info->min_support_idx = min_support_idx;
