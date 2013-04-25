@@ -224,12 +224,16 @@ static struct dbs_tuners {
 
 /*
  * Table modified for use with Samsung I9300 by ZaneZam November 2012
- * zzmoove v0.3 - table modified to reach overclocking frequencies up to 1600mhz
+ * zzmoove v0.3
  */
-static int mn_freqs[15][3]={
-    {1600000,1600000,1500000},
-    {1500000,1500000,1400000},
-    {1400000,1400000,1300000},
+static int mn_freqs[20][3]={
+	{2000000,2000000,1920000},
+	{1920000,2000000,1800000},
+	{1800000,1920000,1704000},
+    {1704000,1800000,1600000},
+    {1600000,1704000,1500000},
+    {1500000,1600000,1400000},
+    {1400000,1500000,1300000},
     {1300000,1400000,1200000},
     {1200000,1300000,1100000},
     {1100000,1200000,1000000},
@@ -237,20 +241,25 @@ static int mn_freqs[15][3]={
     { 900000,1000000, 800000},
     { 800000, 900000, 700000},
     { 700000, 800000, 600000},
-    { 600000, 700000, 400000},
-    { 500000, 600000, 300000},
-    { 400000, 500000, 200000},
+    { 600000, 700000, 500000},
+    { 500000, 600000, 400000},
+    { 400000, 500000, 300000},
     { 300000, 400000, 200000},
-    { 200000, 300000, 200000}
+    { 200000, 300000, 100000},
+	{ 100000, 200000, 100000}
 };
 
 /*
  * Table modified for use with Samsung I9300 by ZaneZam November 2012
- * zzmoove v0.3 - table modified to reach overclocking frequencies up to 1600mhz
+ * zzmoove v0.3
  */
-static int mn_freqs_power[15][3]={
-    {1600000,1600000,1500000},
-    {1500000,1600000,1400000},
+static int mn_freqs_power[20][3]={
+	{2000000,2000000,1920000},
+	{1920000,2000000,1800000},
+	{1800000,1920000,1704000},
+    {1704000,1800000,1600000},
+    {1600000,1800000,1500000},
+    {1500000,1704000,1400000},
     {1400000,1600000,1300000},
     {1300000,1500000,1200000},
     {1200000,1400000,1100000},
@@ -263,14 +272,15 @@ static int mn_freqs_power[15][3]={
     { 500000, 700000, 400000},
     { 400000, 600000, 300000},
     { 300000, 500000, 200000},
-    { 200000, 400000, 200000}
+    { 200000, 400000, 100000},
+	{ 100000, 300000, 100000}
 };
 
 static int mn_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned int load) {
     int i=0;
     if (load < dbs_tuners_ins.smooth_up)
     {
-        for(i = 0; i < 15; i++)
+        for(i = 0; i < 20; i++)
         {
             if(curfreq == mn_freqs[i][MN_FREQ])
                 return mn_freqs[i][updown]; // updown 1|2
@@ -278,7 +288,7 @@ static int mn_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
     }
     else
     {
-        for(i = 0; i < 15; i++)
+        for(i = 0; i < 20; i++)
         {
             if(curfreq == mn_freqs_power[i][MN_FREQ])
                 return mn_freqs_power[i][updown]; // updown 1|2
