@@ -225,8 +225,10 @@ static int exynos4x12_asv_store_result(struct samsung_asv *asv_info)
 	 * If ASV result value is lower than default value
 	 * Fix with default value.
 	 */
+	if (samsung_rev() < EXYNOS4412_REV_2_0) {
 	if (exynos_result_of_asv < DEFAULT_ASV_GROUP)
 		exynos_result_of_asv = DEFAULT_ASV_GROUP;
+	}
 
 #ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
 	pr_info("EXYNOS4X12(NO SG): IDS : %d HPM : %d RESULT : %d\n",
@@ -305,6 +307,17 @@ int exynos4x12_asv_init(struct samsung_asv *asv_info)
 		pr_info("EXYNOS4X12(SG):  ORIG : %d MOD : %d RESULT : %d\n",
 			exynos_orig_sp, exynos_mod_sp, exynos_result_of_asv);
 
+		/*
+		 * If fused speed group is 1 and ids value is lower than 3,
+		 * voltage value should be set to asv 0 group.
+		 */
+		if (samsung_rev() >= EXYNOS4412_REV_2_0) {
+			if (exynos_result_of_asv == 1) {
+				exynos4x12_get_ids(asv_info);
+				if ((asv_info->ids_result <= exynos4x12_limit_rev2[0].ids_limit))
+					exynos_result_of_asv = 0;
+			}
+		}
 		/* set Special flag into exynos_special_flag */
 		exynos_special_flag = (tmp >> LOCKING_OFFSET) & LOCKING_MASK;
 
