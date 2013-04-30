@@ -73,6 +73,8 @@ static gestures_step_count_t gestures_step_count = { { 0 } };
 static bool gestures_detected[MAX_GESTURES] = { false };
 static bool has_gestures = false;
 
+static bool ignore_gestures = false;
+
 struct gesture_finger {
 	int finger_order;
 	int current_step;
@@ -1032,7 +1034,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			if (info->panel == 'M') {
 				if (info->finger_state[id] != 0) {
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-					if (track_gestures) {
+					if (track_gestures && !ignore_gestures) {
 						// When a finger is released and its movement was not completed yet, reset it
 						spin_lock_irqsave(&gestures_lock, flags);
 						for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
@@ -1104,7 +1106,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 
 		if (info->panel == 'M') {
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-			if (track_gestures) {
+			if (track_gestures && !ignore_gestures) {
 				// Finger being moved, check the gesture steps progress
 				spin_lock_irqsave(&gestures_lock, flags);
 				for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
@@ -1219,7 +1221,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 		} else {
 			
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-			if (track_gestures) {
+			if (track_gestures && !ignore_gestures) {
 				// Finger being moved, check the gesture steps progress
 				spin_lock_irqsave(&gestures_lock, flags);
 				for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
@@ -1320,7 +1322,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	input_sync(info->input_dev);
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (track_gestures) {
+	if (track_gestures && !ignore_gestures) {
 		// Check completed gestures or reset all progress if all fingers released
 		spin_lock_irqsave(&gestures_lock, flags);
 		for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
@@ -4321,10 +4323,12 @@ static ssize_t gestures_enabled_store(struct device *dev,
 {
 	unsigned int data = -1;
 	
-	if (!strncmp(buf, "on", 2)) {
+	if (!strncmp(buf, "1", 1)) {
 		data = 1;
-	} else if (!strncmp(buf, "off", 3)) {
+		ignore_gestures = false;
+	} else if (!strncmp(buf, "0", 1)) {
 		data = 0;
+		ignore_gestures = true;
 	} else if (sscanf(buf, "%u\n", &data) != 1) {
 		return -EINVAL;
 	}
