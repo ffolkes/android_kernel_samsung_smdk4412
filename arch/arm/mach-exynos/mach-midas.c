@@ -2145,8 +2145,10 @@ static struct cputopo_power default_cpu_power = {
 	.table = table_default_power, 
 }; 
  
-static unsigned int table_exynos4412_power[20] = { 
-	/* Power save mode CA9 MP */ 
+static unsigned int table_exynos4412_power[23] = { 
+	/* Power save mode CA9 MP */
+	8192, /*   50 MHz */
+	8192, /*  100 MHz */
 	8192, /*  200 MHz */
 	8192, /*  300 MHz */
 	8192, /*  400 MHz */
@@ -2483,7 +2485,7 @@ struct s5p_platform_tmu midas_tmu_data __initdata = {
 		.start_tc = 10,
 	},
 	.cpufreq = {
-		.limit_1st_throttle  = 800000, /* 800MHz in KHz order */
+		.limit_1st_throttle  = 1000000, /* 800MHz in KHz order */
 		.limit_2nd_throttle  = 200000, /* 200MHz in KHz order */
 	},
 	.temp_compensate = {
