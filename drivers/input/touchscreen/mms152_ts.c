@@ -897,11 +897,6 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			.buf = buf,
 		},
 	};
-	if (info->panel == 'M')
-		event_sz = EVENT_SZ_PALM;
-	else
-		event_sz = EVENT_SZ_OLD;
-	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	int gesture_no, finger_no;
 	int finger_pos;
@@ -913,6 +908,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	
 	track_gestures = info->enabled;
 #endif
+	if (info->panel == 'M')
+		event_sz = EVENT_SZ_PALM;
+	else
+		event_sz = EVENT_SZ_OLD;
 
 	sz = i2c_smbus_read_byte_data(client, MMS_INPUT_EVENT_PKT_SZ);
 	if (sz < 0) {
@@ -1072,14 +1071,81 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			} else {
 				if (info->finger_state[id] != 0) {
 					info->finger_state[id] = 0;
+					
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+					if (track_gestures && !ignore_gestures) {
+						// When a finger is released and its movement was not completed yet, reset it
+						spin_lock_irqsave(&gestures_lock, flags);
+						for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
+							if (gestures_detected[gesture_no])
+								// Ignore gestures already reported
+								continue;
+							
+							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+									// Found a match for ongoing movement
+									// Reset the finger progress if path not completed
+									if (gesture_fingers[gesture_no][finger_no].current_step <
+										gestures_step_count[gesture_no][finger_no]) {
+										gesture_fingers[gesture_no][finger_no].finger_order = -1;
+										gesture_fingers[gesture_no][finger_no].current_step = -1;
+									}
+									break;
+								}
+							}
+						}
+						spin_unlock_irqrestore(&gestures_lock, flags);
+					}
+#endif
+
+					// report state to cypress-touchkey for backlight timeout
+					touchscreen_state_report(0);
+					
+#ifdef CONFIG_LCD_FREQ_SWITCH
 					dev_notice(&client->dev,
-						"R [%2d]", id);
+							   "R(%d) [%2d]",
+							   (info->tsp_lcdfreq_flag ? 40 : 60),
+							   id);
+#else
+					dev_notice(&client->dev,
+							   "R [%2d]", id);
+#endif
 				}
 			}
 #else
 			if (info->panel == 'M') {
 				if (info->finger_state[id] != 0) {
 					info->finger_state[id] = 0;
+					
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+					if (track_gestures && !ignore_gestures) {
+						// When a finger is released and its movement was not completed yet, reset it
+						spin_lock_irqsave(&gestures_lock, flags);
+						for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
+							if (gestures_detected[gesture_no])
+								// Ignore gestures already reported
+								continue;
+							
+							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+									// Found a match for ongoing movement
+									// Reset the finger progress if path not completed
+									if (gesture_fingers[gesture_no][finger_no].current_step <
+										gestures_step_count[gesture_no][finger_no]) {
+										gesture_fingers[gesture_no][finger_no].finger_order = -1;
+										gesture_fingers[gesture_no][finger_no].current_step = -1;
+									}
+									break;
+								}
+							}
+						}
+						spin_unlock_irqrestore(&gestures_lock, flags);
+					}
+#endif
+
+					// report state to cypress-touchkey for backlight timeout
+					touchscreen_state_report(0);
+
 #ifdef CONFIG_LCD_FREQ_SWITCH
 					dev_notice(&client->dev,
 						"R(%c)(%d) [%2d],([%4d],[%3d])",
@@ -1095,6 +1161,36 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			} else {
 				if (info->finger_state[id] != 0) {
 					info->finger_state[id] = 0;
+					
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+					if (track_gestures && !ignore_gestures) {
+						// When a finger is released and its movement was not completed yet, reset it
+						spin_lock_irqsave(&gestures_lock, flags);
+						for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
+							if (gestures_detected[gesture_no])
+								// Ignore gestures already reported
+								continue;
+							
+							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+									// Found a match for ongoing movement
+									// Reset the finger progress if path not completed
+									if (gesture_fingers[gesture_no][finger_no].current_step <
+										gestures_step_count[gesture_no][finger_no]) {
+										gesture_fingers[gesture_no][finger_no].finger_order = -1;
+										gesture_fingers[gesture_no][finger_no].current_step = -1;
+									}
+									break;
+								}
+							}
+						}
+						spin_unlock_irqrestore(&gestures_lock, flags);
+					}
+#endif
+
+					// report state to cypress-touchkey for backlight timeout
+					touchscreen_state_report(0);
+
 					dev_notice(&client->dev,
 						"R [%2d],([%4d],[%3d]),S:%d W:%d",
 						id, x, y, tmp[4], tmp[5]);
@@ -1315,7 +1411,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 		}
 		touch_is_pressed++;
 #ifdef CONFIG_TOUCH_WAKE
-  touch_press();
+		touch_press();
 #endif
 	}
 	
