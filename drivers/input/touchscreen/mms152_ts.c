@@ -1044,7 +1044,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								continue;
 							
 							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 									// Found a match for ongoing movement
 									// Reset the finger progress if path not completed
 									if (gesture_fingers[gesture_no][finger_no].current_step <
@@ -1088,7 +1088,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								continue;
 							
 							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 									// Found a match for ongoing movement
 									// Reset the finger progress if path not completed
 									if (gesture_fingers[gesture_no][finger_no].current_step <
@@ -1133,7 +1133,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								continue;
 							
 							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 									// Found a match for ongoing movement
 									// Reset the finger progress if path not completed
 									if (gesture_fingers[gesture_no][finger_no].current_step <
@@ -1178,7 +1178,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								continue;
 							
 							for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-								if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+								if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 									// Found a match for ongoing movement
 									// Reset the finger progress if path not completed
 									if (gesture_fingers[gesture_no][finger_no].current_step <
@@ -1219,7 +1219,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					// Find which finger definition this touch maps to
 					finger_pos = -1;
 					for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-						if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+						if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 							// Found a match for ongoing movement
 							finger_pos = finger_no;
 							break;
@@ -1241,10 +1241,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 									// This finger definition is still pending
 									// and this touch matches the area
 									finger_pos = finger_no;
-									gesture_fingers[gesture_no][finger_pos].finger_order = i;
+									gesture_fingers[gesture_no][finger_pos].finger_order = id;
 									gesture_fingers[gesture_no][finger_pos].current_step = 1;
 									printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
-										   gesture_no, finger_pos, i);
+										   gesture_no, finger_pos, id);
 									break;
 								}
 							}
@@ -1261,8 +1261,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								y >= point->min_y &&
 								y <= point->max_y) {
 								// Next zone reached, keep testing
-								printk("[TSP] Gesture %d, finger %d - Moved through step, next is %d\n",
-									   gesture_no, finger_pos, step+1);
+								printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
+									   gesture_no, finger_pos, id, step+1);
 								gesture_fingers[gesture_no][finger_pos].current_step++;
 							} else {
 								break;
@@ -1342,7 +1342,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					// Find which finger definition this touch maps to
 					finger_pos = -1;
 					for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
-						if (gesture_fingers[gesture_no][finger_no].finger_order == i) {
+						if (gesture_fingers[gesture_no][finger_no].finger_order == id) {
 							// Found a match for ongoing movement
 							finger_pos = finger_no;
 							break;
@@ -1364,10 +1364,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 									// This finger definition is still pending
 									// and this touch matches the area
 									finger_pos = finger_no;
-									gesture_fingers[gesture_no][finger_pos].finger_order = i;
+									gesture_fingers[gesture_no][finger_pos].finger_order = id;
 									gesture_fingers[gesture_no][finger_pos].current_step = 1;
 									printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
-										   gesture_no, finger_pos, i);
+										   gesture_no, finger_pos, id);
 									break;
 								}
 							}
@@ -1384,8 +1384,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								y >= point->min_y &&
 								y <= point->max_y) {
 								// Next zone reached, keep testing
-								printk("[TSP] Gesture %d, finger %d - Moved through step, next is %d\n",
-									   gesture_no, finger_pos, step+1);
+								printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
+									   gesture_no, finger_pos, id, step+1);
 								gesture_fingers[gesture_no][finger_pos].current_step++;
 							} else {
 								break;
