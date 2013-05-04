@@ -231,6 +231,12 @@ static ssize_t touchwake_ignore_once_write(struct device * dev, struct device_at
 	return size;
 }
 
+int get_touchoff_delay()
+{   
+	return touchoff_delay;
+}
+EXPORT_SYMBOL(get_touchoff_delay);
+
 static ssize_t touchwake_version(struct device * dev, struct device_attribute * attr, char * buf)
 {
 	return sprintf(buf, "%u\n", TOUCHWAKE_VERSION);
