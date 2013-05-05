@@ -39,6 +39,10 @@
 #include "issp_extern.h"
 #include "cypress-touchkey.h"
 
+#ifdef CONFIG_TOUCH_WAKE
+#include <linux/touch_wake.h>
+#endif
+
 #ifdef CONFIG_TOUCHSCREEN_ATMEL_MXT540E
 #include <linux/i2c/mxt540e.h>
 #else
@@ -95,6 +99,10 @@ static u8 idac3;
 static u8 touchkey_threshold;
 
 static int touchkey_autocalibration(struct touchkey_i2c *tkey_i2c);
+#endif
+
+#ifdef CONFIG_TOUCH_WAKE
+static struct touchkey_i2c *touchwakedevdata;
 #endif
 
 #if defined(CONFIG_TARGET_LOCALE_KOR)
@@ -740,6 +748,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_report_key(tkey_i2c->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
+		
+#ifdef CONFIG_TOUCH_WAKE
+		touch_press();
+#endif
+		
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_type], pressed);
@@ -853,6 +866,10 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_report_key(touchkey_driver->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(touchkey_driver->input_dev);
+		
+#ifdef CONFIG_TOUCH_WAKE
+		touch_press();
+#endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */
 	}
@@ -881,7 +898,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 static int sec_touchkey_early_suspend(struct early_suspend *h)
 {
 	struct touchkey_i2c *tkey_i2c =
-		container_of(h, struct touchkey_i2c, early_suspend);
+	container_of(h, struct touchkey_i2c, early_suspend);
+	
+#ifdef CONFIG_TOUCH_WAKE
+	tkey_i2c->pdata->led_power_on(0);
+#else
 	int ret;
 	int i;
 
@@ -913,14 +934,20 @@ static int sec_touchkey_early_suspend(struct early_suspend *h)
 
 	/* disable ldo11 */
 	tkey_i2c->pdata->power_on(0);
+#endif
 
 	return 0;
 }
 
 static int sec_touchkey_late_resume(struct early_suspend *h)
 {
+
 	struct touchkey_i2c *tkey_i2c =
-		container_of(h, struct touchkey_i2c, early_suspend);
+	container_of(h, struct touchkey_i2c, early_suspend);
+	
+#ifdef CONFIG_TOUCH_WAKE
+	tkey_i2c->pdata->led_power_on(1);
+#else
 #ifdef TEST_JIG_MODE
 	unsigned char get_touch = 0x40;
 #endif
@@ -956,9 +983,94 @@ static int sec_touchkey_late_resume(struct early_suspend *h)
 #endif
 
 	enable_irq(tkey_i2c->irq);
+#endif
 
 	return 0;
 }
+#endif
+	
+#ifdef CONFIG_TOUCH_WAKE
+static void cypress_touchwake_disable(void)
+{
+	int ret;
+	int i;
+
+	printk(KERN_DEBUG "[Touchkey] touchwake_disable\n");
+
+	disable_irq(touchwakedevdata->irq);
+	ret = cancel_work_sync(&touchwakedevdata->update_work);
+		
+	if (ret) {
+		printk(KERN_DEBUG "[Touchkey] enable_irq ret=%d\n", ret);
+		enable_irq(touchwakedevdata->irq);
+	}
+	
+	/* release keys */
+	for (i = 1; i < touchkey_count; ++i) {
+		input_report_key(touchwakedevdata->input_dev,
+						 touchkey_keycode[i], 0);
+	}
+	input_sync(touchwakedevdata->input_dev);
+		
+	touchkey_enable = 0;
+	set_touchkey_debug('S');
+	printk(KERN_DEBUG "[TouchKey] sec_touchkey_early_suspend\n");
+	if (touchkey_enable < 0) {
+		printk(KERN_DEBUG "[TouchKey] ---%s---touchkey_enable: %d\n",
+			   __func__, touchkey_enable);
+		return;
+	}
+	
+	/* disable ldo11 */
+	touchwakedevdata->pdata->power_on(0);
+	
+	return;
+	
+}
+	
+static void cypress_touchwake_enable(void)
+{
+
+	printk(KERN_DEBUG "[Touchkey] touchwake_enable\n");
+	
+	set_touchkey_debug('R');
+	printk(KERN_DEBUG "[TouchKey] sec_touchkey_late_resume\n");
+	
+	/* enable ldo11 */
+	touchwakedevdata->pdata->power_on(1);
+	
+	if (touchkey_enable < 0) {
+		printk(KERN_DEBUG "[TouchKey] ---%s---touchkey_enable: %d\n",
+			   __func__, touchkey_enable);
+		return;
+	}
+	msleep(50);
+	touchwakedevdata->pdata->led_power_on(1);
+	
+	touchkey_enable = 1;
+	
+#if defined(TK_HAS_AUTOCAL)
+	touchkey_autocalibration(touchwakedevdata);
+#endif
+	
+	if (touchled_cmd_reversed) {
+		touchled_cmd_reversed = 0;
+		i2c_touchkey_write(touchwakedevdata->client,
+						   (u8 *) &touchkey_led_status, 1);
+		printk(KERN_DEBUG "[Touchkey] LED returned on\n");
+	}
+	
+	enable_irq(touchwakedevdata->irq);
+
+	return;
+	
+}
+	
+static struct touchwake_implementation cypress_touchwake = 
+    {
+		.enable = cypress_touchwake_enable,
+		.disable = cypress_touchwake_disable,
+    };
 #endif
 
 static int touchkey_i2c_check(struct touchkey_i2c *tkey_i2c)
@@ -1806,6 +1918,11 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 	tkey_i2c->early_suspend.resume =
 		(void *)sec_touchkey_late_resume;
 	register_early_suspend(&tkey_i2c->early_suspend);
+#endif
+	
+#ifdef CONFIG_TOUCH_WAKE
+	touchwakedevdata = tkey_i2c;
+	register_touchwake_implementation(&cypress_touchwake);
 #endif
 
 #if defined(TK_HAS_AUTOCAL)
