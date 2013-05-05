@@ -34,6 +34,7 @@ static void press_powerkey(struct work_struct * presspower_work);
 static DECLARE_WORK(presspower_work, press_powerkey);
 static DEFINE_MUTEX(lock);
 
+static struct touchwake_implementation * touchwake_imp = NULL;
 static struct input_dev * powerkey_device;
 static struct wake_lock touchwake_wake_lock;
 static struct timeval last_powerkeypress;
@@ -45,23 +46,37 @@ static struct timeval last_powerkeypress;
 
 static void touchwake_disable_touch(void)
 {
-	pr_info("disable touch controls\n");
-	touchscreen_disable();
+	pr_info("[Touchwake] disable touch controls\n");
 	touch_disabled = true;
+	
+	touchscreen_disable();
+
+	if (touchwake_imp)
+	{
+	    touchwake_imp->disable();
+	}
 
 	return;
 }
 
 static void touchwake_enable_touch(void)
 {
-	pr_info("enable touch controls\n");
-	touchscreen_enable();
+	pr_info("[Touchwake] enable touch controls\n");
 	touch_disabled = false;
+	
+	touchscreen_enable();
+
+	if (touchwake_imp)
+	{
+	    touchwake_imp->enable();
+	}
+	
 	return;
 }
 
 static void touchwake_early_suspend(struct early_suspend * h)
 {
+	device_suspended = true;
 	if (touchwake_enabled) {
 		if (touchoff_delay > 0)	{
 			if (timed_out) {
@@ -78,13 +93,13 @@ static void touchwake_early_suspend(struct early_suspend * h)
 		touchwake_disable_touch();
 	}
 
-	device_suspended = true;
-
 	return;
 }
 
 static void touchwake_late_resume(struct early_suspend * h)
 {
+	// important that device_suspended gets set as soon as possible. 
+	device_suspended = false;
 	cancel_delayed_work(&touchoff_work);
 	flush_scheduled_work();
 
@@ -94,7 +109,6 @@ static void touchwake_late_resume(struct early_suspend * h)
 		touchwake_enable_touch();
 
 	timed_out = true;
-	device_suspended = false;
 
 	return;
 }
@@ -249,9 +263,14 @@ void powerkey_released(void)
 EXPORT_SYMBOL(powerkey_released);
 
 void touch_press(void)
-{   
-	if (device_suspended && touchwake_enabled && !prox_near && mutex_trylock(&lock))
+{
+		
+	if (device_suspended && touchwake_enabled && !prox_near && mutex_trylock(&lock)){
+		
+		printk("[Touchwake] valid touch_press() received\n");
 		schedule_work(&presspower_work);
+		
+	}
 
 	return;
 }
@@ -271,6 +290,13 @@ bool device_is_suspended(void)
 }
 EXPORT_SYMBOL(device_is_suspended);
 
+void register_touchwake_implementation(struct touchwake_implementation * imp)
+{
+    touchwake_imp = imp;
+
+    return;
+}
+EXPORT_SYMBOL(register_touchwake_implementation);
 static int __init touchwake_control_init(void)
 {
 	int ret;
