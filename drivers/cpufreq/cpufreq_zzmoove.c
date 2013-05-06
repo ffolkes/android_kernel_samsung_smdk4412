@@ -135,6 +135,8 @@ static unsigned int smooth_up_asleep; // ZZ: smooth scaling on early suspend
 
 #define DEF_HOTPLUG_SLEEP			(0)  // ZZ: default for tuneable hotplug_sleep
 
+#define DEF_GRAD_UP_THRESHOLD          (50)
+
 static void do_dbs_timer(struct work_struct *work);
 
 struct cpu_dbs_info_s {
@@ -147,6 +149,7 @@ struct cpu_dbs_info_s {
 	unsigned int requested_freq;
 	int cpu;
 	unsigned int enable:1;
+	unsigned int prev_load_freq;
 	/*
 	 * percpu mutex that serializes governor limit change with
 	 * do_dbs_timer invocation. We do not want do_dbs_timer to run
@@ -182,6 +185,8 @@ static struct dbs_tuners {
 	unsigned int smooth_up;
 	unsigned int smooth_up_sleep; // ZZ: added tuneable smooth_up_sleep for early suspend
 	unsigned int hotplug_sleep; // ZZ: added tuneable hotplug_sleep for early suspend
+  	unsigned int grad_up_threshold;
+  	unsigned int early_demand;
 
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
@@ -201,6 +206,8 @@ static struct dbs_tuners {
 	.smooth_up = DEF_SMOOTH_UP,
 	.smooth_up_sleep = DEF_SMOOTH_UP_SLEEP, // ZZ: set default value for new tuneable
 	.hotplug_sleep = DEF_HOTPLUG_SLEEP, // ZZ: set default value for new tuneable
+  	.grad_up_threshold = DEF_GRAD_UP_THRESHOLD,
+  	.early_demand = 0,
 };
 
 /**
@@ -223,13 +230,16 @@ static struct dbs_tuners {
 #define MN_DOWN 2
 
 /*
- * Table modified for use with Samsung I9300 by ZaneZam November 2012
- * zzmoove v0.3
+ * Table modified for use with Samsung I9300 and Note2 by ZaneZam November 2012
+ * zzmoove v0.3 - table modified to reach overclocking frequencies up to 1600mhz
+
+ * Table modified for use with Samsung I9300 and Note2 by DerTeufel1980 april 2013
+ * frequencies up to 2000mhz. ffolkes: And down to 50mhz.
  */
-static int mn_freqs[20][3]={
-	{2000000,2000000,1920000},
-	{1920000,2000000,1800000},
-	{1800000,1920000,1704000},
+static int mn_freqs[21][3]={
+    {2000000,2000000,1920000},
+    {1920000,2000000,1800000},
+    {1800000,1920000,1704000},
     {1704000,1800000,1600000},
     {1600000,1704000,1500000},
     {1500000,1600000,1400000},
@@ -241,23 +251,27 @@ static int mn_freqs[20][3]={
     { 900000,1000000, 800000},
     { 800000, 900000, 700000},
     { 700000, 800000, 600000},
-    { 600000, 700000, 500000},
-    { 500000, 600000, 400000},
-    { 400000, 500000, 300000},
+    { 600000, 700000, 400000},
+    { 500000, 600000, 300000},
+    { 400000, 500000, 200000},
     { 300000, 400000, 200000},
-    { 200000, 300000, 100000},
-	{ 100000, 200000, 100000}
+    { 200000, 300000, 200000},
+    { 100000, 200000, 50000},
+    { 50000, 100000, 50000}
 };
 
 /*
- * Table modified for use with Samsung I9300 by ZaneZam November 2012
- * zzmoove v0.3
+ * Table modified for use with Samsung I9300 and Note2 by ZaneZam November 2012
+ * zzmoove v0.3 - table modified to reach overclocking frequencies up to 1600mhz
+
+ * Table modified for use with Samsung I9300 and Note2 by DerTeufel1980 april 2013
+ * frequencies up to 2000mhz. ffolkes: And down to 50mhz.
  */
-static int mn_freqs_power[20][3]={
-	{2000000,2000000,1920000},
-	{1920000,2000000,1800000},
-	{1800000,1920000,1704000},
-    {1704000,1800000,1600000},
+static int mn_freqs_power[21][3]={
+    {2000000,2000000,1920000},
+    {1920000,2000000,1800000},
+    {1800000,2000000,1704000},
+    {1704000,1920000,1600000},
     {1600000,1800000,1500000},
     {1500000,1704000,1400000},
     {1400000,1600000,1300000},
@@ -273,25 +287,29 @@ static int mn_freqs_power[20][3]={
     { 400000, 600000, 300000},
     { 300000, 500000, 200000},
     { 200000, 400000, 100000},
-	{ 100000, 300000, 100000}
+    { 100000, 400000, 50000},
+    { 50000, 400000, 50000}
 };
 
 static int mn_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned int load) {
-    int i=0;
+    int i=0,max_level = 21;
+
     if (load < dbs_tuners_ins.smooth_up)
     {
-        for(i = 0; i < 20; i++)
+        for(i = 0; i < max_level; i++)
         {
-            if(curfreq == mn_freqs[i][MN_FREQ])
-                return mn_freqs[i][updown]; // updown 1|2
+ 	    if(curfreq == mn_freqs[i][MN_FREQ]) {
+		 return mn_freqs[i][updown];
+	    }
         }
     }
     else
     {
-        for(i = 0; i < 20; i++)
+        for(i = 0; i < max_level; i++)
         {
-            if(curfreq == mn_freqs_power[i][MN_FREQ])
-                return mn_freqs_power[i][updown]; // updown 1|2
+            if(curfreq == mn_freqs_power[i][MN_FREQ]) {
+		 return mn_freqs_power[i][updown]; // updown 1|2
+	    }
         }
     }
     return (curfreq); // not found
@@ -396,6 +414,8 @@ show_one(freq_step, freq_step);
 show_one(smooth_up, smooth_up);
 show_one(smooth_up_sleep, smooth_up_sleep); // ZZ: added smooth_up_sleep tuneable for early suspend
 show_one(hotplug_sleep, hotplug_sleep); // ZZ: added hotplug_sleep tuneable for early suspend
+show_one(grad_up_threshold, grad_up_threshold);
+show_one(early_demand, early_demand);
 
 static ssize_t store_sampling_down_factor(struct kobject *a,
 					  struct attribute *b,
@@ -702,6 +722,35 @@ static ssize_t store_hotplug_sleep(struct kobject *a,
 	return count;
 }
 
+static ssize_t store_grad_up_threshold(struct kobject *a,
+      struct attribute *b, const char *buf, size_t count)
+{
+  unsigned int input;
+  int ret;
+  ret = sscanf(buf, "%u", &input);
+
+  if (ret != 1 || input > 100 ||
+      input < 11) {
+    return -EINVAL;
+  }
+
+  dbs_tuners_ins.grad_up_threshold = input;
+  return count;
+}
+
+static ssize_t store_early_demand(struct kobject *a, struct attribute *b,
+          const char *buf, size_t count)
+{
+  unsigned int input;
+  int ret;
+
+  ret = sscanf(buf, "%u", &input);
+  if (ret != 1)
+    return -EINVAL;
+  dbs_tuners_ins.early_demand = !!input;
+  return count;
+}
+
 define_one_global_rw(sampling_rate);
 define_one_global_rw(sampling_rate_sleep_multiplier); // ZZ: added tuneable
 define_one_global_rw(sampling_down_factor);
@@ -720,6 +769,8 @@ define_one_global_rw(freq_step);
 define_one_global_rw(smooth_up);
 define_one_global_rw(smooth_up_sleep); // ZZ: added tuneable
 define_one_global_rw(hotplug_sleep); // ZZ: added tuneable
+define_one_global_rw(grad_up_threshold);
+define_one_global_rw(early_demand);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -741,6 +792,8 @@ static struct attribute *dbs_attributes[] = {
 	&up_threshold.attr,
 	&up_threshold_sleep.attr, // ZZ: added tuneable
 	&hotplug_sleep.attr, // ZZ: added tuneable
+  	&grad_up_threshold.attr,
+  	&early_demand.attr,
 	NULL
 };
 
@@ -753,8 +806,8 @@ static struct attribute_group dbs_attr_group = {
 
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 {
-	unsigned int load = 0;
 	unsigned int max_load = 0;
+	int boost_freq = 0;
 
 	struct cpufreq_policy *policy;
 	unsigned int j;
@@ -810,10 +863,22 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (unlikely(!wall_time || wall_time < idle_time))
 			continue;
 
-		load = 100 * (wall_time - idle_time) / wall_time;
+		max_load = 100 * (wall_time - idle_time) / wall_time;
 
-		if (load > max_load)
-			max_load = load;
+    	/*
+     	* Calculate the gradient of load_freq. If it is too steep we assume
+     	* that the load will go over up_threshold in next iteration(s) and
+     	* we increase the frequency immediately
+     	*/
+    	    if (dbs_tuners_ins.early_demand) {
+            	if (max_load > this_dbs_info->prev_load_freq &&
+            	(max_load - this_dbs_info->prev_load_freq >
+            	dbs_tuners_ins.grad_up_threshold * policy->cur))
+          	   boost_freq = 1;
+
+      	    this_dbs_info->prev_load_freq = max_load;
+    	    }
+
 	}
 
 	/*
@@ -862,14 +927,17 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 
 	/* Check for frequency increase */
-	if (max_load > dbs_tuners_ins.up_threshold) {
+	if (max_load > dbs_tuners_ins.up_threshold || boost_freq) {
 		this_dbs_info->down_skip = 0;
 
 		/* if we are already at full speed then break out early */
-		if (this_dbs_info->requested_freq == policy->max)
+		if (policy->cur == policy->max)
 			return;
 
         this_dbs_info->requested_freq = mn_get_next_freq(policy->cur, MN_UP, max_load);
+
+		if (this_dbs_info->requested_freq > policy->max)
+			this_dbs_info->requested_freq = policy->max;
 
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 			CPUFREQ_RELATION_H);
@@ -883,7 +951,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 *
 	 * zzmoove v0.2 - changed logic to be able to tune down threshold per core via sysfs
 	 */
-
+   if (!boost_freq) {
 	if (num_online_cpus() > 3) {
 			mutex_unlock(&this_dbs_info->timer_mutex); // this seems to be a very good idea, without it lockups are possible!
 			if (max_load < dbs_tuners_ins.down_threshold_hotplug3)
@@ -906,13 +974,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			cpu_down(1);
 			mutex_lock(&this_dbs_info->timer_mutex); // this seems to be a very good idea, without it lockups are possible!
 	}
+   }
 
 	/*
 	 * The optimal frequency is the frequency that is the lowest that
 	 * can support the current CPU usage without triggering the up
 	 * policy. To be safe, we focus 10 points under the threshold.
 	 */
-	if (max_load < (dbs_tuners_ins.down_threshold - 10)) {
+	if (max_load < (dbs_tuners_ins.down_threshold - 10) && !boost_freq) {
 
 		/*
 		 * if we cannot reduce the frequency anymore, break out early
