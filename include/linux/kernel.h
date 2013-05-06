@@ -35,7 +35,10 @@
 #define LLONG_MIN	(-LLONG_MAX - 1)
 #define ULLONG_MAX	(~0ULL)
 
+
 #define STACK_MAGIC	0xdeadbeef
+
+#define REPEAT_BYTE(x)  ((~0ul / 0xff) * (x)) 
 
 #define ALIGN(x, a)		__ALIGN_KERNEL((x), (a))
 #define __ALIGN_MASK(x, mask)	__ALIGN_KERNEL_MASK((x), (mask))
