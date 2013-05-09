@@ -944,7 +944,7 @@ void blk_requeue_request(struct request_queue *q, struct request *rq)
 		 * urgent requests. We want to be able to track this
 		 * down.
 		 */
-		pr_debug("%s(): requeueing an URGENT request", __func__);
+		pr_err("%s(): requeueing an URGENT request", __func__);
 		WARN_ON(!q->dispatched_urgent);
 		q->dispatched_urgent = false;
 	}
@@ -981,7 +981,7 @@ int blk_reinsert_request(struct request_queue *q, struct request *rq)
 		 * urgent requests. We want to be able to track this
 		 * down.
 		 */
-		pr_debug("%s(): reinserting an URGENT request", __func__);
+		pr_err("%s(): requeueing an URGENT request", __func__);
 		WARN_ON(!q->dispatched_urgent);
 		q->dispatched_urgent = false;
 	}
@@ -1262,7 +1262,7 @@ static bool attempt_plug_merge(struct request_queue *q, struct bio *bio
 	list_for_each_entry_reverse(rq, &plug->list, queuelist) {
 		int el_ret;
 
-		if (rq->q != q)
+                if (rq->q != q)
 			continue;
 
 		el_ret = elv_try_merge(rq, bio);
@@ -2070,13 +2070,9 @@ struct request *blk_fetch_request(struct request_queue *q)
 
 	rq = blk_peek_request(q);
 	if (rq) {
-		/*
-		 * Assumption: the next request fetched from scheduler after we
-		 * notified "urgent request pending" - will be the urgent one
-		 */
-		if (q->notified_urgent && !q->dispatched_urgent) {
+		if (rq->cmd_flags & REQ_URGENT) {
+			WARN_ON(q->dispatched_urgent);
 			q->dispatched_urgent = true;
-			(void)blk_mark_rq_urgent(rq);
 		}
 		blk_start_request(rq);
 	}
