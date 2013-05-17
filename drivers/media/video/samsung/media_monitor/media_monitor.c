@@ -30,6 +30,9 @@ struct mhs_context {
 
 //TODO Replace this with a proper notifier chain in the future
 //extern void set_mic_level(void);
+#ifdef CONFIG_SND_WOLFSON_SOUND_CONTROL
+extern void set_mic_level(void);
+#endif
 extern void do_mdnie_refresh(struct work_struct *work);
 
 void mhs_set_status(enum mhs_type type, bool status)
@@ -41,7 +44,9 @@ void mhs_set_status(enum mhs_type type, bool status)
 					do_mdnie_refresh(NULL); //TODO see above
 					break;
 		case MHS_CAMERA_STREAM:	mhs_ctx.camera_stream = status;
-//					set_mic_level(); //TODO see above
+#ifdef CONFIG_SND_WOLFSON_SOUND_CONTROL
+					set_mic_level(); //TODO see above
+#endif
 					break;
 		default:		return;
 	}
