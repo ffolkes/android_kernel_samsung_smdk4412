@@ -1198,8 +1198,8 @@ void load_current_eq_values()
 
 void apply_soundboost(void)
 {
-	pr_info("%s++\n", __func__);
-	if(!enable) return;
+	pr_info("voodoo: %s++ resetting...\n", __func__);
+	//if(!enable) return;
 	update_digital_gain(false);
 	update_hpvol(false);
 	update_fll_tuning(false);
@@ -2100,7 +2100,7 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 		else
 		{
 			bypass_write_hook_clamp = false;
-			apply_soundboost();
+			//apply_soundboost();
 		}
 	}
 #endif

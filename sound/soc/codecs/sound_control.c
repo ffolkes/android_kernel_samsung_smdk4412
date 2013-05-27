@@ -324,12 +324,16 @@ void handler_output_detection(void)
 {
 	int new_output = OUTPUT_OTHER;
 
-	if (check_for_headphone())
-		new_output = OUTPUT_HP;
-	else if (check_for_speaker())
+	if (check_for_speaker()) {
+		printk("Audio: output:%i (speaker) setting to:%i\n", OUTPUT_OTHER, OUTPUT_SPEAKER);
 		new_output = OUTPUT_SPEAKER;
-	else if (check_for_receiver())
+	} else if (check_for_headphone()) {
+		printk("Audio: output:%i (headphones) setting to:%i\n", OUTPUT_OTHER, OUTPUT_HP);
+		new_output = OUTPUT_HP;
+	} else if (check_for_receiver()) {
+		printk("Audio: output:%i (receiver) setting to:%i\n", OUTPUT_OTHER, OUTPUT_RECEIVER);
 		new_output = OUTPUT_RECEIVER;
+	}
 	
 	if (new_output != OUTPUT_OTHER && new_output != output_type) {
 		output_type = new_output;
@@ -1425,7 +1429,7 @@ static int sound_control_init(void)
 	regdump_bank = 0;
 
 	// Print debug info
-	printk("Audio: engine version %s started\n", SOUND_CONTROL_VERSION);
+	printk("Audio: engine version %s started. output_type:%i\n", SOUND_CONTROL_VERSION, output_type);
 
 	return 0;
 
