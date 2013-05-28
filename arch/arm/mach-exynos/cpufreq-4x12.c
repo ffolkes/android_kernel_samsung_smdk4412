@@ -68,7 +68,6 @@ static struct cpufreq_frequency_table exynos4x12_freq_table[] = {
 	{L19, 300*1000},
 	{L20, 200*1000},
 	{L21, 100*1000},
-	{L22, 50*1000},
 	{0, CPUFREQ_TABLE_END},
 };
 
@@ -197,9 +196,6 @@ static unsigned int clkdiv_cpu0_4412[CPUFREQ_LEVEL_END][8] = {
 	
 	/* ARM L21: 100MHz */
 	{ 0, 1, 3, 0, 1, 1, 1, 0 },
-	
-	/* ARM L22: 50MHz */
-	{ 0, 1, 3, 0, 1, 1, 1, 0 },
 };
 
 static unsigned int clkdiv_cpu1_4212[CPUFREQ_LEVEL_END][2] = {
@@ -321,9 +317,6 @@ static unsigned int clkdiv_cpu1_4412[CPUFREQ_LEVEL_END][3] = {
 	
 	/* ARM L21: 100MHz */
 	{ 3, 0, 0 },
-	
-	/* ARM L22: 50MHz */
-	{ 3, 0, 0 },
 };
 
 static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
@@ -393,9 +386,6 @@ static unsigned int exynos4x12_apll_pms_table[CPUFREQ_LEVEL_END] = {
 	
 	/* APLL FOUT L21: 100MHz */
 	((100<<16)|(3<<8)|(0x3)),
-	
-	/* APLL FOUT L22: 50MHz */
-	((100<<16)|(6<<8)|(0x3)),
 
 };
 
@@ -432,8 +422,12 @@ static const unsigned int asv_voltage_s[CPUFREQ_LEVEL_END] = {
 /* ASV table for 12.5mV step */
 static const unsigned int asv_voltage_step_12_5[CPUFREQ_LEVEL_END][12] = {
 	/*   ASV0,    ASV1,    ASV2,    ASV3,	 ASV4,	  ASV5,	   ASV6,    ASV7,    ASV8,    ASV9,   ASV10,   ASV11 */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L0 - Not used */
-	{	0,       0,	  0,	   0,	    0,	     0,	      0,       0,       0,       0,	  0,       0 },	/* L1 - Not used */
+	{ 1475000, 1475000, 1475000, 1475000, 1475000, 1475000,	1475000, 1475000, 1475000, 1475000, 1475000, 1475000 }, /* L0 2000MHz */
+	{ 1425000, 1425000, 1425000, 1425000, 1425000, 1425000,	1425000, 1425000, 1425000, 1425000, 1425000, 1425000 }, /* L1 1900MHz */
+	{ 1400000, 1400000, 1400000, 1400000, 1400000, 1400000,	1400000, 1400000, 1400000, 1400000, 1400000, 1400000 }, /* L2 1800MHz */
+	{ 1400000, 1400000, 1400000, 1400000, 1400000, 1400000,	1400000, 1400000, 1400000, 1387500, 1375000, 1362500 }, /* L3 1700MHz */
+	{ 1400000, 1400000, 1400000, 1400000, 1387500, 1387500,	1375000, 1362500, 1350000, 1337500, 1325000, 1312500 }, /* L4 1600MHz */
+	{ 1387500, 1375000, 1362500, 1350000, 1337500, 1325000,	1312500, 1300000, 1287500, 1275000, 1262500, 1250000 }, /* L5 1500MHz */
 	{ 1325000, 1312500, 1300000, 1287500, 1300000, 1287500,	1275000, 1250000, 1250000, 1237500, 1225000, 1212500 },
 	{ 1300000, 1275000, 1237500, 1237500, 1250000, 1250000,	1237500, 1212500, 1200000, 1200000, 1187500, 1175000 },
 	{ 1225000, 1212500, 1200000, 1187500, 1200000, 1187500,	1175000, 1150000, 1137500, 1125000, 1125000, 1112500 },
@@ -474,7 +468,6 @@ static const unsigned int asv_voltage_step_12_5_rev2[CPUFREQ_LEVEL_END][13] = {
 	{  937500,  925000,  925000,  925000,  912500,  900000,  887500,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L19 */
 	{  925000,  912500,  912500,  912500,  900000,  887500,  887500,  887500,  887500,  887500,  875000,  875000,  875000 },	/* L20 */
 	{  912500,  900000,  900000,  900000,  900000,  900000,  900000,  887500,  875000,  875000,  862500,  862500,  862500 },	/* L21 */
-	{  900000,  900000,  900000,  900000,  900000,  900000,	 887500,  887500,  875000,  862500,  862500,  862500,  862500 },	/* L22 */
 };
 
 static void set_clkdiv(unsigned int div_index)
@@ -623,7 +616,7 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 #ifndef CONFIG_ABB_CONTROL
 		if ((samsung_rev() >= EXYNOS4412_REV_2_0)
 			&& (exynos_result_of_asv > 2)
-			&& (old_index <= L14) && (new_index > L14)) {
+			&& (old_index <= L12) && (new_index > L12)) {
 			exynos4x12_set_abb_member(ABB_ARM, ABB_MODE_100V);
 		}
 #else
@@ -648,32 +641,11 @@ static void exynos4x12_set_frequency(unsigned int old_index,
 }
 
 /* Get maximum cpufreq index of chip */
-static unsigned int get_max_cpufreq_idx(void)
-{
-	unsigned int index;
-
-	/* exynos4x12 prime supports 1.6GHz */
-	if (samsung_rev() >= EXYNOS4412_REV_2_0)
-		index = L0; //L0
-	else {
-	/* exynos4x12 supports only 1.4GHz and 1.1GHz */
-		if (exynos_armclk_max != 1400000)
-			index = L6;
-		else
-			index = L2;
-	}
-
-	return index;
-}
-
 static void __init set_volt_table(void)
 {
 	unsigned int i, tmp;
 
-	max_support_idx = get_max_cpufreq_idx();
-
-	for (i = 0; i < max_support_idx; i++)
-		exynos4x12_freq_table[i].frequency = CPUFREQ_ENTRY_INVALID;
+	max_support_idx = L0;
 
 	pr_info("DVFS : VDD_ARM Voltage table set with %d Group\n", exynos_result_of_asv);
 
@@ -855,7 +827,7 @@ int exynos4x12_cpufreq_init(struct exynos_dvfs_info *info)
 	pr_info("Bootup CPU Frequency = [%d] %dMHz\n", info->pm_lock_idx,
 		rate / 1000);
 #else
-	info->pm_lock_idx = L12;
+	info->pm_lock_idx = L14;
 #endif
 	/*
 	 * ARM clock source will be changed APLL to MPLL temporary

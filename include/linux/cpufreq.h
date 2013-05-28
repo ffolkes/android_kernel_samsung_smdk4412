@@ -24,7 +24,7 @@
 
 #define CPUFREQ_NAME_LEN 16
 #if defined(CONFIG_CPU_EXYNOS4212) || defined(CONFIG_CPU_EXYNOS4412)
-#define CPUFREQ_LEVEL_END		(L22 + 1)
+#define CPUFREQ_LEVEL_END		(L21 + 1)
 #endif
 
 /*********************************************************************
@@ -383,12 +383,6 @@ extern struct cpufreq_governor cpufreq_gov_adaptive;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_PEGASUSQ)
 extern struct cpufreq_governor cpufreq_gov_pegasusq;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_pegasusq)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_AGGRESSIVE)
-extern struct cpufreq_governor cpufreq_gov_aggressive;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_aggressive)
-#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_GALLIMAUFRY)
-extern struct cpufreq_governor cpufreq_gov_gallimaufry;
-#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_gallimaufry)
 #endif
 
 
@@ -432,3 +426,7 @@ void cpufreq_frequency_table_put_attr(unsigned int cpu);
 
 
 #endif /* _LINUX_CPUFREQ_H */
+
+#define SCALING_MAX_COUPLED 1
+#define SCALING_MAX_UNDEFINED 0
+#define SCALING_MAX_UNCOUPLED -1

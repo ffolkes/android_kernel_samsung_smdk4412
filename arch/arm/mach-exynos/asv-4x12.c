@@ -80,7 +80,7 @@ struct asv_judge_table exynos4x12_limit_rev2[] = {
 #else
 	/* 0725 dvfs table */
 	/* HPM, IDS */
-	{  0,   0},		/* Reserved Group */
+	{  0,   3},		/* Reserved Group */
 	{ 15,   8},		/* ASV1 Group */
 	{ 16,  11},
 	{ 18,  14},
