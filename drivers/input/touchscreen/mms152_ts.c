@@ -219,6 +219,7 @@ enum {
 
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 extern void _lcdfreq_lock(int lock);
+static unsigned int flg_enable_lcdfreq_touchboost = 0;
 #endif
 
 struct device *sec_touchscreen;
@@ -1474,16 +1475,11 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, !!touch_is_pressed);
 #endif
-	
-#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
-	if(!!touch_is_pressed){
-		midas_tsp_request_qos();
-	}
-#endif
 
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
-	if(!!touch_is_pressed){
+	if((!!touch_is_pressed) && flg_enable_lcdfreq_touchboost){
 		_lcdfreq_lock(0);
+		//pr_info("TSP: lcdfreq_lock(0)\n");
 	}
 #endif
 
@@ -4182,6 +4178,28 @@ static ssize_t show_intensity_logging_off(struct device *dev,
 
 #endif
 
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+static ssize_t enable_lcdfreq_touchboost_show(struct device *dev,
+									   struct device_attribute *attr,
+									   char *buf)
+{
+	sprintf(buf, "%d\n", flg_enable_lcdfreq_touchboost ? 1 : 0);
+	return strlen(buf);
+}
+
+static ssize_t enable_lcdfreq_touchboost_store(struct device *dev, 
+										struct device_attribute *attr, 
+										char *buf, size_t size)
+{
+	if (!strncmp(buf, "1", 1)) {
+		flg_enable_lcdfreq_touchboost = 1;
+	} else if (!strncmp(buf, "0", 1)) {
+		flg_enable_lcdfreq_touchboost = 0;
+	}
+	return size;
+}
+#endif
+
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 // Must be called with the gestures_lock spinlock held
 static void reset_gestures_detection_locked(bool including_detected)
@@ -4499,6 +4517,10 @@ static DEVICE_ATTR(close_tsp_test, S_IRUGO, show_close_tsp_test, NULL);
 static DEVICE_ATTR(cmd, S_IWUSR | S_IWGRP, NULL, store_cmd);
 static DEVICE_ATTR(cmd_status, S_IRUGO, show_cmd_status, NULL);
 static DEVICE_ATTR(cmd_result, S_IRUGO, show_cmd_result, NULL);
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+static DEVICE_ATTR(enable_lcdfreq_touchboost, S_IRUGO | S_IWUSR,
+				   enable_lcdfreq_touchboost_show, enable_lcdfreq_touchboost_store);
+#endif
 #ifdef ESD_DEBUG
 static DEVICE_ATTR(intensity_logging_on, S_IRUGO, show_intensity_logging_on,
 		   NULL);
@@ -4511,6 +4533,9 @@ static struct attribute *sec_touch_facotry_attributes[] = {
 	&dev_attr_cmd.attr,
 	&dev_attr_cmd_status.attr,
 	&dev_attr_cmd_result.attr,
+#ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
+	&dev_attr_enable_lcdfreq_touchboost.attr,
+#endif
 #ifdef ESD_DEBUG
 	&dev_attr_intensity_logging_on.attr,
 	&dev_attr_intensity_logging_off.attr,
