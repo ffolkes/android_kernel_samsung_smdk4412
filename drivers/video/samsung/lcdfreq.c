@@ -64,8 +64,10 @@ static unsigned int custom_div = 0;
 #ifdef CONFIG_LCD_FREQ_SWITCH_ACCOUNTING
 u64		time_in_state[LCDFREQ_LEVEL_END];
 struct timeval	last_switch;
+static void init_accounting(void); // ZZ: fixed prototype warning which messed things completely up
+static void refresh_last_switch(void); // ZZ: fixed prototype warning which messed things completely up
 
-static void init_accounting()
+void init_accounting(void) // ZZ: fixed prototype warning which messed things completely up
 {
 	int i;
 
@@ -76,7 +78,7 @@ static void init_accounting()
 	do_gettimeofday(&last_switch);
 }
 
-static void refresh_last_switch()
+void refresh_last_switch(void)
 {
 	do_gettimeofday(&last_switch);
 }
