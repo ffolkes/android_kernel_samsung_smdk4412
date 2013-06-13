@@ -255,6 +255,34 @@ int exynos_cpufreq_get_level(unsigned int freq, unsigned int *level)
 }
 EXPORT_SYMBOL_GPL(exynos_cpufreq_get_level);
 
+int exynos_cpufreq_get_freq(unsigned int level, unsigned int *freq)
+{
+	struct cpufreq_frequency_table *table;
+	unsigned int i;
+	
+	if (!exynos_cpufreq_init_done)
+		return -EINVAL;
+	
+	table = cpufreq_frequency_get_table(0);
+	if (!table) {
+		pr_err("%s: Failed to get the cpufreq table\n", __func__);
+		return -EINVAL;
+	}
+	
+	for (i = exynos_info->max_support_idx;
+		 (table[i].frequency != CPUFREQ_TABLE_END); i++) {
+		if (i == level) {
+			*freq = table[i].frequency;
+			return 0;
+		}
+	}
+	
+	pr_err("%s: %u is an unsupported step\n", __func__, level);
+	
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(exynos_cpufreq_get_freq);
+
 // Get the max frequency set
 // by simone201
 int exynos_cpufreq_get_maxfreq() {
