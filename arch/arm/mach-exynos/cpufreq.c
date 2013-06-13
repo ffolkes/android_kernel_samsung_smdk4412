@@ -291,6 +291,13 @@ int exynos_cpufreq_get_maxfreq() {
 	return policy->max;
 }
 
+// Get the min frequency set
+int exynos_cpufreq_get_minfreq() {
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+	
+	return policy->min;
+}
+
 // Get current cpu freq
 // by simone201
 int exynos_cpufreq_get_curfreq() {
