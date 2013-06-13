@@ -53,6 +53,10 @@
 #define MAX_GESTURE_FINGERS 5
 #define MAX_GESTURE_STEPS 10
 
+#define GESTURE_BOOSTER				1		// enable the gesture booster.
+#define GESTURE_BOOSTER_FREQ		0		// frequency to boost to. 0 will autodetect policy max.
+#define GESTURE_BOOSTER_DURATION	2500	// duration to hold boost (msecs).
+
 // Definitions
 struct gesture_point {
 	int min_x;
@@ -85,6 +89,18 @@ static struct gesture_finger gesture_fingers[MAX_GESTURES][MAX_GESTURE_FINGERS] 
 static bool gestures_enabled = true;
 DECLARE_WAIT_QUEUE_HEAD(gestures_wq);
 static spinlock_t gestures_lock;
+
+#if GESTURE_BOOSTER
+static unsigned int gesturebooster_enabled = GESTURE_BOOSTER;
+static unsigned int gesturebooster_freq = GESTURE_BOOSTER_FREQ;
+static unsigned int gesturebooster_duration = GESTURE_BOOSTER_DURATION;
+static int gesturebooster_actual_freq;
+static int prev_gesturebooster_actual_freq;
+static int gesturebooster_cpufreq_level;
+static int gesturebooster_dvfs_locked;
+static struct mutex gesturebooster_dvfs_lock;
+static struct delayed_work work_gesturebooster_dvfs_off;
+#endif
 #endif
 
 #include <linux/platform_data/mms152_ts.h>
@@ -521,6 +537,96 @@ struct tsp_cmd tsp_cmds[] = {
 };
 #endif
 
+#if GESTURE_BOOSTER
+static void gesturebooster_dvfs_lock_off(struct work_struct *work)
+{	
+	mutex_lock(&gesturebooster_dvfs_lock);
+
+	exynos_cpufreq_lock_free(DVFS_LOCK_ID_GESTURE_BOOSTER);
+	gesturebooster_dvfs_locked = 0;
+	pr_info("[TSP/gesturebooster] boost off!\n");
+	
+	mutex_unlock(&gesturebooster_dvfs_lock);
+}
+
+static void gesturebooster_dvfs_lock_on(void)
+{
+	unsigned int maxfreq = 0;
+	unsigned int minfreq = 0;
+	
+	mutex_lock(&gesturebooster_dvfs_lock);
+	
+	if (gesturebooster_freq == 0) {
+		pr_info("[TSP/gesturebooster] boost_freq max autodetect\n", maxfreq);
+		// use the highest frequency we can.
+		maxfreq = exynos_cpufreq_get_maxfreq();
+		gesturebooster_actual_freq = maxfreq;
+		
+		// if this has changed, we need to refresh the level.
+		if (prev_gesturebooster_actual_freq != gesturebooster_actual_freq) {
+			gesturebooster_cpufreq_level = -1;
+			pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n", maxfreq);
+		}
+		
+	} else {
+		// use whatever frequency has been set.
+		gesturebooster_actual_freq = gesturebooster_freq;
+	}
+	
+	if (gesturebooster_cpufreq_level < 0) {
+		
+		if (maxfreq == 0) {
+			// check to see if we already have this value.
+			// we don't, so get it.
+			maxfreq = exynos_cpufreq_get_maxfreq();
+		}
+		minfreq = exynos_cpufreq_get_minfreq();
+		
+		if (maxfreq < 1) {
+			// something went wrong. just set a safe value.
+			maxfreq = 1000000;
+		}
+		
+		if (minfreq < 1) {
+			// something went wrong. just set a safe value.
+			minfreq = 200000;
+		}
+		
+		if (gesturebooster_actual_freq < minfreq) {
+			gesturebooster_actual_freq = minfreq;
+			pr_info("[TSP/gesturebooster] boost_freq too low. set to: %d\n", minfreq);
+		} else if (gesturebooster_actual_freq > maxfreq) {
+			gesturebooster_actual_freq = maxfreq;
+			pr_info("[TSP/gesturebooster] boost_freq too high. set to: %d\n", maxfreq);
+		}
+		
+		prev_gesturebooster_actual_freq = gesturebooster_actual_freq;
+		
+		exynos_cpufreq_get_level(gesturebooster_actual_freq, &gesturebooster_cpufreq_level);
+		pr_info("[TSP/gesturebooster] got level %d for freq: %d\n", gesturebooster_cpufreq_level, gesturebooster_actual_freq);
+	}
+	
+	if (!gesturebooster_dvfs_locked) {
+		
+		if (gesturebooster_duration < 1) {
+			// give a floor to this setting so STweaks can use 0 as a min value.
+			gesturebooster_duration = 1;
+		}
+		
+		exynos_cpufreq_lock(DVFS_LOCK_ID_GESTURE_BOOSTER, gesturebooster_cpufreq_level);
+		
+		// set timer to disable the boost in x ms.
+		schedule_delayed_work(&work_gesturebooster_dvfs_off, msecs_to_jiffies(gesturebooster_duration));
+		
+		gesturebooster_dvfs_locked = 1;
+		pr_info("[TSP/gesturebooster] boost on! boosted to %d mhz [L%d] for %d msecs\n",
+				gesturebooster_actual_freq, gesturebooster_cpufreq_level, gesturebooster_duration);
+	}
+
+	mutex_unlock(&gesturebooster_dvfs_lock);
+}
+#endif
+
 #if TOUCH_BOOSTER
 static void change_dvfs_lock(struct work_struct *work)
 {
@@ -920,6 +1026,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	bool fingers_completed;
 	unsigned long flags;
 	bool track_gestures;
+	int flg_gesturebooster = 0;
 	
 	track_gestures = info->enabled;
 #endif
@@ -1457,6 +1564,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			if (fingers_completed) {
 				// All finger steps completed for this gesture, wake any consumers
 				printk("[TSP] Gesture %d completed, waking consumers\n", gesture_no);
+				flg_gesturebooster = 1;
 				gestures_detected[gesture_no] = true;
 				has_gestures = true;
 				wake_up_interruptible_all(&gestures_wq);
@@ -1469,6 +1577,14 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			}
 		}
 		spin_unlock_irqrestore(&gestures_lock, flags);
+
+#if GESTURE_BOOSTER
+		if (flg_gesturebooster && gesturebooster_enabled) {
+			printk("[TSP] calling gesturebooster\n");
+			gesturebooster_dvfs_lock_on();
+			flg_gesturebooster = 0;
+		}
+#endif
 	}
 #endif
 
@@ -4488,17 +4604,148 @@ static ssize_t gestures_enabled_store(struct device *dev,
 	
 	return size;
 }
+
+#if GESTURE_BOOSTER
+static ssize_t gesturebooster_enabled_show(struct device *dev,
+                                     struct device_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", gesturebooster_enabled ? 1 : 0);
+	return strlen(buf);
+}
+
+static ssize_t gesturebooster_enabled_store(struct device *dev, struct device_attribute *attr,
+                                      const char *buf, size_t size)
+{
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1 && (input > 1 || input < 0)) {
+		return -EINVAL;
+	}
+	
+	if (input == 0) {
+		gesturebooster_enabled = 0;
+		pr_info("[TSP/gesturebooster] gesturebooster disabled\n");
+	} else if (input == 1) {
+		gesturebooster_enabled = 1;
+		pr_info("[TSP/gesturebooster] gesturebooster enabled\n");
+	}
+	
+	return size;
+}
+
+static ssize_t gesturebooster_freq_show(struct device *dev,
+										   struct device_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", gesturebooster_freq);
+	return strlen(buf);
+}
+
+static ssize_t gesturebooster_freq_store(struct device *dev, struct device_attribute *attr,
+											const char *buf, size_t size)
+{
+	unsigned int input;
+	int ret;
+	unsigned int maxfreq = 0;
+	unsigned int minfreq = 0;
+	
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1) {
+		return -EINVAL;
+	}
+	
+	maxfreq = exynos_cpufreq_get_maxfreq();
+	minfreq = exynos_cpufreq_get_minfreq();
+	
+	if (maxfreq < 1) {
+		// something went wrong. just set a safe value.
+		maxfreq = 1000000;
+	}
+	
+	if (minfreq < 1) {
+		// something went wrong. just set a safe value.
+		minfreq = 200000;
+	}
+	
+	if (input == 0) {
+		// set to default.
+		gesturebooster_freq = GESTURE_BOOSTER_FREQ;
+	} else if (input < minfreq) {
+		gesturebooster_freq = minfreq;
+		pr_info("[TSP/gesturebooster] boost_freq too low. set to: %d\n", minfreq);
+	} else if (input > maxfreq) {
+		gesturebooster_freq = maxfreq;
+		pr_info("[TSP/gesturebooster] boost_freq too high. set to: %d\n", maxfreq);
+	} else {
+		gesturebooster_freq = input;
+		pr_info("[TSP/gesturebooster] boost_freq set to: %d\n", input);
+	}
+	
+	// reset the level so it can be set later with the new freq.
+	gesturebooster_cpufreq_level = -1;
+	
+	return size;
+}
+
+static ssize_t gesturebooster_duration_show(struct device *dev,
+										   struct device_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", gesturebooster_duration);
+	return strlen(buf);
+}
+
+static ssize_t gesturebooster_duration_store(struct device *dev, struct device_attribute *attr,
+											const char *buf, size_t size)
+{
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1 && (input < 0 || input > 20000)) {
+		return -EINVAL;
+	}
+	
+	if (input == 0) {
+		// set to default.
+		gesturebooster_duration = GESTURE_BOOSTER_DURATION;
+		pr_info("[TSP/gesturebooster] gesturebooster duration set to default (%d)\n", GESTURE_BOOSTER_DURATION);
+	} else {
+		gesturebooster_duration = input;
+		pr_info("[TSP/gesturebooster] gesturebooster duration set to: %d\n", input);
+	}
+	
+	return size;
+}
+#endif
+
 static DEVICE_ATTR(gesture_patterns, S_IRUGO | S_IWUSR,
                    gesture_patterns_show, gesture_patterns_store);
 static DEVICE_ATTR(wait_for_gesture, S_IRUGO | S_IWUSR,
                    wait_for_gesture_show, wait_for_gesture_store);
 static DEVICE_ATTR(gestures_enabled, S_IRUGO | S_IWUSR,
                    gestures_enabled_show, gestures_enabled_store);
+#if GESTURE_BOOSTER
+static DEVICE_ATTR(gesturebooster_enabled, S_IRUGO | S_IWUSR,
+                   gesturebooster_enabled_show, gesturebooster_enabled_store);
+static DEVICE_ATTR(gesturebooster_freq, S_IRUGO | S_IWUSR,
+                   gesturebooster_freq_show, gesturebooster_freq_store);
+static DEVICE_ATTR(gesturebooster_duration, S_IRUGO | S_IWUSR,
+                   gesturebooster_duration_show, gesturebooster_duration_store);
+#endif
 
 static struct attribute *gestures_attrs[] = {
 	&dev_attr_gesture_patterns.attr,
 	&dev_attr_wait_for_gesture.attr,
 	&dev_attr_gestures_enabled.attr,
+#if GESTURE_BOOSTER
+	&dev_attr_gesturebooster_enabled.attr,
+	&dev_attr_gesturebooster_freq.attr,
+	&dev_attr_gesturebooster_duration.attr,
+#endif
 	NULL
 };
 
@@ -4977,6 +5224,13 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	bus_dev = dev_get("exynos-busfreq");
 	info->cpufreq_level = -1;
 	info->dvfs_lock_status = false;
+#endif
+	
+#if GESTURE_BOOSTER
+	mutex_init(&gesturebooster_dvfs_lock);
+	INIT_DELAYED_WORK(&work_gesturebooster_dvfs_off, gesturebooster_dvfs_lock_off);
+	gesturebooster_cpufreq_level = -1;
+	gesturebooster_dvfs_locked = 0;
 #endif
 
 	info->enabled = true;
