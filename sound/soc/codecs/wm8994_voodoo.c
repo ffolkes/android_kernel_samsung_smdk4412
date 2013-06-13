@@ -1199,7 +1199,7 @@ void load_current_eq_values()
 void apply_soundboost(void)
 {
 	pr_info("voodoo: %s++ resetting...\n", __func__);
-	//if(!enable) return;
+	if(!enable) return;
 	update_digital_gain(false);
 	update_hpvol(false);
 	update_fll_tuning(false);
@@ -2307,4 +2307,7 @@ void voodoo_hook_wm8994_pcm_probe(struct snd_soc_codec *codec_)
 
 	// initialize eq_band_values[] from default codec EQ values
 	load_current_eq_values();
+	
+	//enable = false;
+	//update_enable();
 }
