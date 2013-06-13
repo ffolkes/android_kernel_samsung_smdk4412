@@ -94,6 +94,7 @@
 #include <linux/ktime.h>
 #include <linux/sched.h>
 #include <linux/earlysuspend.h>
+#include <mach/cpufreq.h>
 
 // smooth up/downscaling via lookup tables
 #define MN_SMOOTH 1
@@ -118,6 +119,7 @@
 #define DEF_IGNORE_NICE				(0)	// ZZ: default for ignore nice load
 #define DEF_FREQ_STEP				(5)	// ZZ: default for freq step on awake
 #define DEF_FREQ_STEP_SLEEP			(5)	// ZZ: default for freq step on early suspend
+#define DEF_PM_LOCK_FREQ			(0)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -133,6 +135,7 @@
 #define MIN_SAMPLING_RATE_RATIO			(2)
 
 static unsigned int min_sampling_rate;
+static unsigned int cpufreq_pm_lock_freq;
 
 // raise sampling rate to SR*multiplier and adjust sampling rate/thresholds/hotplug/scaling/freq limit/freq step on blank screen
 static unsigned int sampling_rate_awake;
@@ -241,6 +244,7 @@ static struct dbs_tuners {
 	unsigned int freq_limit_sleep;			// ZZ: added tuneable freq_limit_sleep
 	unsigned int fast_scaling;			// ZZ: added tuneable fast_scaling
 	unsigned int fast_scaling_sleep;		// ZZ: added tuneable fast_scaling_sleep
+	unsigned int pm_lock_freq;
 
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
@@ -265,6 +269,7 @@ static struct dbs_tuners {
 	.freq_limit_sleep = DEF_FREQ_LIMIT_SLEEP,				// ZZ: set default value for new tuneable
 	.fast_scaling = DEF_FAST_SCALING,					// ZZ: set default value for new tuneable
 	.fast_scaling_sleep = DEF_FAST_SCALING_SLEEP,				// ZZ: set default value for new tuneable
+	.pm_lock_freq = DEF_PM_LOCK_FREQ,
 };
 
 /**
@@ -479,6 +484,7 @@ show_one(freq_limit, freq_limit);						// ZZ: added freq_limit tuneable
 show_one(freq_limit_sleep, freq_limit_sleep);					// ZZ: added freq_limit_sleep tuneable for early suspend
 show_one(fast_scaling, fast_scaling);						// ZZ: added fast_scaling tuneable
 show_one(fast_scaling_sleep, fast_scaling_sleep);				// ZZ: added fast_scaling_sleep tuneable for early suspend
+show_one(pm_lock_freq, pm_lock_freq);
 
 static ssize_t store_sampling_down_factor(struct kobject *a,
 					  struct attribute *b,
@@ -889,6 +895,37 @@ static ssize_t store_fast_scaling_sleep(struct kobject *a,
 	return count;
 }
 
+static ssize_t store_pm_lock_freq(struct kobject *a,
+										struct attribute *b,
+										const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	
+	// sanitize.
+	if (input == 0) {
+		// disable.
+		cpufreq_pm_lock_idx = 0;
+		dbs_tuners_ins.pm_lock_freq = 0;
+		return count;
+	} else if (input < 100000) {
+		return -EINVAL;
+	} else if (input > 1000000) {
+		return -EINVAL;
+	}
+	
+	if (exynos_cpufreq_get_level(input, &cpufreq_pm_lock_idx)) {
+		pr_info("zzmoove: failed to get cpufreq level for %dMHz", input);
+		return -EINVAL;
+	}
+	
+	pr_info("zzmoove: got level for %d (L%d) and set pm_lock_idx\n", input, cpufreq_pm_lock_idx);
+	
+	dbs_tuners_ins.pm_lock_freq = input;
+	return count;
+}
+
 define_one_global_rw(sampling_rate);
 define_one_global_rw(sampling_rate_sleep_multiplier);	// ZZ: added tuneable
 define_one_global_rw(sampling_down_factor);
@@ -912,6 +949,7 @@ define_one_global_rw(freq_limit);			// ZZ: added tuneable
 define_one_global_rw(freq_limit_sleep);			// ZZ: added tuneable
 define_one_global_rw(fast_scaling);			// ZZ: added tuneable
 define_one_global_rw(fast_scaling_sleep);		// ZZ: added tuneable
+define_one_global_rw(pm_lock_freq);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -938,6 +976,7 @@ static struct attribute *dbs_attributes[] = {
 	&freq_limit_sleep.attr,				// ZZ: added tuneable
 	&fast_scaling.attr,				// ZZ: added tuneable
 	&fast_scaling_sleep.attr,			// ZZ: added tuneable
+	&pm_lock_freq.attr,
 	NULL
 };
 
@@ -1309,6 +1348,15 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_START:
 		if ((!cpu_online(cpu)) || (!policy->cur))
 			return -EINVAL;
+			
+		if (cpufreq_pm_lock_idx > 0){
+			if(exynos_cpufreq_get_freq(cpufreq_pm_lock_idx, &cpufreq_pm_lock_freq)){
+				pr_info("zzmoove: failed to get cpufreq_pm_lock_freq\n");
+			} else {
+				pr_info("zzmoove: primed cpufreq_pm_lock_freq to: %d\n", cpufreq_pm_lock_freq);
+				dbs_tuners_ins.pm_lock_freq = cpufreq_pm_lock_freq;
+			}
+		}
 
 		mutex_lock(&dbs_mutex);
 
