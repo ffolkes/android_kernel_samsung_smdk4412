@@ -103,6 +103,10 @@ static int touchkey_autocalibration(struct touchkey_i2c *tkey_i2c);
 
 #ifdef CONFIG_TOUCH_WAKE
 static struct touchkey_i2c *touchwakedevdata;
+struct timeval timetapped;
+struct timeval timetappedlast;
+int doubletap_enabled = 0;
+int touchwake_suspended = 0;
 #endif
 
 #if defined(CONFIG_TARGET_LOCALE_KOR)
@@ -686,6 +690,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
+	int time_between_tap = 0;
 
 	set_touchkey_debug('a');
 
@@ -745,13 +750,50 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	if (get_tsp_status() && pressed)
 		printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
 	else {
+		
+#ifdef CONFIG_TOUCH_WAKE
+		
+		if (doubletap_enabled && touchwake_suspended) {
+			// enabled and touchwake thinks we are suspended.
+			// ignore single taps.
+			
+			if (pressed){
+				// this is a keydown event.
+				
+				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is pressed.\n");
+				
+				timetappedlast = timetapped;
+				
+				printk(KERN_DEBUG "[TouchKey] saved sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
+				
+				do_gettimeofday(&timetapped);
+				
+				printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
+				
+				time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
+				
+				printk(KERN_DEBUG "[TouchKey] time between tap: %d\n", time_between_tap);
+				
+				if (time_between_tap > 100 && time_between_tap < 750)
+					touch_press();
+			} else {
+				// this is a keyup event.
+				
+				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is NOT pressed.\n");
+				
+			}
+			
+		} else {
+			
+			printk(KERN_DEBUG "[TouchKey] doubletap ignored.\n");
+			touch_press();
+			
+		}
+#endif
+		
 		input_report_key(tkey_i2c->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
-		
-#ifdef CONFIG_TOUCH_WAKE
-		touch_press();
-#endif
 		
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
@@ -868,7 +910,32 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_sync(touchkey_driver->input_dev);
 		
 #ifdef CONFIG_TOUCH_WAKE
-		touch_press();
+		
+		if (doubletap_enabled && touchwake_suspended) {
+			// enabled and touchwake thinks we are suspended.
+			// ignore single taps.
+			
+			timetappedlast = timetapped;
+			
+			printk(KERN_DEBUG "[TouchKey2] doubletap checked for. saving sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
+			
+			do_gettimeofday(&timetapped);
+			
+			printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
+			
+			time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
+			
+			printk(KERN_DEBUG "[TouchKey2] time between tap: %d\n", time_between_tap);
+			
+			if (time_between_tap < 500)
+				touch_press();
+			
+		} else {
+			
+			printk(KERN_DEBUG "[TouchKey2] doubletap ignored.\n");
+			touch_press();
+			
+		}
 #endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */
@@ -994,6 +1061,13 @@ static void cypress_touchwake_disable(void)
 {
 	int ret;
 	int i;
+	
+	touchwake_suspended = 1;
+	
+	if (doubletap_enabled) {
+		printk(KERN_DEBUG "[Touchkey] touchwake_disable but skipping because doubletap is enabled.\n");
+		return;
+	}
 
 	printk(KERN_DEBUG "[Touchkey] touchwake_disable\n");
 
@@ -1030,7 +1104,9 @@ static void cypress_touchwake_disable(void)
 	
 static void cypress_touchwake_enable(void)
 {
-
+	
+	touchwake_suspended = 0;
+	
 	printk(KERN_DEBUG "[Touchkey] touchwake_enable\n");
 	
 	set_touchkey_debug('R');
@@ -1970,6 +2046,8 @@ struct i2c_driver touchkey_i2c_driver = {
 static int __init touchkey_init(void)
 {
 	int ret = 0;
+	
+	do_gettimeofday(&timetapped);
 
 #if defined(CONFIG_MACH_M0)
 	if (system_rev < TOUCHKEY_FW_UPDATEABLE_HW_REV) {
