@@ -33,6 +33,7 @@
 #include <linux/kthread.h>
 #include <linux/earlysuspend.h>
 #include <asm/cputime.h>
+#include <mach/cpufreq.h>
 #include <linux/suspend.h>
 #include <linux/slab.h>
 
@@ -47,6 +48,7 @@
 #define LULZACTIVE_TUNER "gokhanmoral-robertobsc"
 
 static atomic_t active_count = ATOMIC_INIT(0);
+static unsigned int cpufreq_pm_lock_freq;
 
 #ifdef MODULE
 #include <linux/kallsyms.h>
@@ -298,6 +300,9 @@ static unsigned int get_nr_run_avg(void)
 #define DEF_CPU_UP_RATE				(13)
 #define DEF_CPU_DOWN_RATE			(13)
 #define DEF_START_DELAY				(0)
+#define DEF_PM_LOCK_FREQ			(0)
+#define DEF_MAX_FREQ_SLEEP			(0)
+#define DEF_MAX_CPU_LOCK_SLEEP		(0)
 
 #define HOTPLUG_DOWN_INDEX			(0)
 #define HOTPLUG_UP_INDEX			(1)
@@ -353,6 +358,9 @@ static struct dbs_tuners {
 	atomic_t hotplug_lock;
 	unsigned int dvfs_debug;
 	unsigned int ignore_nice;
+	unsigned int pm_lock_freq;
+	unsigned int max_freq_sleep;
+	unsigned int max_cpu_lock_sleep;
 
 } dbs_tuners_ins = {
 	.hotplug_sampling_rate=DEF_SAMPLING_RATE,
@@ -365,6 +373,9 @@ static struct dbs_tuners {
 	.hotplug_lock = ATOMIC_INIT(0),
 	.dvfs_debug = 0,
 	.ignore_nice = 0,
+	.pm_lock_freq = DEF_PM_LOCK_FREQ,
+	.max_freq_sleep = DEF_MAX_FREQ_SLEEP,
+	.max_cpu_lock_sleep = DEF_MAX_CPU_LOCK_SLEEP,
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #endif
 };
@@ -404,6 +415,7 @@ static inline void fix_screen_off_max_step(struct cpufreq_lulzactive_cpuinfo *pc
 		for(screen_off_min_step=0;
 		pcpu->lulzfreq_table[screen_off_min_step].frequency != 500000;
 		screen_off_min_step++);
+	
 }
 
 static inline unsigned int adjust_screen_off_freq(
@@ -448,6 +460,7 @@ static void cpufreq_lulzactive_timer(unsigned long data)
 
 	if (!pcpu->governor_enabled)
 		goto exit;
+
 
     // do not let inc_cpu_load be less than dec_cpu_load.
     if (dec_cpu_load >= inc_cpu_load) {
@@ -965,7 +978,7 @@ static void cpufreq_lulzactive_freq_down(struct work_struct *work)
 
 		if (max_freq != pcpu->policy->cur)
 			__cpufreq_driver_target(pcpu->policy, max_freq,
-						CPUFREQ_RELATION_H);
+						CPUFREQ_RELATION_L);
 
 		mutex_unlock(&set_speed_lock);
 
@@ -1373,6 +1386,9 @@ show_one(max_cpu_lock, max_cpu_lock);
 show_one(min_cpu_lock, min_cpu_lock);
 show_one(dvfs_debug, dvfs_debug);
 show_one(ignore_nice_load, ignore_nice);
+show_one(pm_lock_freq, pm_lock_freq);
+show_one(max_freq_sleep, max_freq_sleep);
+show_one(max_cpu_lock_sleep, max_cpu_lock_sleep);
 static ssize_t show_hotplug_lock(struct kobject *kobj,
 				struct attribute *attr, char *buf)
 {
@@ -1515,6 +1531,71 @@ static ssize_t store_up_nr_cpus(struct kobject *a, struct attribute *b,
 }
 #endif
 
+static ssize_t store_max_freq_sleep(struct kobject *a, struct attribute *b,
+								  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	
+	// sanitize.
+	if (input < 100000) {
+		return -EINVAL;
+	} else if (input > 1600000) {
+		return -EINVAL;
+	}
+	
+	dbs_tuners_ins.max_freq_sleep = input;
+	return count;
+}
+static ssize_t store_pm_lock_freq(struct kobject *a, struct attribute *b,
+								  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	
+	// sanitize.
+	if (input == 0) {
+		// disable.
+		cpufreq_pm_lock_idx = 0;
+		dbs_tuners_ins.pm_lock_freq = 0;
+		return count;
+	} else if (input < 100000) {
+		return -EINVAL;
+	} else if (input > 1000000) {
+		return -EINVAL;
+	}
+	
+	if (exynos_cpufreq_get_level(input, &cpufreq_pm_lock_idx)) {
+		pr_info("lulzactiveq: failed to get cpufreq level for %dMHz", input);
+		return -EINVAL;
+	}
+	
+	pr_info("lulzactiveq: got level for %d (L%d) and set pm_lock_idx\n", input, cpufreq_pm_lock_idx);
+	
+	dbs_tuners_ins.pm_lock_freq = input;
+	return count;
+}
+
+static ssize_t store_max_cpu_lock_sleep(struct kobject *a, struct attribute *b,
+								  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.max_cpu_lock_sleep = min(input, num_possible_cpus());
+	return count;
+}
+
 static ssize_t store_max_cpu_lock(struct kobject *a, struct attribute *b,
 				  const char *buf, size_t count)
 {
@@ -1619,6 +1700,9 @@ define_one_global_rw(dvfs_debug);
 define_one_global_rw(cpu_up_rate);
 define_one_global_rw(cpu_down_rate);
 define_one_global_rw(ignore_nice_load);
+define_one_global_rw(pm_lock_freq);
+define_one_global_rw(max_freq_sleep);
+define_one_global_rw(max_cpu_lock_sleep);
 
 
 static struct attribute *lulzactive_attributes[] = {
@@ -1632,6 +1716,8 @@ static struct attribute *lulzactive_attributes[] = {
 	&screen_off_max_step_attr.attr,
 	&debug_mode_attr.attr,
 	&ignore_nice_load.attr,
+	&pm_lock_freq.attr,
+	&max_freq_sleep.attr,
 
     /*hotplug attributes*/
 
@@ -1645,6 +1731,7 @@ static struct attribute *lulzactive_attributes[] = {
 	   Exception: hotplug_lock on early_suspend uses min_cpu_lock */
 	&max_cpu_lock.attr,
 	&min_cpu_lock.attr,
+	&max_cpu_lock_sleep.attr,
 	&hotplug_lock.attr,
 	&dvfs_debug.attr,
 	&hotplug_freq_1_1.attr,
@@ -1945,6 +2032,15 @@ static int cpufreq_governor_lulzactive(struct cpufreq_policy *policy,
 	case CPUFREQ_GOV_START:
 		if (!cpu_online(policy->cpu))
 			return -EINVAL;
+			
+		if (cpufreq_pm_lock_idx > 0){
+			if(exynos_cpufreq_get_freq(cpufreq_pm_lock_idx, &cpufreq_pm_lock_freq)){
+				pr_info("lulzactiveq: failed to get cpufreq_pm_lock_freq\n");
+			} else {
+				pr_info("lulzactiveq: primed cpufreq_pm_lock_freq to: %d\n", cpufreq_pm_lock_freq);
+				dbs_tuners_ins.pm_lock_freq = cpufreq_pm_lock_freq;
+			}
+		}
 
         /* init works and timer of each cpu */
 
@@ -1973,6 +2069,8 @@ static int cpufreq_governor_lulzactive(struct cpufreq_policy *policy,
 					kstat_cpu(j).cpustat.nice;
 			}
 		}
+			
+		screen_off_max_step = screen_off_max_step - 1;
 
 		if (!hispeed_freq)
 			hispeed_freq = policy->max;
@@ -1998,6 +2096,7 @@ static int cpufreq_governor_lulzactive(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_STOP:
+		//cpufreq_pm_lock_idx = 0; // reset user pm_lock freq
 		/* finish works from each cpu */
 		pcpu = &per_cpu(cpuinfo, policy->cpu);
 		cancel_delayed_work_sync(&pcpu->work);
@@ -2061,12 +2160,45 @@ static struct notifier_block cpufreq_lulzactive_idle_nb = {
 	.notifier_call = cpufreq_lulzactive_idle_notifier,
 };
 
+int lulz_prev_max_freq = -1;
+int lulz_prev_max_cpu_lock = -1;
+
 static void lulzactive_early_suspend(struct early_suspend *handler) {
+	struct cpufreq_lulzactive_cpuinfo *pcpu;
+	
 	early_suspended = 1;
+	
+	if (dbs_tuners_ins.max_cpu_lock_sleep > 0) {
+		lulz_prev_max_cpu_lock = dbs_tuners_ins.max_cpu_lock;
+		dbs_tuners_ins.max_cpu_lock = dbs_tuners_ins.max_cpu_lock_sleep;
+		pr_info("lulzactiveq: early_suspend() set max cores to: %i\n", dbs_tuners_ins.max_cpu_lock);
+	}
+	
+	if (dbs_tuners_ins.max_freq_sleep > 0) {
+		pcpu = &per_cpu(cpuinfo, 0);
+		lulz_prev_max_freq = pcpu->policy->max;
+		pcpu->policy->max = dbs_tuners_ins.max_freq_sleep;
+		pr_info("lulzactiveq: early_suspend() set policy->max: %i\n", pcpu->policy->max);
+	}
 }
 
 static void lulzactive_late_resume(struct early_suspend *handler) {
+	struct cpufreq_lulzactive_cpuinfo *pcpu;
+	
 	early_suspended = 0;
+	
+	if (lulz_prev_max_cpu_lock > -1) {
+		dbs_tuners_ins.max_cpu_lock = lulz_prev_max_cpu_lock;
+		pr_info("lulzactiveq: late_resume() restored max cores to: %i\n", dbs_tuners_ins.max_cpu_lock);
+		lulz_prev_max_cpu_lock = -1;
+	}
+	
+	if (lulz_prev_max_freq > -1) {
+		pcpu = &per_cpu(cpuinfo, 0);
+		pcpu->policy->max = lulz_prev_max_freq;
+		pr_info("lulzactiveq: late_resume() restored policy->max: %i\n", pcpu->policy->max);
+		lulz_prev_max_freq = -1;
+	}
 }
 
 static struct early_suspend lulzactive_power_suspend = {
