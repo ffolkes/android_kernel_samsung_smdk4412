@@ -14,6 +14,7 @@
 #include <linux/gcd.h>
 #include <linux/clk.h>
 #include <linux/spinlock.h>
+#include <linux/delay.h>
 
 #include <plat/clock.h>
 #include <plat/clock-clksrc.h>
@@ -56,6 +57,9 @@ struct lcdfreq_info {
 
 	struct early_suspend	early_suspend;
 };
+
+static unsigned int flg_force = 0;
+static unsigned int custom_div = 0;
 
 #ifdef CONFIG_LCD_FREQ_SWITCH_ACCOUNTING
 u64		time_in_state[LCDFREQ_LEVEL_END];
@@ -163,8 +167,14 @@ static int set_lcdfreq_div(struct device *dev, enum lcdfreq_level_idx level)
 		ret = -EINVAL;
 		goto exit;
 	}
-
-	div = lcdfreq->table[level].cmu_clkdiv;
+	
+	if (level == 1 && custom_div) {
+		// use custom div override for low power mode.
+		div = custom_div;
+	} else {
+		// business as usual, carry on.
+		div = lcdfreq->table[level].cmu_clkdiv;
+	}
 
 	ret = set_div(fbdev, div);
 
@@ -192,10 +202,12 @@ static int lcdfreq_lock(struct device *dev)
 
 	int ret;
 
-	if (!atomic_read(&lcdfreq->usage))
+	if (!atomic_read(&lcdfreq->usage)) {
 		ret = set_lcdfreq_div(dev, LEVEL_LIMIT);
-	else {
+		pr_info("lcdfreq: lcdfreq_lock()\n");
+	} else {
 		dev_err(dev, "lcd freq is already limit state\n");
+		//pr_info("lcdfreq: lcdfreq_lock() - already locked\n");
 		return -EINVAL;
 	}
 
@@ -217,11 +229,18 @@ static int lcdfreq_lock_free(struct device *dev)
 	struct lcdfreq_info *lcdfreq = fbdev->data;
 
 	int ret;
+	
+	if (flg_force) {
+		// ignore any requests to unlock.
+		return 0;
+	}
 
-	if (atomic_read(&lcdfreq->usage))
+	if (atomic_read(&lcdfreq->usage)) {
 		ret = set_lcdfreq_div(dev, LEVEL_NORMAL);
-	else {
+		pr_info("lcdfreq: lcdfreq_lock_free()\n");
+	} else {
 		dev_err(dev, "lcd freq is already normal state\n");
+		//pr_info("lcdfreq: lcdfreq_lock_free() - already unlocked\n");
 		return -EINVAL;
 	}
 
@@ -245,9 +264,16 @@ int _lcdfreq_lock(int lock)
 	int ext_lock;
 	if(ddev != NULL) {
 		ext_lock = atomic_read(usagep);
-		if(!!lock && !ext_lock) {
+		/*if(!!lock && !ext_lock) {
 			return lcdfreq_lock(ddev);
 		} else if(!!ext_lock) {
+			return lcdfreq_lock_free(ddev);
+		}*/
+		if (lock == 1 && !ext_lock) {
+			//pr_info("lcdfreq: _lcdfreq_lock() - 1\n");
+			return lcdfreq_lock(ddev);
+		} else if (lock == 0) {
+			//pr_info("lcdfreq: _lcdfreq_lock() - 0\n");
 			return lcdfreq_lock_free(ddev);
 		}
 	}
@@ -318,6 +344,101 @@ err:
 	return -EINVAL;
 }
 
+static ssize_t locked_on_show(struct device *dev,
+						struct device_attribute *attr, char *buf)
+{	
+	return sprintf(buf, "%d\n", flg_force);
+}
+
+static ssize_t locked_on_store(struct device *dev,
+						 struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fb = dev_get_drvdata(dev);
+	struct s3cfb_window *win = fb->par;
+	struct s3cfb_global *fbdev = get_fimd_global(win->id);
+	struct lcdfreq_info *lcdfreq = fbdev->data;
+	unsigned int value;
+	int ret;
+	int prev_flg_force;
+	
+	ret = sscanf(buf, "%u", &value);
+	
+	if (value > 1 || value < 0)
+		return -EINVAL;
+	
+	if (value == 1) {
+		flg_force = 1;
+		lcdfreq_lock(dev);
+	} else {
+		flg_force = 0;
+		lcdfreq_lock_free(dev);
+	}
+	
+#ifdef CONFIG_MACH_T0
+	tsp_lcd_infom((bool *) value);
+#endif
+	
+	return count;
+}
+
+static ssize_t div_show(struct device *dev,
+						  struct device_attribute *attr, char *buf)
+{	
+	return sprintf(buf, "%d\n", custom_div);
+}
+
+static ssize_t div_store(struct device *dev,
+						   struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fb = dev_get_drvdata(dev);
+	struct s3cfb_window *win = fb->par;
+	struct s3cfb_global *fbdev = get_fimd_global(win->id);
+	struct lcdfreq_info *lcdfreq = fbdev->data;
+	unsigned int value;
+	int ret;
+	int prev_flg_force;
+	
+	ret = sscanf(buf, "%u", &value);
+	
+	if (value == 4) {
+		custom_div = 4;
+	} else if (value == 5) {
+		custom_div = 5;
+	} else if (value == 6) {
+		custom_div = 6;
+	} else if (value == 7) {
+		custom_div = 7;
+	} else if (value == 8) {
+		custom_div = 8;
+	} else if (value == 9) {
+		custom_div = 9;
+	} else if (value == 10) {
+		custom_div = 10;
+	} else if (value == 11) {
+		custom_div = 11;
+	} else if (value == 12) {
+		custom_div = 12;
+	} else if (value == 13) {
+		custom_div = 13;
+	} else if (value == 14) {
+		custom_div = 14;
+	} else if (value == 15) {
+		custom_div = 15;
+	}
+	
+	if (atomic_read(&lcdfreq->usage)) {
+		// freq is currently locked,
+		// refresh so new div takes effect.
+		prev_flg_force = flg_force;
+		flg_force = 0;
+		lcdfreq_lock_free(dev);
+		flg_force = prev_flg_force;
+		lcdfreq_lock(dev);
+	}
+	
+	return count;
+}
+
 static ssize_t level_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -340,22 +461,17 @@ static ssize_t level_store(struct device *dev,
 	unsigned int value;
 	int ret;
 
-	ret = strict_strtoul(buf, 0, (unsigned long *)&value);
+	ret = sscanf(buf, "%u", &value);
 
-	dev_info(dev, "\t%s :: value=%d\n", __func__, value);
-
-	if (value >= LCDFREQ_LEVEL_END)
+	if (value > 1)
 		return -EINVAL;
 
-	if (value)
-		ret = lcdfreq_lock(dev);
-	else
-		ret = lcdfreq_lock_free(dev);
-
-	if (ret) {
-		dev_err(dev, "%s fail\n", __func__);
-		return -EINVAL;
+	if (value == 1) {
+		lcdfreq_lock(dev);
+	} else {
+		lcdfreq_lock_free(dev);
 	}
+	
 #ifdef CONFIG_MACH_T0
 	tsp_lcd_infom((bool *) value);
 #endif
@@ -438,6 +554,8 @@ static ssize_t time_in_state_show(struct device *dev,
 static DEVICE_ATTR(freq, S_IRUGO|S_IWUSR, freq_show, freq_store);
 static DEVICE_ATTR(level, S_IRUGO|S_IWUSR, level_show, level_store);
 static DEVICE_ATTR(usage, S_IRUGO, usage_show, NULL);
+static DEVICE_ATTR(div, S_IRUGO|S_IWUSR, div_show, div_store);
+static DEVICE_ATTR(locked_on, S_IRUGO|S_IWUSR, locked_on_show, locked_on_store);
 #ifdef CONFIG_LCD_FREQ_SWITCH_ACCOUNTING
 static DEVICE_ATTR(time_in_state, S_IRUGO, time_in_state_show, NULL);
 #endif
@@ -446,6 +564,8 @@ static struct attribute *lcdfreq_attributes[] = {
 	&dev_attr_level.attr,
 	&dev_attr_usage.attr,
 	&dev_attr_freq.attr,
+	&dev_attr_div.attr,
+	&dev_attr_locked_on.attr,
 #ifdef CONFIG_LCD_FREQ_SWITCH_ACCOUNTING
 	&dev_attr_time_in_state.attr,
 #endif
@@ -489,7 +609,9 @@ static void lcdfreq_late_resume(struct early_suspend *h)
 	refresh_last_switch();
 #endif
 	mutex_unlock(&lcdfreq->lock);
-
+	if (flg_force) {
+		lcdfreq_lock(ddev);
+	}
 	return;
 }
 
@@ -503,17 +625,19 @@ static int lcdfreq_pm_notifier_event(struct notifier_block *this,
 
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
-		mutex_lock(&lcdfreq->lock);
+		/*mutex_lock(&lcdfreq->lock);
 		lcdfreq->enable = false;
-		lcdfreq->level = LEVEL_NORMAL;
-		atomic_set(&lcdfreq->usage, 0);
-		mutex_unlock(&lcdfreq->lock);
+		if (!flg_force) {
+			lcdfreq->level = LEVEL_NORMAL;
+			atomic_set(&lcdfreq->usage, 0);
+		}
+		mutex_unlock(&lcdfreq->lock);*/
 		return NOTIFY_OK;
 	case PM_POST_RESTORE:
 	case PM_POST_SUSPEND:
-		mutex_lock(&lcdfreq->lock);
+		/*mutex_lock(&lcdfreq->lock);
 		lcdfreq->enable = true;
-		mutex_unlock(&lcdfreq->lock);
+		mutex_unlock(&lcdfreq->lock);*/
 		return NOTIFY_OK;
 	}
 	return NOTIFY_DONE;
