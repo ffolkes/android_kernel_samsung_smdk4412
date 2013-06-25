@@ -40,6 +40,18 @@ static bool epen_reset_result;
 static bool pen_insert_state;
 static bool firmware_updating_state;
 
+unsigned int sttg_boxfilter_threshold = 0;
+unsigned int sttg_boxfilter_threshold_hover = 30;
+unsigned int sttg_boost_freq = 400000;
+unsigned int sttg_min_pressure = 0;
+unsigned int sttg_side_button_mode = 0;
+unsigned int sttg_fixed_pressure = 0;
+unsigned int sttg_avg_strength = 2;
+int sttg_offset_override_x = 0;
+int sttg_offset_override_y = 0;
+bool sttg_offset_override_enabled = false;
+unsigned int sttg_touchkey_block_length = 1500;
+
 static void wacom_i2c_enable_irq(struct wacom_i2c *wac_i2c, bool enable)
 {
 	static int depth;
@@ -416,7 +428,7 @@ static void pen_insert_work(struct work_struct *work)
 #if defined(CONFIG_MACH_T0)
 	if (wac_i2c->invert_pen_insert)
 		pen_insert_state = !pen_insert_state;
-	#endif
+#endif
 	if (wac_i2c->pen_insert == pen_insert_state) {
 		printk(KERN_DEBUG "[E-PEN] %s INT: (%d) was skipped\n",
 			__func__, wac_i2c->pen_insert);
@@ -450,12 +462,13 @@ static void pen_insert_work(struct work_struct *work)
 	pen_insert_state = !gpio_get_value(wac_i2c->gpio_pen_insert);
 	if (wac_i2c->invert_pen_insert)
 		pen_insert_state = !pen_insert_state;
+		
+	//pr_info("wacom: pen_insert_state=%d wac_i2c->invert_pen_insert=%d wac_i2c->pen_insert=%d\n", pen_insert_state, wac_i2c->invert_pen_insert, wac_i2c->pen_insert);
 
 	printk(KERN_DEBUG "[E-PEN] %s : %d\n",
 		__func__, wac_i2c->pen_insert);
-
-	input_report_switch(wac_i2c->input_dev,
-		SW_PEN_INSERT, !wac_i2c->pen_insert);
+	//pr_info("wacom: input SW_PEN_INSERT %d\n", !wac_i2c->pen_insert);
+	input_report_switch(wac_i2c->input_dev, SW_PEN_INSERT, !wac_i2c->pen_insert);
 	input_sync(wac_i2c->input_dev);
 
 #ifdef BATTERY_SAVING_MODE
@@ -914,6 +927,13 @@ static ssize_t epen_rotation_store(struct device *dev,
 	return count;
 }
 
+static ssize_t epen_hand_show(struct device *dev,
+							  struct device_attribute *attr,
+							  char *buf)
+{	
+	return sprintf(buf, "%d\n", user_hand);
+}
+
 static ssize_t epen_hand_store(struct device *dev,
 			       struct device_attribute *attr, const char *buf,
 			       size_t count)
@@ -931,6 +951,265 @@ static ssize_t epen_hand_store(struct device *dev,
 	return count;
 }
 #endif
+
+static ssize_t epen_boxfilter_threshold_show(struct device *dev,
+							  struct device_attribute *attr,
+							  char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_boxfilter_threshold);
+}
+
+static ssize_t epen_boxfilter_threshold_store(struct device *dev,
+							   struct device_attribute *attr, const char *buf,
+							   size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val >= 0 && val <= 1000)
+		sttg_boxfilter_threshold = val;
+	
+	printk("[E-PEN] box threshold set to %d\n", val);
+	
+	return count;
+}
+
+static ssize_t epen_boxfilter_threshold_hover_show(struct device *dev,
+									   struct device_attribute *attr,
+									   char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_boxfilter_threshold_hover);
+}
+
+static ssize_t epen_boxfilter_threshold_hover_store(struct device *dev,
+										struct device_attribute *attr, const char *buf,
+										size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val >= 0 && val <= 1000)
+		sttg_boxfilter_threshold_hover = val;
+	
+	printk("[E-PEN] boxfilter threshold set to %d\n", val);
+	
+	return count;
+}
+
+static ssize_t epen_boost_freq_show(struct device *dev,
+									   struct device_attribute *attr,
+									   char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_boost_freq);
+}
+
+static ssize_t epen_boost_freq_store(struct device *dev,
+										struct device_attribute *attr, const char *buf,
+										size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val > 0) {
+		if (val < 200000)
+			sttg_boost_freq = 200000;
+		
+		if (val > 1600000)
+			sttg_boost_freq = 1600000;
+		
+		sttg_boost_freq = val;
+		
+		// reinitialize epen_cpufreq_level so it will get the new freq.
+		epen_cpufreq_level = -1;
+		
+		printk("[E-PEN] boost frequency set to %d\n", val);
+	} else {
+		printk("[E-PEN] boost disabled\n");
+	}
+	
+	return count;
+}
+
+static ssize_t epen_min_pressure_show(struct device *dev,
+									struct device_attribute *attr,
+									char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_min_pressure);
+}
+
+static ssize_t epen_min_pressure_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf,
+									 size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val >= 0 && val < 1024) {
+		if (val == 1024)
+			val = 1023;
+		sttg_min_pressure = val;
+	}
+	
+	return count;
+}
+
+static ssize_t epen_side_button_mode_show(struct device *dev,
+									  struct device_attribute *attr,
+									  char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_side_button_mode);
+}
+
+static ssize_t epen_side_button_mode_store(struct device *dev,
+									   struct device_attribute *attr, const char *buf,
+									   size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val == 0 || val == 1)
+		sttg_side_button_mode = val;
+	
+	return count;
+}
+
+static ssize_t epen_fixed_pressure_show(struct device *dev,
+											 struct device_attribute *attr,
+											 char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_fixed_pressure);
+}
+
+static ssize_t epen_fixed_pressure_store(struct device *dev,
+											  struct device_attribute *attr, const char *buf,
+											  size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val >=0 && val <= 1024) {
+		if (val == 1024)
+			val = 1023;
+		sttg_fixed_pressure = val;
+	}
+	
+	return count;
+}
+
+static ssize_t epen_avg_strength_show(struct device *dev,
+										struct device_attribute *attr,
+										char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_avg_strength);
+}
+
+static ssize_t epen_avg_strength_store(struct device *dev,
+										 struct device_attribute *attr, const char *buf,
+										 size_t count)
+{
+	unsigned int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val >= 0 && val < 5) {
+		sttg_avg_strength = val;
+	} else {
+		sttg_avg_strength = 2;
+	}
+
+	
+	return count;
+}
+
+static ssize_t epen_offset_override_x_show(struct device *dev,
+								   struct device_attribute *attr,
+								   char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_offset_override_x);
+}
+
+static ssize_t epen_offset_override_x_store(struct device *dev,
+									struct device_attribute *attr, const char *buf,
+									size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	if (val >= -1000 && val <= 1000)
+		sttg_offset_override_x = val;
+	
+	return count;
+}
+
+static ssize_t epen_offset_override_y_show(struct device *dev,
+										   struct device_attribute *attr,
+										   char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_offset_override_y);
+}
+
+static ssize_t epen_offset_override_y_store(struct device *dev,
+											struct device_attribute *attr, const char *buf,
+											size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	if (val >= -1000 && val <= 1000)
+		sttg_offset_override_y = val;
+	
+	return count;
+}
+
+static ssize_t epen_offset_override_enable_show(struct device *dev,
+										   struct device_attribute *attr,
+										   char *buf)
+{	
+	return sprintf(buf, "%u\n", sttg_offset_override_enabled);
+}
+
+static ssize_t epen_offset_override_enable_store(struct device *dev,
+											struct device_attribute *attr, const char *buf,
+											size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val == 0 || val == 1)
+		sttg_offset_override_enabled = val;
+	
+	return count;
+}
+
+static ssize_t epen_touchkey_block_length_show(struct device *dev,
+										   struct device_attribute *attr,
+										   char *buf)
+{	
+	return sprintf(buf, "%d\n", sttg_touchkey_block_length);
+}
+
+static ssize_t epen_touchkey_block_length_store(struct device *dev,
+											struct device_attribute *attr, const char *buf,
+											size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	if (val >= 0 && val <= 60000)
+		sttg_touchkey_block_length = val;
+	
+	return count;
+}
 
 static ssize_t epen_reset_store(struct device *dev,
 				struct device_attribute *attr, const char *buf,
@@ -1184,8 +1463,19 @@ static DEVICE_ATTR(epen_type,
 /* screen rotation */
 static DEVICE_ATTR(epen_rotation, S_IWUSR | S_IWGRP, NULL, epen_rotation_store);
 /* hand type */
-static DEVICE_ATTR(epen_hand, S_IWUSR | S_IWGRP, NULL, epen_hand_store);
+static DEVICE_ATTR(epen_hand, S_IRUGO | S_IWUSR, epen_hand_show, epen_hand_store);
 #endif
+static DEVICE_ATTR(epen_boxfilter_threshold, S_IRUGO | S_IWUSR, epen_boxfilter_threshold_show, epen_boxfilter_threshold_store);
+static DEVICE_ATTR(epen_boxfilter_threshold_hover, S_IRUGO | S_IWUSR, epen_boxfilter_threshold_hover_show, epen_boxfilter_threshold_hover_store);
+static DEVICE_ATTR(epen_boost_freq, S_IRUGO | S_IWUSR, epen_boost_freq_show, epen_boost_freq_store);
+static DEVICE_ATTR(epen_min_pressure, S_IRUGO | S_IWUSR, epen_min_pressure_show, epen_min_pressure_store);
+static DEVICE_ATTR(epen_side_button_mode, S_IRUGO | S_IWUSR, epen_side_button_mode_show, epen_side_button_mode_store);
+static DEVICE_ATTR(epen_fixed_pressure, S_IRUGO | S_IWUSR, epen_fixed_pressure_show, epen_fixed_pressure_store);
+static DEVICE_ATTR(epen_avg_strength, S_IRUGO | S_IWUSR, epen_avg_strength_show, epen_avg_strength_store);
+static DEVICE_ATTR(epen_offset_override_x, S_IRUGO | S_IWUSR, epen_offset_override_x_show, epen_offset_override_x_store);
+static DEVICE_ATTR(epen_offset_override_y, S_IRUGO | S_IWUSR, epen_offset_override_y_show, epen_offset_override_y_store);
+static DEVICE_ATTR(epen_offset_override_enable, S_IRUGO | S_IWUSR, epen_offset_override_enable_show, epen_offset_override_enable_store);
+static DEVICE_ATTR(epen_touchkey_block_length, S_IRUGO | S_IWUSR, epen_touchkey_block_length_show, epen_touchkey_block_length_store);
 static DEVICE_ATTR(epen_pen_inserted,
 				   S_IRUSR | S_IRGRP, epen_pen_inserted_show, NULL);
 /* For SMD Test */
@@ -1243,6 +1533,17 @@ static struct attribute *epen_attributes[] = {
 #ifdef BATTERY_SAVING_MODE
 	&dev_attr_epen_saving_mode.attr,
 #endif
+	&dev_attr_epen_boxfilter_threshold.attr,
+	&dev_attr_epen_boxfilter_threshold_hover.attr,
+	&dev_attr_epen_boost_freq.attr,
+	&dev_attr_epen_min_pressure.attr,
+	&dev_attr_epen_side_button_mode.attr,
+	&dev_attr_epen_fixed_pressure.attr,
+	&dev_attr_epen_avg_strength.attr,
+	&dev_attr_epen_offset_override_x.attr,
+	&dev_attr_epen_offset_override_y.attr,
+	&dev_attr_epen_offset_override_enable.attr,
+	&dev_attr_epen_touchkey_block_length.attr,
 	NULL,
 };
 
@@ -1468,6 +1769,8 @@ static int wacom_i2c_probe(struct i2c_client *client,
 #endif	/* CONFIG_MACH_P4NOTE */
 #endif	/* SEC_BUS_LOCK */
 #endif	/* CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK */
+	
+	INIT_DELAYED_WORK(&wac_i2c->activitylockout_work, epen_activity_lockout_free);
 
 	/*Request IRQ */
 	if (wac_i2c->irq_flag) {
@@ -1545,6 +1848,8 @@ static struct i2c_driver wacom_i2c_driver = {
 static int __init wacom_i2c_init(void)
 {
 	int ret = 0;
+	
+	epen_cpufreq_level = -1;
 
 #if defined(WACOM_SLEEP_WITH_PEN_SLP)
 	printk(KERN_ERR "[E-PEN] %s: Sleep type-PEN_SLP pin\n", __func__);

@@ -33,6 +33,15 @@
 #define CONFIG_SAMSUNG_KERNEL_DEBUG_USER
 #endif
 
+bool epen_is_active = false;
+int epen_cpufreq_level;
+
+int get_epen_status(void)
+{
+	return epen_is_active;
+}
+EXPORT_SYMBOL(get_epen_status);
+
 /* block wacom coordinate print */
 #ifdef CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK
 #if defined(CONFIG_MACH_P4NOTE)
@@ -40,6 +49,8 @@ void free_dvfs_lock(struct work_struct *work)
 {
 	struct wacom_i2c *wac_i2c =
 	    container_of(work, struct wacom_i2c, dvfs_work.work);
+	
+	//printk("[E-PEN] free dvfs lock\n");
 
 	if (wac_i2c->dvfs_lock_status)
 		dev_lock(wac_i2c->bus_dev,
@@ -53,6 +64,7 @@ void free_dvfs_lock(struct work_struct *work)
 static void set_dvfs_lock(struct wacom_i2c *wac_i2c, bool on)
 {
 	if (on) {
+		//printk("[E-PEN] dvfs lock on\n");
 		if (!wac_i2c->dvfs_lock_status) {
 			cancel_delayed_work(&wac_i2c->dvfs_work);
 			dev_lock(wac_i2c->bus_dev,
@@ -64,6 +76,7 @@ static void set_dvfs_lock(struct wacom_i2c *wac_i2c, bool on)
 				msecs_to_jiffies(SEC_DVFS_LOCK_TIMEOUT_MS));
 		}
 	} else {
+		//printk("[E-PEN] dvfs lock off\n");
 		if (wac_i2c->dvfs_lock_status) {
 			schedule_delayed_work(&wac_i2c->dvfs_work,
 				msecs_to_jiffies(SEC_DVFS_LOCK_TIMEOUT_MS));
@@ -76,6 +89,8 @@ void free_dvfs_lock(struct work_struct *work)
 {
 	struct wacom_i2c *wac_i2c =
 	    container_of(work, struct wacom_i2c, dvfs_work.work);
+	
+	//printk("[E-PEN] free dvfs lock2\n");
 
 	exynos_cpufreq_lock_free(DVFS_LOCK_ID_PEN);
 	wac_i2c->dvfs_lock_status = false;
@@ -83,14 +98,19 @@ void free_dvfs_lock(struct work_struct *work)
 
 static void set_dvfs_lock(struct wacom_i2c *wac_i2c, bool on)
 {
-	if (on) {
+	if (on && sttg_boost_freq > 0) {
+		//printk("[E-PEN] dvfs lock on2\n");
 		cancel_delayed_work(&wac_i2c->dvfs_work);
 		if (!wac_i2c->dvfs_lock_status) {
-			exynos_cpufreq_lock(DVFS_LOCK_ID_PEN,
-					    wac_i2c->cpufreq_level);
+			if (epen_cpufreq_level < 0) {
+				exynos_cpufreq_get_level(sttg_boost_freq, &epen_cpufreq_level);
+				//printk("[E-PEN] got dvfs lock freq level (%d mhz L%d)\n", sttg_boost_freq, epen_cpufreq_level);
+			}
+			exynos_cpufreq_lock(DVFS_LOCK_ID_PEN, epen_cpufreq_level);
 			wac_i2c->dvfs_lock_status = true;
 		}
 	} else {
+		//printk("[E-PEN] dvfs lock off2\n");
 		if (wac_i2c->dvfs_lock_status)
 			schedule_delayed_work(&wac_i2c->dvfs_work,
 			      SEC_DVFS_LOCK_TIMEOUT * HZ);
@@ -98,6 +118,24 @@ static void set_dvfs_lock(struct wacom_i2c *wac_i2c, bool on)
 }
 #endif
 #endif	/* CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK */
+
+void epen_activity_lockout_free(struct work_struct *work)
+{	
+	//printk("[E-PEN] free activity lock\n");
+	epen_is_active = false;
+}
+
+static void epen_activity_lockout(struct wacom_i2c *wac_i2c, bool on)
+{
+	if (on) {
+		cancel_delayed_work(&wac_i2c->activitylockout_work);
+		epen_is_active = true;
+	} else {
+		//printk("[E-PEN] activity lock off\n");
+		schedule_delayed_work(&wac_i2c->activitylockout_work, msecs_to_jiffies(sttg_touchkey_block_length));
+	}
+}
+
 
 void forced_release(struct wacom_i2c *wac_i2c)
 {
@@ -117,6 +155,7 @@ void forced_release(struct wacom_i2c *wac_i2c)
 	input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
 #endif
 	input_sync(wac_i2c->input_dev);
+	//printk("[E-PEN] input_sync (forced_release)\n");
 
 	wac_i2c->last_x = 0;
 	wac_i2c->last_y = 0;
@@ -136,7 +175,7 @@ void forced_hover(struct wacom_i2c *wac_i2c)
 {
 	/* To distinguish hover and pdct area, release */
 	if (wac_i2c->last_x != 0 || wac_i2c->last_y != 0) {
-		printk(KERN_DEBUG "[E-PEN] release hover\n");
+		//printk("[E-PEN] release hover\n");
 		forced_release(wac_i2c);
 	}
 	wac_i2c->rdy_pdct = true;
@@ -145,6 +184,7 @@ void forced_hover(struct wacom_i2c *wac_i2c)
 #endif
 	input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 1);
 	input_sync(wac_i2c->input_dev);
+	//printk("[E-PEN] input_sync (forced_hover workaround)\n");
 
 #ifdef CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK
 	set_dvfs_lock(wac_i2c, true);
@@ -665,13 +705,12 @@ u8 wacom_i2c_coord_level(u16 gain)
 
 #ifdef WACOM_USE_BOX_FILTER
 void boxfilt(short *CoordX, short *CoordY,
-			int height, int bFirstLscan)
+			int height, int bFirstLscan, int threshold)
 {
 	bool isMoved = false;
 	static bool bFirst = true;
 	static short lastX_loc, lastY_loc;
 	static unsigned char bResetted;
-	int threshold = 0;
 	int distance = 0;
 	static short bounce;
 
@@ -694,7 +733,8 @@ void boxfilt(short *CoordX, short *CoordY,
 	}
 
 	/*Start Filtering*/
-	threshold = 30;
+	// now set via sttg_boxfilter_threshold. default (30) defined in wacom_i2c.c
+	//threshold = 30;
 
 	/*X*/
 	distance = abs(*CoordX - lastX_loc);
@@ -901,11 +941,15 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 #endif
 
 #ifdef WACOM_USE_AVERAGING
-		wacom_i2c_coord_average(&x, &y, rdy, aveStrength);
+		if (sttg_avg_strength > 0)
+			wacom_i2c_coord_average(&x, &y, rdy, sttg_avg_strength);
 #endif
 #ifdef WACOM_USE_BOX_FILTER
-		if (pressure == 0)
-			boxfilt(&x, &y, height, rdy);
+		if (!prox && sttg_boxfilter_threshold_hover > 0) {
+			boxfilt(&x, &y, height, rdy, sttg_boxfilter_threshold_hover);
+		} else if (prox && sttg_boxfilter_threshold > 0) {
+			boxfilt(&x, &y, height, rdy, sttg_boxfilter_threshold);
+		}
 #endif
 #endif /*WACOM_IMPORT_FW_ALGO*/
 		if (wac_i2c->wac_pdata->x_invert)
@@ -921,24 +965,64 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 
 #ifdef WACOM_USE_TILT_OFFSET
 		/* Add offset */
-		x = x + tilt_offsetX[user_hand][screen_rotate];
-		y = y + tilt_offsetY[user_hand][screen_rotate];
+		//printk("[E-PEN] tilt offset. rotate: %d hand:%d %d,%d\n", screen_rotate, user_hand, tilt_offsetX[user_hand][screen_rotate], tilt_offsetX[user_hand][screen_rotate]);
+		if (sttg_offset_override_enabled) {
+			x = x + sttg_offset_override_x;
+			y = y + sttg_offset_override_y;
+		} else {
+			x = x + tilt_offsetX[user_hand][screen_rotate];
+			y = y + tilt_offsetY[user_hand][screen_rotate];
+		}
 #endif
 		if (wacom_i2c_coord_range(&x, &y)) {
+			// the hover state is constantly reported.
+		
+			// activate the touchkey lockout, if enabled.
+			if (sttg_touchkey_block_length > 0)
+				epen_activity_lockout(wac_i2c, true);
+				
+			
 			input_report_abs(wac_i2c->input_dev, ABS_X, x);
 			input_report_abs(wac_i2c->input_dev, ABS_Y, y);
-			input_report_abs(wac_i2c->input_dev,
-					 ABS_PRESSURE, pressure);
-			input_report_key(wac_i2c->input_dev,
-					 BTN_STYLUS, stylus);
-			input_report_key(wac_i2c->input_dev, BTN_TOUCH, prox);
+			
+			// apply fixed pressure setting.
+			if (pressure > 0 && sttg_fixed_pressure > 0) {
+				input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, sttg_fixed_pressure);
+			} else {
+				input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, pressure);
+			}
+			
+			// apply side button setting.
+			if (!sttg_side_button_mode) {
+				// normal mode.
+				input_report_key(wac_i2c->input_dev, BTN_STYLUS, stylus);
+				//printk("[E-PEN] sttg_side_button_mode 0\n");
+			} else if (sttg_side_button_mode == 1) {
+				// side button is ignored.
+				input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
+				//printk("[E-PEN] sttg_side_button_mode 1\n");
+			} else if (sttg_side_button_mode == 2) {
+				// todo: this isn't working.
+				// side button presses are treated as touches while hovering.
+				input_report_key(wac_i2c->input_dev, BTN_TOUCH, stylus);
+				//printk("[E-PEN] sttg_side_button_mode 2 sty: %d\n", stylus);
+			}
+			
+			// apply min pressure setting.
+			if (sttg_side_button_mode != 2 && pressure > sttg_min_pressure) {
+				input_report_key(wac_i2c->input_dev, BTN_TOUCH, prox);
+			} else if (sttg_side_button_mode != 2) {
+				input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
+			}
+			
 			input_report_key(wac_i2c->input_dev, wac_i2c->tool, 1);
 			if (wac_i2c->rdy_pdct) {
 				wac_i2c->rdy_pdct = false;
-				input_report_key(wac_i2c->input_dev,
-					KEY_PEN_PDCT, 0);
+				input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 0);
 			}
 			input_sync(wac_i2c->input_dev);
+			
+			//printk("[E-PEN] input_sync (i2c_coord) %d,%d pressure: %d sty: %d prox: %d\n", x, y, pressure, stylus, prox);
 			wac_i2c->last_x = x;
 			wac_i2c->last_y = y;
 
@@ -998,6 +1082,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
 			input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
 			input_sync(wac_i2c->input_dev);
+			//printk("[E-PEN] input_sync (coord workaround)\n");
 		}
 		schedule_delayed_work(&wac_i2c->pendct_dwork, HZ / 10);
 
@@ -1008,7 +1093,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 		wacom_i2c_coord_average(0, 0, 0, 0);
 #endif
 #ifdef WACOM_USE_BOX_FILTER
-		boxfilt(0, 0, 0, 0);
+		boxfilt(0, 0, 0, 0, 0);
 #endif
 
 #ifdef WACOM_PDCT_WORK_AROUND
@@ -1034,8 +1119,11 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
 #endif
 			input_sync(wac_i2c->input_dev);
+			//printk("[E-PEN] input_sync (more work around)\n");
+			
+			epen_activity_lockout(wac_i2c, false);
 
-			printk(KERN_DEBUG "[E-PEN] is out");
+			printk(KERN_DEBUG "[E-PEN] is out\n");
 		}
 		wac_i2c->pen_prox = 0;
 		wac_i2c->pen_pressed = 0;
