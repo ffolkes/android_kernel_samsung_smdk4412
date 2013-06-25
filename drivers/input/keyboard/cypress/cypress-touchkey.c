@@ -50,6 +50,8 @@
 #endif
 #include <linux/i2c/touchkey_i2c.h>
 
+#include <linux/wacom_i2c.h>
+
 /* M0 Touchkey temporary setting */
 
 #if defined(CONFIG_MACH_M0) || defined(CONFIG_MACH_M3)
@@ -758,6 +760,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		tsp_gestures_only(false);
 	}
 #endif
+	
+	if (get_epen_status()) {
+		//pr_info("[Touchkey] touckey pressed but ignored because of epen input\n");
+		return IRQ_HANDLED;
+	}
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	if (pressed && gesture_delay > 0) {

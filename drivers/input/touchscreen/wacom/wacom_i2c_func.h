@@ -37,6 +37,18 @@ extern unsigned char screen_rotate;
 extern unsigned char user_hand;
 #endif
 
+extern unsigned int sttg_boxfilter_threshold;
+extern unsigned int sttg_boxfilter_threshold_hover;
+extern unsigned int sttg_boost_freq;
+extern unsigned int sttg_min_pressure;
+extern unsigned int sttg_side_button_mode;
+extern unsigned int sttg_fixed_pressure;
+extern unsigned int sttg_avg_strength;
+extern int sttg_offset_override_x;
+extern int sttg_offset_override_y;
+extern bool sttg_offset_override_enabled;
+extern unsigned int sttg_touchkey_block_length;
+
 #define WACOM_I2C_STOP		0x30
 #define WACOM_I2C_START		0x31
 #define WACOM_I2C_GRID_CHECK	0xC9
@@ -69,5 +81,8 @@ extern void wacom_i2c_pendct_work(struct work_struct *work);
 #ifdef CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK
 extern void free_dvfs_lock(struct work_struct *work);
 #endif
+
+extern void epen_activity_lockout_free(struct work_struct *work);
+extern int epen_cpufreq_level;
 
 #endif	/* _LINUX_WACOM_I2C_FUNC_H */

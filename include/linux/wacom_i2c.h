@@ -285,6 +285,8 @@
 #endif
 #endif
 
+int get_epen_status(void);
+
 /*Parameters for wacom own features*/
 struct wacom_features {
 	int x_max;
@@ -427,6 +429,7 @@ struct wacom_i2c {
 	bool power_enable;
 	bool boot_mode;
 	bool query_status;
+	struct delayed_work activitylockout_work;
 };
 
 #endif /* _LINUX_WACOM_I2C_H */
