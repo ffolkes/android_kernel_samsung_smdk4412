@@ -105,6 +105,10 @@ static int touchkey_autocalibration(struct touchkey_i2c *tkey_i2c);
 static struct touchkey_i2c *touchwakedevdata;
 #endif
 
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+static int gesture_delay = 0;
+#endif
+
 #if defined(CONFIG_TARGET_LOCALE_KOR)
 #ifndef TRUE
 #define TRUE	1
@@ -741,10 +745,86 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
             }
         }
     }
+	
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+	if (pressed && gesture_delay > 0) {
+		tsp_gestures_only(true);
+	} else if (gesture_delay > 0) {
+		tsp_gestures_only(false);
+	}
+#endif
+	
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+	if (pressed && gesture_delay > 0) {
+		// immediately set gesture mode (fast gestures might execute before the msleep() is up)
+		// wait x ms and recheck touchscreen.
+		
+		// reset touch_was_pressed flag.
+		tsp_check_touched_flag(0);
+		
+		// preemptively enable gesture mode.
+		tsp_gestures_only(true);
+		
+		// wait to see if we need to block this touchkey press.
+		msleep(gesture_delay);
+		
+		// check to see if the screen has been touched.
+		if (tsp_check_touched_flag(1)) {
+			// touchscreen has been touched. presumably a gesture is being drawn. don't report this keypress.
+			pr_info("[Touchkey] looks like this is a gesture.\n");
+			return IRQ_HANDLED;
+		} else {
+			// cancel the preemptive gesture mode, user wasn't doing a gesture after all. carry on.
+			tsp_gestures_only(false);
+		}
+
+	}
+#endif
 
 	if (get_tsp_status() && pressed)
 		printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
 	else {
+		
+#ifdef CONFIG_TOUCH_WAKE
+		
+		/*if (doubletap_enabled && touchwake_suspended) {
+			// enabled and touchwake thinks we are suspended.
+			// ignore single taps.
+			
+			if (pressed){
+				// this is a keydown event.
+				
+				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is pressed.\n");
+				
+				timetappedlast = timetapped;
+				
+				printk(KERN_DEBUG "[TouchKey] saved sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
+				
+				do_gettimeofday(&timetapped);
+				
+				printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
+				
+				time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
+				
+				printk(KERN_DEBUG "[TouchKey] time between tap: %d\n", time_between_tap);
+				
+				if (time_between_tap > 100 && time_between_tap < 750)
+					touch_press();
+			} else {
+				// this is a keyup event.
+				
+				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is NOT pressed.\n");
+				
+			}
+			
+		} else {*/
+			
+		//	printk(KERN_DEBUG "[TouchKey] doubletap ignored.\n");
+			touch_press();
+			
+		//}
+#endif
+		
 		input_report_key(tkey_i2c->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
@@ -757,7 +837,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_type], pressed);
 #else
-		printk(KERN_DEBUG "[TouchKey] pressed:%d\n",
+		printk("[TouchKey] pressed:%d\n",
 			pressed);
 #endif
 
@@ -1271,6 +1351,35 @@ static ssize_t touchkey_led_control(struct device *dev,
 	return size;
 }
 
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+static ssize_t gesture_delay_show(struct device *dev,
+									  struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", gesture_delay);
+	
+	return ret;
+}
+
+static ssize_t gesture_delay_store(struct device *dev,
+								   struct device_attribute *attr, const char *buf,
+								   size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 2000)) {
+		return -EINVAL;
+	}
+	
+	gesture_delay = data;
+	pr_info("[Touchkey] gesture_delay set to %d\n", data);
+	
+	return size;
+}
+#endif
+
 static ssize_t touch_led_force_disable_show(struct device *dev,
         struct device_attribute *attr, char *buf)
 {
@@ -1744,6 +1853,11 @@ static DEVICE_ATTR(autocal_enable, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
 static DEVICE_ATTR(autocal_stat, S_IRUGO | S_IWUSR | S_IWGRP,
 		   autocalibration_status, NULL);
 #endif
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+static DEVICE_ATTR(gesture_delay, S_IRUGO | S_IWUSR | S_IWGRP,
+					   gesture_delay_show, gesture_delay_store);
+#endif
+
 
 static struct attribute *touchkey_attributes[] = {
 	&dev_attr_recommended_version.attr,
@@ -1781,6 +1895,9 @@ static struct attribute *touchkey_attributes[] = {
 #endif
 	&dev_attr_timeout.attr,
     &dev_attr_force_disable.attr,
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+	&dev_attr_gesture_delay.attr,
+#endif
 	NULL,
 };
 
