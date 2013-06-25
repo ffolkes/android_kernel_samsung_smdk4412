@@ -26,6 +26,7 @@ static bool touch_disabled = false;
 static bool device_suspended = false;
 static bool timed_out = true;
 static bool prox_near = false;
+static bool ignore_once = false;
 static unsigned int touchoff_delay = 45000;
 
 static void touchwake_touchoff(struct work_struct * touchoff_work);
@@ -77,7 +78,7 @@ static void touchwake_enable_touch(void)
 static void touchwake_early_suspend(struct early_suspend * h)
 {
 	device_suspended = true;
-	if (touchwake_enabled) {
+	if (touchwake_enabled && !ignore_once) {
 		if (touchoff_delay > 0)	{
 			if (timed_out) {
 				wake_lock(&touchwake_wake_lock);
@@ -91,6 +92,17 @@ static void touchwake_early_suspend(struct early_suspend * h)
 		}
 	} else {
 		touchwake_disable_touch();
+	}
+	
+	if (ignore_once) {
+		// touchwake cannot differentiate a virtual power key press (via app,
+		// script, etc) so it will wrongly activate, thinking the screen has
+		// timed out. this setting lets a script tell touchwake via sysfs to
+		// disregard the next early_suspend event immediately before the 
+		// script makes its call for the virtual power button.
+		
+		// we just used up our one ignore, so reset.
+		ignore_once = false;
 	}
 
 	return;
@@ -192,6 +204,29 @@ static ssize_t touchwake_delay_write(struct device * dev, struct device_attribut
 	return size;
 }
 
+static ssize_t touchwake_ignore_once_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", ignore_once);
+}
+
+static ssize_t touchwake_ignore_once_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data == 1) {
+		ignore_once = true;
+		pr_info("TOUCHWAKE ignore_once has been set\n"); 
+	} else {
+		ignore_once = false;
+		pr_info("TOUCHWAKE ignore_once has been unset\n");
+	}
+	
+	return size;
+}
+
 static ssize_t touchwake_version(struct device * dev, struct device_attribute * attr, char * buf)
 {
 	return sprintf(buf, "%u\n", TOUCHWAKE_VERSION);
@@ -199,12 +234,14 @@ static ssize_t touchwake_version(struct device * dev, struct device_attribute * 
 
 static DEVICE_ATTR(enabled, S_IRUGO | S_IWUGO, touchwake_status_read, touchwake_status_write);
 static DEVICE_ATTR(delay, S_IRUGO | S_IWUGO, touchwake_delay_read, touchwake_delay_write);
+static DEVICE_ATTR(ignore_once, S_IRUGO | S_IWUGO, touchwake_ignore_once_read, touchwake_ignore_once_write);
 static DEVICE_ATTR(version, S_IRUGO , touchwake_version, NULL);
 
 static struct attribute *touchwake_notification_attributes[] =
 {
 	&dev_attr_enabled.attr,
 	&dev_attr_delay.attr,
+	&dev_attr_ignore_once.attr,
 	&dev_attr_version.attr,
 	NULL
 };
