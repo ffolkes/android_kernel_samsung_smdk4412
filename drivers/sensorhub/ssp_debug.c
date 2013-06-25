@@ -126,9 +126,9 @@ static void debug_work_func(struct work_struct *work)
 	unsigned int uSensorCnt;
 	struct ssp_data *data = container_of(work, struct ssp_data, work_debug);
 
-	ssp_dbg("[SSP]: %s(%u) - Sensor state: 0x%x, RC: %u, MS: %u\n",
-		__func__, data->uIrqCnt, data->uSensorState, data->uResetCnt,
-		data->uMissSensorCnt);
+	//ssp_dbg("[SSP]: %s(%u) - Sensor state: 0x%x, RC: %u, MS: %u\n",
+	//	__func__, data->uIrqCnt, data->uSensorState, data->uResetCnt,
+	//	data->uMissSensorCnt);
 
 	for (uSensorCnt = 0; uSensorCnt < (SENSOR_MAX - 1); uSensorCnt++)
 		if (atomic_read(&data->aSensorEnable) & (1 << uSensorCnt))

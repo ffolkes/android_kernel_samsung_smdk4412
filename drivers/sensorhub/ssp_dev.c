@@ -13,9 +13,13 @@
  *
  */
 #include "ssp.h"
+#include <linux/time.h>
 
 /* ssp mcu device ID */
 #define DEVICE_ID			0x55
+
+unsigned int staysleeping = 0;
+unsigned int alreadyresumed = 1;
 
 static void ssp_early_suspend(struct early_suspend *handler);
 static void ssp_late_resume(struct early_suspend *handler);
@@ -273,6 +277,7 @@ static int ssp_probe(struct i2c_client *client,
 	}
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
+	data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
 	data->early_suspend.suspend = ssp_early_suspend;
 	data->early_suspend.resume = ssp_late_resume;
 	register_early_suspend(&data->early_suspend);
@@ -359,6 +364,21 @@ static void ssp_shutdown(struct i2c_client *client)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void ssp_early_suspend(struct early_suspend *handler)
 {
+	
+	/*pr_info("[SSP]: %s - ########## CALLED \n", __func__);
+	
+	if (alreadyresumed == 0) {
+		// if we're trying to suspend before resume has completed,
+		// something must be wrong. give up and tell resume to fail.
+		staysleeping = 1;
+		pr_info("[SSP]: %s - attempted to suspend before resumed, going back to sleep.\n", __func__);
+		return;
+	} else {
+		staysleeping = 0;
+		pr_info("[SSP]: %s - suspending. alreadyresumed=%i\n", __func__, alreadyresumed);
+	}*/
+
+	
 	struct ssp_data *data;
 	data = container_of(handler, struct ssp_data, early_suspend);
 
@@ -379,6 +399,19 @@ static void ssp_early_suspend(struct early_suspend *handler)
 
 static void ssp_late_resume(struct early_suspend *handler)
 {
+	/*alreadyresumed = 0;
+	pr_info("[SSP]: %s - CALLED ########## \n", __func__);
+	msleep(5000);
+	
+	if (staysleeping == 1) {
+		pr_info("[SSP]: %s - was told to wake, but resume was already called. stay sleeping and reset.\n", __func__);
+		staysleeping = 0;
+		return;
+	} else {
+		alreadyresumed = 1;
+		pr_info("[SSP]: %s - was told to wake. staysleeping=%i\n", __func__, staysleeping);
+	}*/
+	
 	struct ssp_data *data;
 	data = container_of(handler, struct ssp_data, early_suspend);
 

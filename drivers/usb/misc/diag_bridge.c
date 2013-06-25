@@ -85,7 +85,7 @@ static void read_hsic(void)
 	unsigned int            pipe;
 	int                     ret;
 
-	dev_info(&dev->udev->dev, "%s:\n", __func__);
+	//dev_info(&dev->udev->dev, "%s:\n", __func__);
 	if (!dev->ifc) {
                 dev_err(&dev->udev->dev, "device is disconnected\n");
                 return;
@@ -122,8 +122,8 @@ static void read_hsic_cb(struct urb *urb)
 	struct diag_bridge	*dev = urb->context;
 	struct diag_bridge_ops	*cbs = dev->ops;
 
-	pr_info("%s: status:%d actual:%d\n", __func__,
-					urb->status, urb->actual_length);
+	//pr_info("%s: status:%d actual:%d\n", __func__,
+	//				urb->status, urb->actual_length);
 
 	/* Drop the packet */
 	if (urb->status == -EPROTO) {

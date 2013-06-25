@@ -1180,8 +1180,8 @@ int s5p_usb_phy_suspend(struct platform_device *pdev, int type)
 				phyclk &= ~(PHY1_COMMON_ON_N);
 				writel(phyclk, EXYNOS4_PHYCLK);
 			}
-			dev_info(&pdev->dev, "host_phy_susp:%d\n",
-					ohci_hcd->state);
+			//dev_info(&pdev->dev, "host_phy_susp:%d\n",
+			//		ohci_hcd->state);
 #endif
 			ret = exynos4_usb_phy1_suspend(pdev);
 		} else
