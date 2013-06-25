@@ -65,6 +65,9 @@ struct gesture_point {
 	int max_y;
 };
 
+int ary_gestures_flg_touchkey[MAX_GESTURES];
+int ary_gestures_flg_exclusive[MAX_GESTURES];
+
 typedef struct gesture_point gesture_points_t[MAX_GESTURES][MAX_GESTURE_FINGERS][MAX_GESTURE_STEPS];
 static gesture_points_t gesture_points = { { { { 0, 0, 0, 0 } } } };
 
@@ -100,9 +103,12 @@ static int gesturebooster_cpufreq_level;
 static int gesturebooster_dvfs_locked;
 static struct mutex gesturebooster_dvfs_lock;
 static struct delayed_work work_gesturebooster_dvfs_off;
+static int flg_gestures_detected = 0;
 #endif
 #endif
 
+static bool sttg_gestures_only = false;
+static bool sttg_require_touchkey = false;
 #include <linux/platform_data/mms152_ts.h>
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
@@ -242,6 +248,7 @@ struct device *sec_touchscreen;
 static struct device *bus_dev;
 
 int touch_is_pressed;
+bool flg_touch_was_pressed = false;
 
 #define ISC_DL_MODE	1
 
@@ -1026,10 +1033,14 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	bool fingers_completed;
 	unsigned long flags;
 	bool track_gestures;
-	int flg_gesturebooster = 0;
+	int flg_call_gesturebooster = 0;
+	bool flg_gestures_only = false;
 	
 	track_gestures = info->enabled;
 #endif
+	if (sttg_gestures_only) {
+		flg_gestures_only = true;
+	}
 	if (info->panel == 'M')
 		event_sz = EVENT_SZ_PALM;
 	else
@@ -1185,13 +1196,13 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					touchscreen_state_report(0);
 
 #ifdef CONFIG_LCD_FREQ_SWITCH
-					dev_notice(&client->dev,
-						"R(%c)(%d) [%2d]", info->ldi,
-					(info->tsp_lcdfreq_flag ? 40 : 60),
-						id);
+					//dev_notice(&client->dev,
+					//	"R(%c)(%d) [%2d]", info->ldi,
+					//(info->tsp_lcdfreq_flag ? 40 : 60),
+					//	id);
 #else
-					dev_notice(&client->dev,
-						"R(%c) [%2d]", info->ldi, id);
+					//dev_notice(&client->dev,
+					//	"R(%c) [%2d]", info->ldi, id);
 #endif
 				}
 			} else {
@@ -1273,15 +1284,15 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					touchscreen_state_report(0);
 
 #ifdef CONFIG_LCD_FREQ_SWITCH
-					dev_notice(&client->dev,
-						"R(%c)(%d) [%2d],([%4d],[%3d])",
-						info->ldi,
-					(info->tsp_lcdfreq_flag ? 40 : 60),
-						id, x, y);
+					//dev_notice(&client->dev,
+					//	"R(%c)(%d) [%2d],([%4d],[%3d])",
+					//	info->ldi,
+					//(info->tsp_lcdfreq_flag ? 40 : 60),
+					//	id, x, y);
 #else
-					dev_notice(&client->dev,
-						"R(%c) [%2d],([%4d],[%3d])",
-						info->ldi, id, x, y);
+					//dev_notice(&client->dev,
+					//	"R(%c) [%2d],([%4d],[%3d])",
+					//	info->ldi, id, x, y);
 #endif
 				}
 			} else {
@@ -1336,6 +1347,12 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 						// Ignore further movement for gestures already reported
 						continue;
 					
+					if (!flg_gestures_only && (ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey)) {
+						// this gesture requires the touchkey to be held down.
+						//printk("[TSP] M this gesture (%d) requires touchkey!\n", gesture_no + 1);
+						continue;
+					}
+					
 					// Find which finger definition this touch maps to
 					finger_pos = -1;
 					for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
@@ -1363,8 +1380,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 									finger_pos = finger_no;
 									gesture_fingers[gesture_no][finger_pos].finger_order = id;
 									gesture_fingers[gesture_no][finger_pos].current_step = 1;
-									printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
-										   gesture_no, finger_pos, id);
+									////printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
+									////	   gesture_no, finger_pos, id);
 									break;
 								}
 							}
@@ -1381,8 +1398,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								y >= point->min_y &&
 								y <= point->max_y) {
 								// Next zone reached, keep testing
-								printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
-									   gesture_no, finger_pos, id, step+1);
+								////printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
+								////	   gesture_no, finger_pos, id, step+1);
 								gesture_fingers[gesture_no][finger_pos].current_step++;
 							} else {
 								break;
@@ -1393,6 +1410,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				spin_unlock_irqrestore(&gestures_lock, flags);
 			}
 #endif
+			if (!flg_gestures_only) {
+				
 			input_mt_slot(info->input_dev, id);
 			input_mt_report_slot_state(info->input_dev,
 						   MT_TOOL_FINGER, true);
@@ -1410,6 +1429,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				ABS_MT_ANGLE, angle);
 			input_report_abs(info->input_dev,
 				ABS_MT_PALM, palm);
+				
+			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			if (info->finger_state[id] == 0) {
 				info->finger_state[id] = 1;
@@ -1418,12 +1439,12 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				touchscreen_state_report(1);
 
 #ifdef CONFIG_LCD_FREQ_SWITCH
-				dev_notice(&client->dev,
-					"P(%c)(%d) [%2d]", info->ldi,
-					(info->tsp_lcdfreq_flag ? 40 : 60), id);
+				//dev_notice(&client->dev,
+				//	"P(%c)(%d) [%2d]", info->ldi,
+				//	(info->tsp_lcdfreq_flag ? 40 : 60), id);
 #else
-				dev_notice(&client->dev,
-					"P(%c) [%2d]", info->ldi, id);
+				//dev_notice(&client->dev,
+				//	"P(%c) [%2d]", info->ldi, id);
 #endif
 			}
 #else
@@ -1459,6 +1480,12 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 						// Ignore further movement for gestures already reported
 						continue;
 					
+					if (!flg_gestures_only && (ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey)) {
+						// this gesture requires the touchkey to be held down.
+						//printk("[TSP] this gesture (%d) requires touchkey!\n", gesture_no + 1);
+						continue;
+					}
+					
 					// Find which finger definition this touch maps to
 					finger_pos = -1;
 					for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
@@ -1486,8 +1513,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 									finger_pos = finger_no;
 									gesture_fingers[gesture_no][finger_pos].finger_order = id;
 									gesture_fingers[gesture_no][finger_pos].current_step = 1;
-									printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
-										   gesture_no, finger_pos, id);
+									////printk("[TSP] Gesture %d, finger %d - Associated index %d\n",
+									////	   gesture_no, finger_pos, id);
 									break;
 								}
 							}
@@ -1504,8 +1531,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 								y >= point->min_y &&
 								y <= point->max_y) {
 								// Next zone reached, keep testing
-								printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
-									   gesture_no, finger_pos, id, step+1);
+								////printk("[TSP] Gesture %d, finger %d - Associated index %d - Moved through step, next is %d\n",
+								////	   gesture_no, finger_pos, id, step+1);
 								gesture_fingers[gesture_no][finger_pos].current_step++;
 							} else {
 								break;
@@ -1516,6 +1543,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				spin_unlock_irqrestore(&gestures_lock, flags);
 			}
 #endif
+			
+			if (!flg_gestures_only) {
 			
 			input_mt_slot(info->input_dev, id);
 			input_mt_report_slot_state(info->input_dev,
@@ -1528,6 +1557,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				ABS_MT_TOUCH_MAJOR, tmp[4]);
 			input_report_abs(info->input_dev,
 				ABS_MT_PRESSURE, tmp[5]);
+				
+			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			if (info->finger_state[id] == 0) {
 				info->finger_state[id] = 1;
@@ -1581,10 +1612,29 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					break;
 				}
 			}
-			if (fingers_completed) {
+			if (fingers_completed && !flg_gestures_detected) {
 				// All finger steps completed for this gesture, wake any consumers
-				printk("[TSP] Gesture %d completed, waking consumers\n", gesture_no);
-				flg_gesturebooster = 1;
+				if (ary_gestures_flg_exclusive[gesture_no]) {
+					// this is an exclusive gesture. this means it must be the ONLY
+					// matching gesture for it to trigger. meaning, most likely, it
+					// is so simple that if we process it immediately it will trip
+					// before other, more sophisticated gestures can be drawn.
+					// so don't process it until we are sure the user is done, which
+					// will be when they take their fingers off.
+					if (touch_is_pressed || flg_gestures_detected) {
+						// fingers aren't up, so don't wake consumers yet.
+						//printk("[TSP] touch_is_pressed so skipping\n");
+						continue;
+					} else {
+						// fingers are up, and no other gestures were triggered,
+						// so wake the exclusive gesture's consumers.
+						//printk("[TSP] touch_is_NOT_pressed so processing\n");
+					}
+				}
+				printk("[TSP/gestures] gesture %d completed, waking consumers\n", gesture_no + 1);
+				flg_gestures_detected = 1;
+				// give gesturebooster its own flag so we don't call it a zillion times.
+				flg_call_gesturebooster = 1;
 				gestures_detected[gesture_no] = true;
 				has_gestures = true;
 				wake_up_interruptible_all(&gestures_wq);
@@ -1599,10 +1649,18 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 		spin_unlock_irqrestore(&gestures_lock, flags);
 
 #if GESTURE_BOOSTER
-		if (flg_gesturebooster && gesturebooster_enabled) {
-			printk("[TSP] calling gesturebooster\n");
-			gesturebooster_dvfs_lock_on();
-			flg_gesturebooster = 0;
+		if (flg_call_gesturebooster) {
+			if (gesturebooster_enabled) {
+				//printk("[TSP] calling gesturebooster\n");
+				gesturebooster_dvfs_lock_on();
+			}
+			
+			// gesture is complete, but don't unblock touch events yet,
+			// or else the OS will get a few points before the user
+			// pulls their finger away completely.
+			
+			// reset flag.
+			flg_call_gesturebooster = 0;
 		}
 #endif
 	}
@@ -1624,6 +1682,15 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 		midas_tsp_request_qos();
 	}
 #endif
+	
+	if (!touch_is_pressed) {
+		//printk("[TSP] resetting flg_gestures_detected\n");
+		flg_gestures_detected = 0;
+	}
+	
+	if (!!touch_is_pressed) {
+		flg_touch_was_pressed = true;
+	}
 
 out:
 	return IRQ_HANDLED;
@@ -1634,6 +1701,27 @@ int get_tsp_status(void)
 	return touch_is_pressed;
 }
 EXPORT_SYMBOL(get_tsp_status);
+
+bool tsp_check_touched_flag(unsigned int mode)
+{
+	if (mode == 0) {
+		// reset flg_touch_was_pressed.
+		flg_touch_was_pressed = false;
+		return 0;
+	} else if (mode == 1) {
+		// return flg_touch_was_pressed.
+		return flg_touch_was_pressed;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(tsp_check_touched_flag);
+
+void tsp_gestures_only(bool mode)
+{
+	//pr_info("[TSP] setting gestures_only=%d\n", mode);
+	sttg_gestures_only = mode;
+}
+EXPORT_SYMBOL(tsp_gestures_only);
 
 
 #if ISC_DL_MODE
@@ -4420,6 +4508,9 @@ static ssize_t gesture_patterns_store(struct device *dev,
 	struct gesture_point *point;
 	int step;
 	
+	memset(ary_gestures_flg_touchkey, 0, sizeof(ary_gestures_flg_touchkey));
+	memset(ary_gestures_flg_exclusive, 0, sizeof(ary_gestures_flg_exclusive));
+	
 	tmp_gesture_points = kmalloc(sizeof(*tmp_gesture_points), GFP_KERNEL);
 	if (!tmp_gesture_points)
 		return -ENOMEM;
@@ -4462,12 +4553,56 @@ static ssize_t gesture_patterns_store(struct device *dev,
 			}
 		}
 		
+		
+		// parse gesture action data.
+		// try the original-style (no flags) first.
 		res = sscanf(buf, "%d:%d:(%d|%d,%d|%d)", &gesture_no, &finger_no, &min_x, &max_x, &min_y, &max_y);
 		if (res != 6) {
-			printk("[TSP] Only %d gesture tokens read from buffer: %s\n", res, buf);
-			kfree(tmp_gestures_step_count);
-			kfree(tmp_gesture_points);
-			return -EINVAL; // Invalid line format
+			// the original-style string was not matched. see if the touchkey flag is set.
+			res = sscanf(buf, "%d:%d:TKEYS:(%d|%d,%d|%d)", &gesture_no, &finger_no, &min_x, &max_x, &min_y, &max_y);
+			if (res != 6) {
+				// nope, no touchkey flags. try the exclusive flag.
+				res = sscanf(buf, "%d:%d:EXCLUSIVE:(%d|%d,%d|%d)", &gesture_no, &finger_no, &min_x, &max_x, &min_y, &max_y);
+				if (res != 6) {
+					// nope, no exclusive flag either. try both.
+					res = sscanf(buf, "%d:%d:EXCLUSIVE:TKEYS:(%d|%d,%d|%d)", &gesture_no, &finger_no, &min_x, &max_x, &min_y, &max_y);
+					if (res != 6) {
+						res = sscanf(buf, "%d:%d:TKEYS:EXCLUSIVE:(%d|%d,%d|%d)", &gesture_no, &finger_no, &min_x, &max_x, &min_y, &max_y);
+						if (res != 6) {
+							// well then, still no matches. let's give up.
+							printk("[TSP/gestures/gesture_patterns_show] no valid gestures found in '%s'\n", buf);
+							kfree(tmp_gestures_step_count);
+							kfree(tmp_gesture_points);
+							return -EINVAL; // Invalid line format
+						} else {
+							// success! this gesture has flags for both exclusive and touchkeys (order reversed).
+							printk("[TSP/gestures/gesture_patterns_show] gesture #%d: found exclusive flag and touchkey flag\n", gesture_no);
+							ary_gestures_flg_exclusive[gesture_no - 1] = 1;
+							ary_gestures_flg_touchkey[gesture_no - 1] = 1;
+						}
+					} else {
+						// success! this gesture has flags for both exclusive and touchkeys.
+						printk("[TSP/gestures/gesture_patterns_show] gesture #%d: found exclusive flag and touchkey flag\n", gesture_no);
+						ary_gestures_flg_exclusive[gesture_no - 1] = 1;
+						ary_gestures_flg_touchkey[gesture_no - 1] = 1;
+					}
+				} else {
+					// success! this gesture has flags for exclusive.
+					printk("[TSP/gestures/gesture_patterns_show] gesture #%d: found exclusive flag\n", gesture_no);
+					ary_gestures_flg_exclusive[gesture_no - 1] = 1;
+					ary_gestures_flg_touchkey[gesture_no - 1] = 0;
+				}
+			} else {
+				// success! this gesture has flags for touchkeys.
+				printk("[TSP/gestures/gesture_patterns_show] gesture #%d: found touchkey flag\n", gesture_no);
+				ary_gestures_flg_exclusive[gesture_no - 1] = 0;
+				ary_gestures_flg_touchkey[gesture_no - 1] = 1;
+			}
+		} else {
+			// success! no flags set.
+			printk("[TSP/gestures/gesture_patterns_show] gesture #%d: found no flags\n", gesture_no);
+			ary_gestures_flg_exclusive[gesture_no - 1] = 0;
+			ary_gestures_flg_touchkey[gesture_no - 1] = 0;
 		}
 		
 		// Validate args boundary
@@ -4625,6 +4760,38 @@ static ssize_t gestures_enabled_store(struct device *dev,
 	return size;
 }
 
+static ssize_t gestures_require_touchkey_show(struct device *dev,
+											struct device_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", sttg_require_touchkey);
+	return strlen(buf);
+}
+
+static ssize_t gestures_require_touchkey_store(struct device *dev, struct device_attribute *attr,
+											 const char *buf, size_t size)
+{
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1 && (input < 0 || input > 1)) {
+		return -EINVAL;
+	}
+	
+	if (input == 0) {
+		// normal.
+		sttg_require_touchkey = false;
+		pr_info("[TSP/gestures] sttg_require_touchkey=off\n");
+	} else {
+		// require the touckey to be pressed.
+		sttg_require_touchkey = true;
+		pr_info("[TSP/gestures] sttg_require_touchkey=on\n");
+	}
+	
+	return size;
+}
+
 #if GESTURE_BOOSTER
 static ssize_t gesturebooster_enabled_show(struct device *dev,
                                      struct device_attribute *attr, char *buf)
@@ -4742,12 +4909,48 @@ static ssize_t gesturebooster_duration_store(struct device *dev, struct device_a
 }
 #endif
 
+/*
+ TODO:
+ static ssize_t lcdfreq_tsp_mode_show(struct device *dev,
+										   struct device_attribute *attr, char *buf)
+{
+	sprintf(buf, "%d\n", 0);
+	return strlen(buf);
+}
+
+static ssize_t lcdfreq_tsp_mode_store(struct device *dev, struct device_attribute *attr,
+											const char *buf, size_t size)
+{
+	struct mms_ts_info *info = dev_get_drvdata(dev);
+	unsigned int input;
+	int ret;
+	
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1 || input > 1 || input < 0) {
+		return -EINVAL;
+	}
+	
+	if (input == 0) {
+		melfas_lcd_cb();
+		pr_info("[TSP/lcdfreq] tsp mode: off\n");
+	} else if (input == 1) {
+		melfas_lcd_cb();
+		pr_info("[TSP/lcdfreq] tsp mode: on\n");
+	}
+	
+	return size;
+}*/
+
+
 static DEVICE_ATTR(gesture_patterns, S_IRUGO | S_IWUSR,
                    gesture_patterns_show, gesture_patterns_store);
 static DEVICE_ATTR(wait_for_gesture, S_IRUGO | S_IWUSR,
                    wait_for_gesture_show, wait_for_gesture_store);
 static DEVICE_ATTR(gestures_enabled, S_IRUGO | S_IWUSR,
                    gestures_enabled_show, gestures_enabled_store);
+static DEVICE_ATTR(gestures_require_touchkey, S_IRUGO | S_IWUSR,
+                   gestures_require_touchkey_show, gestures_require_touchkey_store);
 #if GESTURE_BOOSTER
 static DEVICE_ATTR(gesturebooster_enabled, S_IRUGO | S_IWUSR,
                    gesturebooster_enabled_show, gesturebooster_enabled_store);
@@ -4761,6 +4964,7 @@ static struct attribute *gestures_attrs[] = {
 	&dev_attr_gesture_patterns.attr,
 	&dev_attr_wait_for_gesture.attr,
 	&dev_attr_gestures_enabled.attr,
+	&dev_attr_gestures_require_touchkey.attr,
 #if GESTURE_BOOSTER
 	&dev_attr_gesturebooster_enabled.attr,
 	&dev_attr_gesturebooster_freq.attr,
@@ -4788,6 +4992,7 @@ static DEVICE_ATTR(cmd_result, S_IRUGO, show_cmd_result, NULL);
 static DEVICE_ATTR(enable_lcdfreq_touchboost, S_IRUGO | S_IWUSR,
 				   enable_lcdfreq_touchboost_show, enable_lcdfreq_touchboost_store);
 #endif
+//static DEVICE_ATTR(lcdfreq_tsp_mode, S_IRUGO | S_IWUSR, lcdfreq_tsp_mode_show, lcdfreq_tsp_mode_store); // todo
 #ifdef ESD_DEBUG
 static DEVICE_ATTR(intensity_logging_on, S_IRUGO, show_intensity_logging_on,
 		   NULL);
@@ -4803,6 +5008,7 @@ static struct attribute *sec_touch_facotry_attributes[] = {
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	&dev_attr_enable_lcdfreq_touchboost.attr,
 #endif
+//	&dev_attr_lcdfreq_tsp_mode.attr, // todo
 #ifdef ESD_DEBUG
 	&dev_attr_intensity_logging_on.attr,
 	&dev_attr_intensity_logging_off.attr,
@@ -4915,6 +5121,7 @@ static void mms_ts_early_suspend(struct early_suspend *h)
 
 static void mms_ts_late_resume(struct early_suspend *h)
 {
+sttg_gestures_only = false;
 #ifndef CONFIG_TOUCH_WAKE
 	struct mms_ts_info *info;
 	info = container_of(h, struct mms_ts_info, early_suspend);
