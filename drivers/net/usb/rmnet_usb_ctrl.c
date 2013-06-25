@@ -143,7 +143,7 @@ static void notification_available_cb(struct urb *urb)
 
 	switch (urb->status) {
 	case 0:
-		pr_info("[NACB:%d]<\n", iface_num);
+		//pr_info("[NACB:%d]<\n", iface_num);
 		/*success*/
 		break;
 
@@ -186,7 +186,7 @@ static void notification_available_cb(struct urb *urb)
 			"%s: Error submitting Read URB %d\n", __func__, status);
 			goto resubmit_int_urb;
 		} else
-			pr_info("[NRA:%d]>\n", iface_num);
+			//pr_info("[NRA:%d]>\n", iface_num);
 		usb_mark_last_busy(udev);
 
 		if (!dev->resp_available) {
@@ -231,7 +231,7 @@ static void resp_avail_cb(struct urb *urb)
 	case 0:
 		/*success*/
 		dev->get_encap_resp_cnt++;
-		pr_info("[RACB:%d]<\n", iface_num);
+		//pr_info("[RACB:%d]<\n", iface_num);
 		break;
 
 	/*do not resubmit*/
@@ -249,8 +249,8 @@ static void resp_avail_cb(struct urb *urb)
 		goto resubmit_int_urb;
 	}
 
-	dev_dbg(dev->devicep, "Read %d bytes for %s\n",
-		urb->actual_length, dev->name);
+	//dev_dbg(dev->devicep, "Read %d bytes for %s\n",
+	//	urb->actual_length, dev->name);
 
 	cpkt = urb->transfer_buffer;
 	cpkt_size = urb->actual_length;
@@ -292,7 +292,7 @@ resubmit_int_urb:
 	if (status)
 		dev_err(dev->devicep, "%s: Error re-submitting Int URB %d\n",
 			__func__, status);
-	pr_info("[CHKRA:%d]>\n", iface_num);
+	//pr_info("[CHKRA:%d]>\n", iface_num);
 	usb_mark_last_busy(udev);
 }
 
@@ -310,7 +310,7 @@ static int rmnet_usb_ctrl_start_rx(struct rmnet_ctrl_dev *dev)
 	if (retval < 0)
 		dev_err(dev->devicep, "%s Intr submit %d\n", __func__, retval);
 	else
-		pr_info("[CHKRA:%d]>\n", iface_num);
+		//pr_info("[CHKRA:%d]>\n", iface_num);
 
 	return retval;
 }
@@ -507,7 +507,7 @@ static int rmnet_usb_ctrl_write(struct rmnet_ctrl_dev *dev, char *buf,
 	}
 	usb_mark_last_busy(udev);
 
-	DUMP_BUFFER("Write: ", size, buf);
+	//DUMP_BUFFER("Write: ", size, buf);
 
 	result = usb_autopm_get_interface(dev->intf);
 	if (result < 0) {
@@ -741,7 +741,7 @@ ctrl_read:
 	kfree(list_elem);
 	DBG("%s: Returning %d bytes to %s\n", __func__, bytes_to_read,
 			dev->name);
-	DUMP_BUFFER("Read: ", bytes_to_read, buf);
+	//DUMP_BUFFER("Read: ", bytes_to_read, buf);
 
 	return bytes_to_read;
 }
@@ -770,7 +770,7 @@ static ssize_t rmnet_ctl_write(struct file *file, const char __user * buf,
 		return size;
 	}
 
-	DBG("%s: Writing %i bytes on %s\n", __func__, size, dev->name);
+	//DBG("%s: Writing %i bytes on %s\n", __func__, size, dev->name);
 
 	wbuf = kmalloc(size , GFP_KERNEL);
 	if (!wbuf)
