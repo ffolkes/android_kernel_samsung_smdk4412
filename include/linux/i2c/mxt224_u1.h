@@ -165,5 +165,6 @@ struct t48_median_config_t {
 };
 
 int get_tsp_status(void);
+void tsp_gestures_only(bool mode);
 extern struct class *sec_class;
 #endif
