@@ -203,7 +203,7 @@ void mali_regulator_set_voltage(int min_uV, int max_uV)
 		return;
 	}
 
-    MALI_DEBUG_PRINT(2, ("= regulator_set_voltage: %d, %d \n",min_uV, max_uV));
+   // printk("mali: regulator_set_voltage: %d, %d \n", min_uV, max_uV);
 
     regulator_set_voltage(g3d_regulator,min_uV,max_uV);
 	voltage = regulator_get_voltage(g3d_regulator);
@@ -217,7 +217,7 @@ void mali_regulator_set_voltage(int min_uV, int max_uV)
 #endif
 
 	mali_gpu_vol = voltage;
-	MALI_DEBUG_PRINT(1, ("= regulator_get_voltage: %d \n",mali_gpu_vol));
+	//printk("= regulator_get_voltage: %d \n", mali_gpu_vol);
 
 	_mali_osk_lock_signal(mali_dvfs_lock, _MALI_OSK_LOCKMODE_RW);
 }
@@ -366,6 +366,8 @@ mali_bool mali_clk_set_rate(unsigned int clk, unsigned int mhz)
 {
 	unsigned long rate = 0;
 	mali_bool bis_vpll = MALI_TRUE;
+	
+	//printk("mali: clock() clk:%d mhz:%d\n", clk, mhz);
 
 #ifndef CONFIG_VPLL_USE_FOR_TVENC
 	bis_vpll = MALI_TRUE;
@@ -381,7 +383,7 @@ mali_bool mali_clk_set_rate(unsigned int clk, unsigned int mhz)
 		return MALI_FALSE;
 
 	rate = (unsigned long)clk * (unsigned long)mhz;
-	MALI_DEBUG_PRINT(3,("= clk_set_rate : %d , %d \n",clk, mhz ));
+	//printk("mali: clock() clk_set_rate : %d , %d \n",clk, mhz );
 
 	if (bis_vpll)
 	{
@@ -403,7 +405,10 @@ mali_bool mali_clk_set_rate(unsigned int clk, unsigned int mhz)
 
 
 	clk_set_rate(mali_clock, rate);
+	//printk("mali: mali_clk_set_rate() rate1:%d\n", rate);
 	rate = clk_get_rate(mali_clock);
+	//printk("mali: mali_clk_set_rate() rate2:%d\n", rate);
+	
 
 #if MALI_INTERNAL_TIMELINE_PROFILING_ENABLED
 	gFreq = rate/1000000;

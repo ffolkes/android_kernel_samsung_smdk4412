@@ -1837,6 +1837,623 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev,
 
 	return count;
 }
+	
+static ssize_t mali_asv_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+
+	ret = sprintf(buf, "%d\n", get_mali_asv());
+	
+	return ret;
+}
+
+static ssize_t mali_asv_store(struct device *dev,
+								   struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 13)) {
+		return -EINVAL;
+	}
+	
+	set_mali_asv(data);
+	pr_info("[Touchkey] mali asv to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_cur_freq_show(struct device *dev,
+							 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_cur_freq());
+	
+	return ret;
+}
+	
+static ssize_t mali_s5_freq_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_freq_by_step(5));
+	
+	return ret;
+}
+
+static ssize_t mali_s5_freq_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 900)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_freq(5, data);
+	//pr_info("[Touchkey] mali step 5 freq set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s5_volt_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_volt_by_step(5));
+	
+	return ret;
+}
+
+static ssize_t mali_s5_volt_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 1300000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_volt(5, data);
+	//pr_info("[Touchkey] mali step 5 volt set to %d\n", data);
+	
+	return size;
+}
+
+static ssize_t mali_s4_freq_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_freq_by_step(4));
+	
+	return ret;
+}
+
+static ssize_t mali_s4_freq_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 900)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_freq(4, data);
+	//pr_info("[Touchkey] mali step 4 freq set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s4_volt_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_volt_by_step(4));
+	
+	return ret;
+}
+
+static ssize_t mali_s4_volt_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 1300000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_volt(4, data);
+	//pr_info("[Touchkey] mali step 4 volt set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s3_freq_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_freq_by_step(3));
+	
+	return ret;
+}
+
+static ssize_t mali_s3_freq_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 900)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_freq(3, data);
+	//pr_info("[Touchkey] mali step 3 freq set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s3_volt_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_volt_by_step(3));
+	
+	return ret;
+}
+
+static ssize_t mali_s3_volt_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 1300000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_volt(3, data);
+	//pr_info("[Touchkey] mali step 3 volt set to %d\n", data);
+	
+	return size;
+}
+
+static ssize_t mali_s2_freq_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_freq_by_step(2));
+	
+	return ret;
+}
+
+static ssize_t mali_s2_freq_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 900)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_freq(2, data);
+	//pr_info("[Touchkey] mali step 2 freq set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s2_volt_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_volt_by_step(2));
+	
+	return ret;
+}
+
+static ssize_t mali_s2_volt_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 1300000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_volt(2, data);
+	//pr_info("[Touchkey] mali step 2 volt set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s1_freq_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_freq_by_step(1));
+	
+	return ret;
+}
+
+static ssize_t mali_s1_freq_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 900)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_freq(1, data);
+	//pr_info("[Touchkey] mali step 1 freq set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_s1_volt_show(struct device *dev,
+								 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_volt_by_step(1));
+	
+	return ret;
+}
+
+static ssize_t mali_s1_volt_store(struct device *dev,
+								  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 1300000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_volt(1, data);
+	//pr_info("[Touchkey] mali step 1 volt set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_step_lock_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_step_lock());
+	
+	return ret;
+}
+
+static ssize_t mali_step_lock_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_lock(data);
+	pr_info("[Touchkey] mali lock set to %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t mali_step_limit_show(struct device *dev,
+							 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_step_limit());
+	
+	return ret;
+}
+
+static ssize_t mali_step_limit_store(struct device *dev,
+							  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5)) {
+		return -EINVAL;
+	}
+	
+	set_mali_step_limit(data);
+	//pr_info("[Touchkey] mali limit set to %d\n", data);
+	
+	return size;
+}
+
+/*
+==========================================================================================
+==========================================================================================
+*/
+
+static ssize_t mali_s5_down_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_down_threshold_by_step(5));
+	
+	return ret;
+}
+
+static ssize_t mali_s5_down_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_down_threshold_by_step(5, data);
+	
+	return size;
+}
+
+/* --- */
+
+static ssize_t mali_s4_up_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_up_threshold_by_step(4));
+	
+	return ret;
+}
+
+static ssize_t mali_s4_up_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_up_threshold_by_step(4, data);
+	
+	return size;
+}
+
+static ssize_t mali_s4_down_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_down_threshold_by_step(4));
+	
+	return ret;
+}
+
+static ssize_t mali_s4_down_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_down_threshold_by_step(4, data);
+	
+	return size;
+}
+
+/* --- */
+
+static ssize_t mali_s3_up_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_up_threshold_by_step(3));
+	
+	return ret;
+}
+
+static ssize_t mali_s3_up_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_up_threshold_by_step(3, data);
+	
+	return size;
+}
+
+static ssize_t mali_s3_down_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_down_threshold_by_step(3));
+	
+	return ret;
+}
+
+static ssize_t mali_s3_down_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_down_threshold_by_step(3, data);
+	
+	return size;
+}
+
+/* --- */
+
+static ssize_t mali_s2_up_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_up_threshold_by_step(2));
+	
+	return ret;
+}
+
+static ssize_t mali_s2_up_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_up_threshold_by_step(2, data);
+	
+	return size;
+}
+
+static ssize_t mali_s2_down_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_down_threshold_by_step(2));
+	
+	return ret;
+}
+
+static ssize_t mali_s2_down_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_down_threshold_by_step(2, data);
+	
+	return size;
+}
+
+/* --- */
+
+static ssize_t mali_s1_up_threshold_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_up_threshold_by_step(1));
+	
+	return ret;
+}
+
+static ssize_t mali_s1_up_threshold_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 100)) {
+		return -EINVAL;
+	}
+	
+	set_mali_up_threshold_by_step(1, data);
+	
+	return size;
+}
+
+/* ---------------------
+---------------------------
+*/
+
+static ssize_t mali_time_in_state_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int i, len = 0;
+
+	for (i = 4; i >= 0; i--) {
+		len += sprintf(buf + len, "Step %d:\t%llu\n", (i + 1), get_mali_time_in_state(i + 1));
+	}
+
+	return len;
+}
+
+static ssize_t mali_time_in_state_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 2)) {
+		return -EINVAL;
+	}
+	
+	set_mali_time_in_state(data);
+	
+	return size;
+}
+
+static ssize_t mali_utilization_timeout_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", get_mali_utilization_timeout());
+	
+	return ret;
+}
+
+static ssize_t mali_utilization_timeout_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5000)) {
+		return -EINVAL;
+	}
+	
+	set_mali_utilization_timeout(data);
+	
+	return size;
+}
 
 static DEVICE_ATTR(recommended_version, S_IRUGO | S_IWUSR | S_IWGRP,
 		   touch_version_read, touch_version_write);
@@ -1893,6 +2510,34 @@ static DEVICE_ATTR(autocal_stat, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(gesture_delay, S_IRUGO | S_IWUSR | S_IWGRP,
 					   gesture_delay_show, gesture_delay_store);
 #endif
+static DEVICE_ATTR(mali_asv, S_IRUGO | S_IWUSR | S_IWGRP,mali_asv_show, mali_asv_store);
+static DEVICE_ATTR(mali_cur_freq, S_IRUGO, mali_cur_freq_show, NULL);
+static DEVICE_ATTR(mali_step_lock, S_IRUGO | S_IWUSR | S_IWGRP, mali_step_lock_show, mali_step_lock_store);
+static DEVICE_ATTR(mali_step_limit, S_IRUGO | S_IWUSR | S_IWGRP, mali_step_limit_show, mali_step_limit_store);
+static DEVICE_ATTR(mali_s5_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_volt_show, mali_s5_volt_store);
+static DEVICE_ATTR(mali_s5_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_freq_show, mali_s5_freq_store);
+static DEVICE_ATTR(mali_s4_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_volt_show, mali_s4_volt_store);
+static DEVICE_ATTR(mali_s4_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_freq_show, mali_s4_freq_store);
+static DEVICE_ATTR(mali_s3_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s3_volt_show, mali_s3_volt_store);
+static DEVICE_ATTR(mali_s3_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s3_freq_show, mali_s3_freq_store);
+static DEVICE_ATTR(mali_s2_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_volt_show, mali_s2_volt_store);
+static DEVICE_ATTR(mali_s2_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_freq_show, mali_s2_freq_store);
+static DEVICE_ATTR(mali_s1_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_volt_show, mali_s1_volt_store);
+static DEVICE_ATTR(mali_s1_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_freq_show, mali_s1_freq_store);
+
+//static DEVICE_ATTR(mali_s5_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_up_threshold_show, mali_s5_up_threshold_store);
+static DEVICE_ATTR(mali_s5_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_down_threshold_show, mali_s5_down_threshold_store);
+static DEVICE_ATTR(mali_s4_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_up_threshold_show, mali_s4_up_threshold_store);
+static DEVICE_ATTR(mali_s4_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_down_threshold_show, mali_s4_down_threshold_store);
+static DEVICE_ATTR(mali_s3_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s3_up_threshold_show, mali_s3_up_threshold_store);
+static DEVICE_ATTR(mali_s3_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s3_down_threshold_show, mali_s3_down_threshold_store);
+static DEVICE_ATTR(mali_s2_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_up_threshold_show, mali_s2_up_threshold_store);
+static DEVICE_ATTR(mali_s2_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_down_threshold_show, mali_s2_down_threshold_store);
+static DEVICE_ATTR(mali_s1_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_up_threshold_show, mali_s1_up_threshold_store);
+//static DEVICE_ATTR(mali_s1_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_down_threshold_show, mali_s1_down_threshold_store);
+
+static DEVICE_ATTR(mali_time_in_state, S_IRUGO | S_IWUSR | S_IWGRP, mali_time_in_state_show, mali_time_in_state_store);
+static DEVICE_ATTR(mali_utilization_timeout, S_IRUGO | S_IWUSR | S_IWGRP, mali_utilization_timeout_show, mali_utilization_timeout_store);
 
 
 static struct attribute *touchkey_attributes[] = {
@@ -1934,6 +2579,32 @@ static struct attribute *touchkey_attributes[] = {
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	&dev_attr_gesture_delay.attr,
 #endif
+	&dev_attr_mali_asv.attr,
+	&dev_attr_mali_cur_freq.attr,
+	&dev_attr_mali_step_lock.attr,
+	&dev_attr_mali_step_limit.attr,
+	&dev_attr_mali_s5_volt.attr,
+	&dev_attr_mali_s5_freq.attr,
+	&dev_attr_mali_s4_volt.attr,
+	&dev_attr_mali_s4_freq.attr,
+	&dev_attr_mali_s3_volt.attr,
+	&dev_attr_mali_s3_freq.attr,
+	&dev_attr_mali_s2_volt.attr,
+	&dev_attr_mali_s2_freq.attr,
+	&dev_attr_mali_s1_volt.attr,
+	&dev_attr_mali_s1_freq.attr,
+//	&dev_attr_mali_s5_up_threshold.attr,
+	&dev_attr_mali_s5_down_threshold.attr,
+	&dev_attr_mali_s4_up_threshold.attr,
+	&dev_attr_mali_s4_down_threshold.attr,
+	&dev_attr_mali_s3_up_threshold.attr,
+	&dev_attr_mali_s3_down_threshold.attr,
+	&dev_attr_mali_s2_up_threshold.attr,
+	&dev_attr_mali_s2_down_threshold.attr,
+	&dev_attr_mali_s1_up_threshold.attr,
+//	&dev_attr_mali_s1_down_threshold.attr,
+	&dev_attr_mali_time_in_state.attr,
+	&dev_attr_mali_utilization_timeout.attr,
 	NULL,
 };
 
