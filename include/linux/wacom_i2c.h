@@ -23,6 +23,8 @@
 #define WACNAME "WAC_I2C_EMR"
 #define WACFLASH "WAC_I2C_FLASH"
 
+extern bool epen_is_active;
+
 #ifdef CONFIG_EPEN_WACOM_G9PM
 #define WACOM_FW_SIZE 61440
 #else

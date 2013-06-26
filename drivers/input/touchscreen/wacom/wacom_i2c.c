@@ -470,6 +470,9 @@ static void pen_insert_work(struct work_struct *work)
 	//pr_info("wacom: input SW_PEN_INSERT %d\n", !wac_i2c->pen_insert);
 	input_report_switch(wac_i2c->input_dev, SW_PEN_INSERT, !wac_i2c->pen_insert);
 	input_sync(wac_i2c->input_dev);
+	
+	// make sure the epen activity lock is reset.
+	epen_is_active = false;
 
 #ifdef BATTERY_SAVING_MODE
 	if (wac_i2c->pen_insert) {
