@@ -41,6 +41,7 @@
 #include <linux/slab.h>
 #include <mach/gpio.h>
 #include <linux/uaccess.h>
+#include <linux/wacom_i2c.h>
 
 #include <mach/cpufreq.h>
 #include <mach/dev.h>
@@ -1037,9 +1038,13 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	bool flg_gestures_only = false;
 	
 	track_gestures = info->enabled;
-#endif
 	if (sttg_gestures_only) {
 		flg_gestures_only = true;
+	}
+#endif
+	if (get_epen_status()) {
+		//pr_info("[TSP] screen touched but ignored because of epen input\n");
+		goto out;
 	}
 	if (info->panel == 'M')
 		event_sz = EVENT_SZ_PALM;
