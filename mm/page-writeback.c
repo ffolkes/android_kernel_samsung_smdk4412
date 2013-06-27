@@ -62,7 +62,7 @@ static inline long sync_writeback_pages(unsigned long dirtied)
 /*
  * Start background writeback (via writeback threads) at this percentage
  */
-int dirty_background_ratio = 9;
+int dirty_background_ratio = 10;
 
 /*
  * dirty_background_bytes starts at 0 (disabled) so that it is a function of
@@ -79,7 +79,7 @@ int vm_highmem_is_dirtyable;
 /*
  * The generator of dirty data starts writeback at this percentage
  */
-int vm_dirty_ratio = 11;
+int vm_dirty_ratio = 20;
 
 /*
  * vm_dirty_bytes starts at 0 (disabled) so that it is a function of
@@ -90,12 +90,18 @@ unsigned long vm_dirty_bytes;
 /*
  * The interval between `kupdate'-style writebacks
  */
-unsigned int dirty_writeback_interval = 0; /* centiseconds */
+#define DEFAULT_DIRTY_WRITEBACK_INTERVAL 0 /* centiseconds */
+unsigned int dirty_writeback_interval,
+		resume_dirty_writeback_interval;
+suspend_dirty_writeback_interval = 2000;
 
 /*
  * The longest time for which data is allowed to remain dirty
  */
-unsigned int dirty_expire_interval = 200; /* centiseconds */
+#define DEFAULT_DIRTY_EXPIRE_INTERVAL 200 /* centiseconds */
+unsigned int dirty_expire_interval,
+		resume_dirty_expire_interval;
+suspend_dirty_expire_interval = 1000;
 
 /*
  * Flag that makes the machine dump writes/reads and block dirtyings.
@@ -786,18 +792,19 @@ static struct notifier_block __cpuinitdata ratelimit_nb = {
 
 static void dirty_early_suspend(struct early_suspend *handler)
 {
-	dirty_background_ratio = 18;
-	vm_dirty_ratio = 21;
-	dirty_writeback_interval = 2000;
-	dirty_expire_interval = 1000;
+	if (dirty_writeback_interval != resume_dirty_writeback_interval)
+		resume_dirty_writeback_interval = dirty_writeback_interval;
+	if (dirty_expire_interval != resume_dirty_expire_interval)
+		resume_dirty_expire_interval = dirty_expire_interval;
+
+	dirty_writeback_interval = suspend_dirty_writeback_interval;
+	dirty_expire_interval = suspend_dirty_expire_interval;
 }
 
 static void dirty_late_resume(struct early_suspend *handler)
 {
-	dirty_background_ratio = 9;
-	vm_dirty_ratio = 11;
-	dirty_writeback_interval = 0;
-	dirty_expire_interval = 200;
+	dirty_writeback_interval = resume_dirty_writeback_interval;
+	dirty_expire_interval = resume_dirty_expire_interval;
 }
 
 static struct early_suspend dirty_suspend = {
@@ -826,6 +833,12 @@ static struct early_suspend dirty_suspend = {
 void __init page_writeback_init(void)
 {
 	int shift;
+
+	dirty_writeback_interval = resume_dirty_writeback_interval =
+			DEFAULT_DIRTY_WRITEBACK_INTERVAL;
+	dirty_expire_interval = resume_dirty_expire_interval =
+			DEFAULT_DIRTY_EXPIRE_INTERVAL;
+
 	register_early_suspend(&dirty_suspend);
 
 	writeback_set_ratelimit();
