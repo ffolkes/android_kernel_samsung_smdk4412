@@ -471,7 +471,10 @@ static void pen_insert_work(struct work_struct *work)
 	input_report_switch(wac_i2c->input_dev, SW_PEN_INSERT, !wac_i2c->pen_insert);
 	input_sync(wac_i2c->input_dev);
 	
+	// L900/i605: wac_i2c->pen_insert = 0 when pen is out, 1 when pen is in.
+	
 	// make sure the epen activity lock is reset.
+	cancel_delayed_work(&wac_i2c->activitylockout_work);
 	epen_is_active = false;
 
 #ifdef BATTERY_SAVING_MODE
