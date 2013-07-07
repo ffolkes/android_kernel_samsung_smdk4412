@@ -565,7 +565,7 @@ static void gesturebooster_dvfs_lock_on(void)
 	mutex_lock(&gesturebooster_dvfs_lock);
 	
 	if (gesturebooster_freq == 0) {
-		pr_info("[TSP/gesturebooster] boost_freq max autodetect\n", maxfreq);
+		pr_info("[TSP/gesturebooster] boost_freq max autodetect\n");
 		// use the highest frequency we can.
 		maxfreq = exynos_cpufreq_get_maxfreq();
 		gesturebooster_actual_freq = maxfreq;
@@ -573,7 +573,7 @@ static void gesturebooster_dvfs_lock_on(void)
 		// if this has changed, we need to refresh the level.
 		if (prev_gesturebooster_actual_freq != gesturebooster_actual_freq) {
 			gesturebooster_cpufreq_level = -1;
-			pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n", maxfreq);
+			pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n");
 		}
 		
 	} else {
@@ -1043,9 +1043,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	}
 #endif
 	if (get_epen_status()) {
-		//pr_info("[TSP] screen touched but ignored because of epen input\n");
-		goto out;
+		//pr_info("[TSP] screen touched but potential gesture ignored because of epen input\n");
+		track_gestures = false;
 	}
+
 	if (info->panel == 'M')
 		event_sz = EVENT_SZ_PALM;
 	else
