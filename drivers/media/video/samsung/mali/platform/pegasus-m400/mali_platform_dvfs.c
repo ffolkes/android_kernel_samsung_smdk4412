@@ -509,9 +509,9 @@ static unsigned int decideNextStatus(unsigned int utilization)
 
 	if (mali_dvfs_threshold[maliDvfsStatus.currentStep].upthreshold
 			<= mali_dvfs_threshold[maliDvfsStatus.currentStep].downthreshold) {
-		MALI_PRINT(("upthreadshold is smaller than downthreshold: %d < %d\n",
+		/*MALI_PRINT(("upthreadshold is smaller than downthreshold: %d < %d\n",
 				mali_dvfs_threshold[maliDvfsStatus.currentStep].upthreshold,
-				mali_dvfs_threshold[maliDvfsStatus.currentStep].downthreshold));
+				mali_dvfs_threshold[maliDvfsStatus.currentStep].downthreshold));*/
 		return level;
 	}
 
