@@ -692,6 +692,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
+	//int time_between_tap = 0;
 
 	set_touchkey_debug('a');
 
@@ -749,7 +750,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
     }
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && gesture_delay > 0) {
 		tsp_gestures_only(true);
 	} else if (gesture_delay > 0) {
 		tsp_gestures_only(false);
@@ -762,7 +763,9 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && gesture_delay > 0) {
+		// if ignore_gestures is true, then gestures are disabled, so don't even bother.
+		//
 		// immediately set gesture mode (fast gestures might execute before the msleep() is up)
 		// wait x ms and recheck touchscreen.
 		
@@ -955,7 +958,32 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_sync(touchkey_driver->input_dev);
 		
 #ifdef CONFIG_TOUCH_WAKE
-		touch_press();
+		
+		/*if (doubletap_enabled && touchwake_suspended) {
+			// enabled and touchwake thinks we are suspended.
+			// ignore single taps.
+			
+			timetappedlast = timetapped;
+			
+			printk(KERN_DEBUG "[TouchKey2] doubletap checked for. saving sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
+			
+			do_gettimeofday(&timetapped);
+			
+			printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
+			
+			time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
+			
+			printk(KERN_DEBUG "[TouchKey2] time between tap: %d\n", time_between_tap);
+			
+			if (time_between_tap < 500)
+				touch_press();
+			
+		} else {
+			
+			printk(KERN_DEBUG "[TouchKey2] doubletap ignored.\n");*/
+			touch_press();
+			
+		//}
 #endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */

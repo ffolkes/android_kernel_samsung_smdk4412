@@ -23,6 +23,7 @@
 void touchscreen_state_report(int state);
 
 bool tsp_check_touched_flag(unsigned int mode);
+extern bool ignore_gestures;
 
 void set_mali_asv(unsigned int level);
 unsigned int get_mali_asv(void);
