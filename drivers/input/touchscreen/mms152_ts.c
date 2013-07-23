@@ -81,7 +81,7 @@ static gestures_step_count_t gestures_step_count = { { 0 } };
 static bool gestures_detected[MAX_GESTURES] = { false };
 static bool has_gestures = false;
 
-static bool ignore_gestures = false;
+bool ignore_gestures = false;
 
 struct gesture_finger {
 	int finger_order;

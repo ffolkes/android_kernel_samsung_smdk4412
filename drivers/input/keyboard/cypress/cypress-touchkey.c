@@ -696,7 +696,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
-	int time_between_tap = 0;
+	//int time_between_tap = 0;
 
 	set_touchkey_debug('a');
 
@@ -754,7 +754,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
     }
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && gesture_delay > 0) {
 		tsp_gestures_only(true);
 	} else if (gesture_delay > 0) {
 		tsp_gestures_only(false);
@@ -767,7 +767,9 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && gesture_delay > 0) {
+		// if ignore_gestures is true, then gestures are disabled, so don't even bother.
+		//
 		// immediately set gesture mode (fast gestures might execute before the msleep() is up)
 		// wait x ms and recheck touchscreen.
 		
@@ -957,7 +959,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		
 #ifdef CONFIG_TOUCH_WAKE
 		
-		if (doubletap_enabled && touchwake_suspended) {
+		/*if (doubletap_enabled && touchwake_suspended) {
 			// enabled and touchwake thinks we are suspended.
 			// ignore single taps.
 			
@@ -978,10 +980,10 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 			
 		} else {
 			
-			printk(KERN_DEBUG "[TouchKey2] doubletap ignored.\n");
+			printk(KERN_DEBUG "[TouchKey2] doubletap ignored.\n");*/
 			touch_press();
 			
-		}
+		//}
 #endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */
