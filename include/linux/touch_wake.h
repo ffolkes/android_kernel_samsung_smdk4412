@@ -21,4 +21,6 @@ void touch_press(void);
 bool device_is_suspended(void);
 void set_powerkeydev(struct input_dev * input_device);
 
+extern bool flg_touchwake_active;
+
 #endif

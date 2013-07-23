@@ -27,6 +27,7 @@ static bool device_suspended = false;
 static bool timed_out = true;
 static bool prox_near = false;
 static bool ignore_once = false;
+bool flg_touchwake_active = false;
 static unsigned int touchoff_delay = 45000;
 
 static void touchwake_touchoff(struct work_struct * touchoff_work);
@@ -81,8 +82,8 @@ static void touchwake_early_suspend(struct early_suspend * h)
 	if (touchwake_enabled && !ignore_once) {
 		if (touchoff_delay > 0)	{
 			if (timed_out) {
+				flg_touchwake_active = true;
 				wake_lock(&touchwake_wake_lock);
-
 				schedule_delayed_work(&touchoff_work, msecs_to_jiffies(touchoff_delay));
 			} else {
 				touchwake_disable_touch();
@@ -91,6 +92,7 @@ static void touchwake_early_suspend(struct early_suspend * h)
 			wake_lock(&touchwake_wake_lock);
 		}
 	} else {
+		flg_touchwake_active = false;
 		touchwake_disable_touch();
 	}
 	
@@ -134,6 +136,7 @@ static struct early_suspend touchwake_suspend_data =
 
 static void touchwake_touchoff(struct work_struct * touchoff_work)
 {
+	flg_touchwake_active = false;
 	touchwake_disable_touch();
 	wake_unlock(&touchwake_wake_lock);
 
