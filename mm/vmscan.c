@@ -624,6 +624,7 @@ void putback_lru_page(struct page *page)
 	int was_unevictable = PageUnevictable(page);
 
 	VM_BUG_ON(PageLRU(page));
+
 redo:
 	ClearPageUnevictable(page);
 
