@@ -317,7 +317,16 @@ bool check_for_speaker(void)
 
 bool check_for_headphone(void)
 {
-	return check_for_dapm(snd_soc_dapm_hp, "HP");
+//	return check_for_dapm(snd_soc_dapm_hp, "HP");
+	if( wm8994->micdet[0].jack != NULL )
+	{
+		if ((wm8994->micdet[0].jack->status & SND_JACK_HEADPHONE) ||
+		(wm8994->micdet[0].jack->status & SND_JACK_HEADSET))
+			return true;
+	}
+
+	return false;
+
 }
 
 void handler_output_detection(void)
