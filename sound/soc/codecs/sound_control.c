@@ -330,6 +330,7 @@ void handler_output_detection(void)
 	} else if (check_for_headphone()) {
 		//printk("Audio: (headphones) setting to:%i\n", OUTPUT_HP);
 		new_output = OUTPUT_HP;
+		set_eq();
 	} else if (check_for_receiver()) {
 		//printk("Audio: (receiver) setting to:%i\n", OUTPUT_RECEIVER);
 		new_output = OUTPUT_RECEIVER;
@@ -1252,6 +1253,8 @@ static ssize_t store_sound_property(struct device *dev,
 
 		case SWITCH_EQ_HEADPHONE:
 			eq = val & (EQ_ENABLED | EQ_SATPREVENT);
+//			eq = true;
+			handler_output_detection();
 			set_eq();
 			break;
 
@@ -1305,6 +1308,7 @@ static ssize_t store_sound_property(struct device *dev,
 				headphone_r = val;
 
 			set_headphone();
+			set_eq();
 			break;
 
 		case SPEAKER_LEFT:
