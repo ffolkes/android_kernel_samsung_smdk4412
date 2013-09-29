@@ -79,3 +79,8 @@ GTAGS
 *.orig
 *~
 \#*#
+
+#
+# Misc
+#
+*.gen.S
