@@ -324,12 +324,36 @@ void handler_output_detection(void)
 {
 	int new_output = OUTPUT_OTHER;
 
-	if (check_for_headphone())
-		new_output = OUTPUT_HP;
-	else if (check_for_speaker())
+	if (check_for_speaker()) {
+		//printk("Audio: (speaker) setting to:%i\n", OUTPUT_SPEAKER);
 		new_output = OUTPUT_SPEAKER;
-	else if (check_for_receiver())
+	} else if (check_for_headphone()) {
+		//printk("Audio: (headphones) setting to:%i\n", OUTPUT_HP);
+		new_output = OUTPUT_HP;
+	} else if (check_for_receiver()) {
+		//printk("Audio: (receiver) setting to:%i\n", OUTPUT_RECEIVER);
 		new_output = OUTPUT_RECEIVER;
+	}
+	
+	/*printk("Audio: ---------------------------\n");
+	if (check_for_speaker()) {
+		printk("Audio: check_for_speaker() true\n");
+	} else {
+		printk("Audio: check_for_speaker() false\n");
+	}
+	
+	if (check_for_headphone()) {
+		printk("Audio: check_for_headphone() true\n");
+	} else {
+		printk("Audio: check_for_headphone() false\n");
+	}
+	
+	if (check_for_receiver()) {
+		printk("Audio: check_for_receiver() true\n");
+	} else {
+		printk("Audio: check_for_receiver() false\n");
+	}
+	printk("Audio: ---------------------------\n");*/
 	
 	if (new_output != OUTPUT_OTHER && new_output != output_type) {
 		output_type = new_output;

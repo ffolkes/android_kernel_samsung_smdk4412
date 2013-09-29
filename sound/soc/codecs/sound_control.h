@@ -32,7 +32,7 @@ unsigned int sound_control_hook_wm8994_write(unsigned int reg, unsigned int valu
 /*****************************************/
 
 // Sound control general
-#define SOUND_CONTROL_DEFAULT 	0
+#define SOUND_CONTROL_DEFAULT 	1
 #define SOUND_CONTROL_VERSION 	"Perseus 35"
 
 enum {
@@ -109,7 +109,7 @@ enum {
 #define SPEAKER_DEFAULT 	57
 
 #define SPEAKER_MAX 		63
-#define SPEAKER_MIN 		57
+#define SPEAKER_MIN 		0
 
 // Microphone control
 #define MICLEVEL_GENERAL	28
