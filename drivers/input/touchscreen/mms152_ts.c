@@ -95,6 +95,7 @@ static spinlock_t gestures_lock;
 
 #include <asm/unaligned.h>
 
+#include "../keyboard/cypress/cypress-touchkey.h"
 #ifdef CONFIG_INPUT_FBSUSPEND
 #ifdef CONFIG_DRM
 #include <drm/drm_backlight.h>
