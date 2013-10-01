@@ -1103,7 +1103,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 
 					// report state to cypress-touchkey for backlight timeout
-//ff					touchscreen_state_report(0);
+					touchscreen_state_report(0);
 					
 #ifdef CONFIG_LCD_FREQ_SWITCH
 					dev_notice(&client->dev,
@@ -1148,7 +1148,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 
 					// report state to cypress-touchkey for backlight timeout
-//ff					touchscreen_state_report(0);
+					touchscreen_state_report(0);
 
 #ifdef CONFIG_LCD_FREQ_SWITCH
 					dev_notice(&client->dev,
@@ -1193,7 +1193,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 
 					// report state to cypress-touchkey for backlight timeout
-//ff					touchscreen_state_report(0);
+					touchscreen_state_report(0);
 
 					dev_notice(&client->dev,
 						"R [%2d],([%4d],[%3d]),S:%d W:%d",
