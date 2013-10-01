@@ -839,10 +839,6 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
 		
-#ifdef CONFIG_TOUCH_WAKE
-		touch_press();
-#endif
-		
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_type], pressed);
