@@ -371,6 +371,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks \
+		   -mtune=cortex-a9 \
 		   -fno-schedule-insns2
 
 KBUILD_AFLAGS_KERNEL :=
