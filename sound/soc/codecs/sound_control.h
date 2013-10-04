@@ -32,7 +32,7 @@ unsigned int sound_control_hook_wm8994_write(unsigned int reg, unsigned int valu
 /*****************************************/
 
 // Sound control general
-#define SOUND_CONTROL_DEFAULT 	1
+#define SOUND_CONTROL_DEFAULT 	0
 #define SOUND_CONTROL_VERSION 	"Perseus 35"
 
 enum {
