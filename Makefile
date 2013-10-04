@@ -349,13 +349,12 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-CFLAGS_MODULE   =
+CFLAGS_MODULE   = -fno-pic -mtune=cortex-a9 -march=armv7-a -mfpu=neon -ftree-vectorize -pipe
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  = --strip-debug
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
-
 
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
@@ -371,7 +370,12 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks \
+		   -ffast-math \
+		   -mfpu=neon \
+		   -march=armv7-a \
 		   -mtune=cortex-a9 \
+		   -ftree-vectorize \
+		   -pipe \
 		   -fno-schedule-insns2
 
 KBUILD_AFLAGS_KERNEL :=
