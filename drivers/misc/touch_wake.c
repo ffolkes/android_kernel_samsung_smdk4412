@@ -21,14 +21,14 @@
 extern void touchscreen_enable(void);
 extern void touchscreen_disable(void);
 
-static bool touchwake_enabled = false;
+bool touchwake_enabled = false;
 static bool touch_disabled = false;
 static bool device_suspended = false;
 static bool timed_out = true;
 static bool prox_near = false;
 static bool ignore_once = false;
 bool flg_touchwake_active = false;
-static unsigned int touchoff_delay = 45000;
+unsigned int touchoff_delay = 45000;
 
 static void touchwake_touchoff(struct work_struct * touchoff_work);
 static DECLARE_DELAYED_WORK(touchoff_work, touchwake_touchoff);
@@ -86,6 +86,7 @@ static void touchwake_early_suspend(struct early_suspend * h)
 				wake_lock(&touchwake_wake_lock);
 				schedule_delayed_work(&touchoff_work, msecs_to_jiffies(touchoff_delay));
 			} else {
+                flg_touchwake_active = false;
 				touchwake_disable_touch();
 			}
 		} else {
@@ -114,8 +115,8 @@ static void touchwake_late_resume(struct early_suspend * h)
 {
 	// important that device_suspended gets set as soon as possible. 
 	device_suspended = false;
-	cancel_delayed_work(&touchoff_work);
-	flush_scheduled_work();
+	cancel_delayed_work_sync(&touchoff_work);
+	//flush_scheduled_work();
 
 	wake_unlock(&touchwake_wake_lock);
 

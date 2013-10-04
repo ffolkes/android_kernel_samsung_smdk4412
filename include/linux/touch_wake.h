@@ -22,5 +22,7 @@ bool device_is_suspended(void);
 void set_powerkeydev(struct input_dev * input_device);
 
 extern bool flg_touchwake_active;
+extern bool touchwake_enabled;
+extern unsigned int touchoff_delay;
 
 #endif
