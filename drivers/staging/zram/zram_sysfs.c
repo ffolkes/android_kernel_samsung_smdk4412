@@ -98,7 +98,7 @@ static ssize_t initstate_store(struct device *dev,
 		return -EINVAL;
 
 	zram_init_device(zram);
-	swapon("/dev/block/zram0", 0);
+	//swapon("/dev/block/zram0", 0);
 	return len;
 }
 #else
