@@ -13,29 +13,18 @@
 #include <sound/soc.h>
 #include <linux/delay.h>
 #include <linux/miscdevice.h>
-<<<<<<< HEAD
 #include <linux/switch.h>
-=======
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #include <linux/version.h>
 #include "wm8994_voodoo.h"
 
 #ifndef MODULE
-<<<<<<< HEAD
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35) && !defined(GALAXY_TAB) && !defined(Exynos4)
-=======
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35) && !defined(GALAXY_TAB) && !defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #include "wm8994_samsung.h"
 #else
 #include "wm8994.h"
 #endif
 #else
-<<<<<<< HEAD
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35) && !defined(GALAXY_TAB) && !defined(Exynos4)
-=======
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35) && !defined(GALAXY_TAB) && !defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #include "wm8994_samsung.h"
 #else
 #include "wm8994.h"
@@ -61,11 +50,8 @@
 #define wm8994_read(codec, reg) tegrak_wm8994_read(codec, reg)
 #endif
 
-<<<<<<< HEAD
 extern struct switch_dev android_switch;
 
-=======
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 bool bypass_write_hook = false;
 bool bypass_write_hook_clamp = false;
 
@@ -92,11 +78,7 @@ unsigned short origin_recgain;
 unsigned short origin_recgain_mixer;
 #endif
 
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 bool speaker_tuning = false;
 #endif
 
@@ -108,11 +90,7 @@ bool adc_osr128 = true;
 #ifndef GALAXY_TAB_TEGRA
 bool fll_tuning = true;
 #endif
-<<<<<<< HEAD
 bool dac_direct = false;
-=======
-bool dac_direct = true;
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 bool mono_downmix = false;
 
 // equalizer
@@ -140,27 +118,19 @@ short unsigned int stereo_expansion_gain = 16;
 // keep here a pointer to the codec structure
 static struct snd_soc_codec *codec;
 
-<<<<<<< HEAD
 #if defined(Exynos4)
-=======
-#if defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #include <linux/mfd/wm8994/core.h>
 #include <linux/mfd/wm8994/registers.h>
 #include <sound/jack.h>
 #define DEACTIVE		0x00
 #define PLAYBACK_ACTIVE		0x01
 #define CAPTURE_ACTIVE		0x02
-<<<<<<< HEAD
 
 #if defined(CONFIG_SND_SOC_SAMSUNG_T0_WM1811) || defined(CONFIG_SND_SOC_SAMSUNG_M3_WM1811)
 #define CALL_ACTIVE		0
 #else
 #define CALL_ACTIVE		0x04
 #endif
-=======
-#define CALL_ACTIVE		0x04
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 
 #define PCM_STREAM_DEACTIVE	0x00
 #define PCM_STREAM_PLAYBACK	0x01
@@ -255,10 +225,6 @@ static int wm8994_write(struct snd_soc_codec *codec, unsigned int reg,
 		printk("Voodoo sound: direct: wm8994_write 0x%03X 0x%04X "
 				"\n", reg, value);
 	ret = wm8994_reg_write(codec->control_data, reg, value);
-<<<<<<< HEAD
-=======
-	udelay(1000);
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	return ret;
 }
 
@@ -545,11 +511,7 @@ void update_hpvol(bool with_fade)
 		write_hpvol(hpvol(0) - steps, hpvol(1) - steps);
 		bypass_write_hook = false;
 
-<<<<<<< HEAD
 #ifndef Exynos4
-=======
-#ifndef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		if (steps != 0)
 			udelay(1000);
 #endif
@@ -747,11 +709,7 @@ bool is_path(int unified_path)
 	switch (unified_path) {
 	// speaker
 	case SPEAKER:
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		return !is_path(HEADPHONES);
 #else
 #ifdef GALAXY_TAB
@@ -771,15 +729,8 @@ bool is_path(int unified_path)
 #endif
 	// headphones
 	case HEADPHONES:
-<<<<<<< HEAD
 #ifdef Exynos4
 		return (switch_get_state(&android_switch) > 0);
-=======
-#ifdef GALAXY_S3
-		if( wm8994->micdet[0].jack == NULL ) return 0;
-		return (wm8994->micdet[0].jack->status & SND_JACK_HEADPHONE) ||
-		(wm8994->micdet[0].jack->status & SND_JACK_HEADSET);
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #else
 #ifdef NEXUS_S
 		return (wm8994->cur_path == HP
@@ -823,11 +774,7 @@ bool is_path(int unified_path)
 
 	// FM Radio on headphones
 	case RADIO_HEADPHONES:
-<<<<<<< HEAD
 #ifdef Exynos4 //TODO
-=======
-#ifdef GALAXY_S3 //TODO
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		return is_fm_active() && !bypass_write_hook_clamp;
 #else
 #ifdef NEXUS_S
@@ -853,11 +800,7 @@ bool is_path(int unified_path)
 	// Standard recording presets
 	// for M110S Gingerbread: added check non call
 	case MAIN_MICROPHONE:
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		return !(wm8994->jack_mic);
 #else
 		return (wm8994->codec_state & CAPTURE_ACTIVE)
@@ -871,11 +814,7 @@ bool is_path(int unified_path)
 bool is_path_media_or_fm_no_call_no_record()
 {
 	if ((is_path(HEADPHONES)
-<<<<<<< HEAD
 #ifndef Exynos4
-=======
-#ifndef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	     && (wm8994->codec_state & PLAYBACK_ACTIVE)
 	     && (wm8994->stream_state & PCM_STREAM_PLAYBACK)
 	     && (wm8994->rec_path == MIC_OFF)
@@ -887,11 +826,7 @@ bool is_path_media_or_fm_no_call_no_record()
 	return false;
 }
 
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 unsigned short speaker_tuning_level = 44;
 void update_speaker_tuning(bool with_mute)
 {
@@ -929,11 +864,7 @@ void update_speaker_tuning(bool with_mute)
 		wm8994_write(codec, WM8994_CLASSD,
 			(WM8994_SPKOUT_VU | WM8994_SPKOUTL_MUTE_N | speaker_tuning_level));
 	} else {
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		//defaults are different for S3
 		wm8994_write(codec, WM8994_AIF1_DRC1_3, 0xE8);
 		wm8994_write(codec, WM8994_AIF1_DRC1_4, 0x0210);
@@ -1013,11 +944,7 @@ void update_osr128(bool with_mute)
 #ifndef GALAXY_TAB_TEGRA
 unsigned short fll_tuning_get_value(unsigned short val)
 {
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	val = (val >> WM8994_FLL1_LOOP_GAIN_WIDTH << WM8994_FLL1_LOOP_GAIN_WIDTH);
 #else
 	val = (val >> WM8994_FLL1_GAIN_WIDTH << WM8994_FLL1_GAIN_WIDTH);
@@ -1075,11 +1002,7 @@ void update_mono_downmix(bool with_mute)
 
 unsigned short dac_direct_get_value(unsigned short val, bool can_reverse)
 {
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	if(is_fm_active())
 		return val & (~WM8994_DAC1L_TO_HPOUT1L | WM8994_DAC1R_TO_MIXOUTR);
 #endif
@@ -1273,7 +1196,6 @@ void load_current_eq_values()
 		}
 }
 
-<<<<<<< HEAD
 void apply_soundboost(void)
 {
 	pr_info("%s++\n", __func__);
@@ -1289,8 +1211,6 @@ void apply_soundboost(void)
 	apply_saturation_prevention_drc();
 }
 
-=======
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 void apply_saturation_prevention_drc()
 {
 	unsigned short val;
@@ -1298,11 +1218,7 @@ void apply_saturation_prevention_drc()
 	int i;
 	int step = 750;
 
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 //TODO:
 return;
 #endif
@@ -1351,11 +1267,7 @@ return;
 
 	// enable DRC
 	val &= ~(WM8994_AIF1DAC1_DRC_ENA_MASK);
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	if( is_path(HEADPHONES) )
 #endif
 	val |= WM8994_AIF1DAC1_DRC_ENA;
@@ -1429,11 +1341,7 @@ static ssize_t headphone_amplifier_level_store(struct device *dev,
 }
 #endif
 
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 static ssize_t speaker_tuning_level_show(struct device *dev,
 					      struct device_attribute *attr,
 					      char *buf)
@@ -1478,11 +1386,7 @@ static ssize_t speaker_offset_store(struct device *dev,
 	return size;
 }
 #endif
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 DECLARE_BOOL_SHOW(speaker_tuning);
 DECLARE_BOOL_STORE_UPDATE_WITH_MUTE(speaker_tuning,
 				    update_speaker_tuning,
@@ -1881,11 +1785,7 @@ static DEVICE_ATTR(headphone_amplifier_level, S_IRUGO | S_IWUGO,
 		   headphone_amplifier_level_store);
 #endif
 
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 static DEVICE_ATTR(speaker_tuning_level, S_IRUGO | S_IWUGO,
 		   speaker_tuning_level_show,
 		   speaker_tuning_level_store);
@@ -1893,11 +1793,7 @@ static DEVICE_ATTR(speaker_offset, S_IRUGO | S_IWUGO,
 		   speaker_offset_show,
 		   speaker_offset_store);
 #endif
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 static DEVICE_ATTR(speaker_tuning, S_IRUGO | S_IWUGO,
 		   speaker_tuning_show,
 		   speaker_tuning_store);
@@ -2016,17 +1912,10 @@ static struct attribute *voodoo_sound_attributes[] = {
 #ifdef CONFIG_SND_VOODOO_HP_LEVEL_CONTROL
 	&dev_attr_headphone_amplifier_level.attr,
 #endif
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
 	&dev_attr_speaker_tuning.attr,
 #endif
 #ifdef Exynos4
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
-	&dev_attr_speaker_tuning.attr,
-#endif
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	&dev_attr_speaker_tuning_level.attr,
 	&dev_attr_speaker_offset.attr,
 #endif
@@ -2085,13 +1974,8 @@ static struct attribute_group voodoo_sound_control_group = {
 
 static struct miscdevice voodoo_sound_device = {
 	.minor = MISC_DYNAMIC_MINOR,
-<<<<<<< HEAD
 #ifdef Exynos4
 	.name = "voodoo_sound",
-=======
-#ifdef GALAXY_S3
-	.name = "scoobydoo_sound",
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #else
 	.name = "voodoo_sound",
 #endif
@@ -2100,13 +1984,8 @@ static struct miscdevice voodoo_sound_device = {
 #ifndef MODULE
 static struct miscdevice voodoo_sound_control_device = {
 	.minor = MISC_DYNAMIC_MINOR,
-<<<<<<< HEAD
 #ifdef Exynos4
 	.name = "voodoo_sound_control",
-=======
-#ifdef GALAXY_S3
-	.name = "scoobydoo_sound_control",
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #else
 	.name = "voodoo_sound_control",
 #endif
@@ -2181,11 +2060,7 @@ void voodoo_hook_record_main_mic()
 }
 #endif
 
-<<<<<<< HEAD
 #if defined(NEXUS_S) || defined(Exynos4)
-=======
-#if defined(NEXUS_S) || defined(GALAXY_S3)
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 void voodoo_hook_playback_speaker()
 {
 	// global kill switch
@@ -2208,11 +2083,7 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 	// modify some registers before those being written to the codec
 	// be sure our pointer to codec is up to date
 	codec = codec_;
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	//in-call detection
 	if( reg == WM8994_AIF2_CONTROL_2 )
 	{
@@ -2227,32 +2098,21 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 		if( value & (WM8994_SPKOUTR_ENA|WM8994_SPKOUTL_ENA))
 			bypass_write_hook_clamp = true;
 		else
-<<<<<<< HEAD
 		{
 			bypass_write_hook_clamp = false;
 			apply_soundboost();
 		}
-=======
-			bypass_write_hook_clamp = false;
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 	}
 #endif
 	if (1) { //!bypass_write_hook) {
 
 #ifdef CONFIG_SND_VOODOO_HP_LEVEL_CONTROL
-<<<<<<< HEAD
 		if (true
 		    && !(codec_state & CALL_ACTIVE)
 #ifdef Exynos4
 			&& !bypass_write_hook_clamp
 #else
 			&& is_path(HEADPHONES)
-=======
-		if (is_path(HEADPHONES)
-		    && !(codec_state & CALL_ACTIVE)
-#ifdef GALAXY_S3
-			&& !bypass_write_hook_clamp
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 #endif
 			) {
 
@@ -2270,11 +2130,7 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 		}
 #endif
 
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 		if (reg == WM8994_SPEAKER_VOLUME_LEFT)
 			value =
 			    (WM8994_SPKOUT_VU |
@@ -2334,22 +2190,14 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 		if (reg == WM8994_AIF1_DAC1_FILTERS_1
 		    || reg == WM8994_AIF1_DAC2_FILTERS_1
 		    || reg == WM8994_AIF2_DAC_FILTERS_1
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 			|| reg == WM8994_POWER_MANAGEMENT_1
 #endif
 			) {
 			bypass_write_hook = true;
 			apply_saturation_prevention_drc();
 			update_headphone_eq(true);
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 			voodoo_hook_playback_speaker();
 #ifdef CONFIG_SND_VOODOO_HP_LEVEL_CONTROL
 			update_hpvol(false);
@@ -2362,11 +2210,7 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 	if (debug_log(LOG_VERBOSE))
 	// log every write to dmesg
 		printk("Voodoo sound: wm8994_write 0x%03X 0x%04X "
-<<<<<<< HEAD
 #ifdef Exynos4
-=======
-#ifdef GALAXY_S3
->>>>>>> 74eab7b... sound-soc: wm8994: Add voodoo_sound implementation
 				"\n", reg, value);
 #else
 #ifdef NEXUS_S
