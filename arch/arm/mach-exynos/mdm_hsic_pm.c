@@ -196,8 +196,8 @@ void debug_ehci_reg_dump(struct device *hdev)
 	struct s5p_ehci_hcd_stub *s5p_ehci = dev_get_drvdata(hdev);
 	struct usb_hcd *hcd = s5p_ehci->hcd;
 	char *buf = (char *)&sec_debug_ehci_regs;
-	pr_info("%s\n", __func__);
-	pr_info("EHCI %s, %s\n", dev_driver_string(hdev), dev_name(hdev));
+	//pr_info("%s\n", __func__);
+	//pr_info("EHCI %s, %s\n", dev_driver_string(hdev), dev_name(hdev));
 
 	print_ehci_regs(hcd->regs);
 
@@ -332,7 +332,7 @@ void request_autopm_lock(int status)
 	if (status) {
 		if (!atomic_read(&pm_data->pmlock_cnt)) {
 			atomic_inc(&pm_data->pmlock_cnt);
-			pr_info("get lock\n");
+			//pr_info("get lock\n");
 
 			do {
 				if (!pm_dev_runtime_get_enabled(pm_data->udev))
@@ -347,10 +347,10 @@ void request_autopm_lock(int status)
 		} else
 			atomic_inc(&pm_data->pmlock_cnt);
 	} else {
-		if (!atomic_read(&pm_data->pmlock_cnt))
-			pr_info("unbalanced release\n");
-		else if (atomic_dec_and_test(&pm_data->pmlock_cnt)) {
-			pr_info("release lock\n");
+		if (!atomic_read(&pm_data->pmlock_cnt)) {
+			//pr_info("unbalanced release\n");
+		} else if (atomic_dec_and_test(&pm_data->pmlock_cnt)) {
+			//pr_info("release lock\n");
 			pm_runtime_allow(&pm_data->udev->dev);
 			pm_runtime_put(&pm_data->udev->dev);
 		}
@@ -362,7 +362,7 @@ void request_autopm_lock(int status)
 void request_active_lock_set(const char *name)
 {
 	struct mdm_hsic_pm_data *pm_data = get_pm_data_by_dev_name(name);
-	pr_info("%s\n", __func__);
+	//pr_info("%s\n", __func__);
 	if (pm_data)
 		wake_lock(&pm_data->l2_wake);
 }
@@ -370,7 +370,7 @@ void request_active_lock_set(const char *name)
 void request_active_lock_release(const char *name)
 {
 	struct mdm_hsic_pm_data *pm_data = get_pm_data_by_dev_name(name);
-	pr_info("%s\n", __func__);
+	//pr_info("%s\n", __func__);
 	if (pm_data)
 		wake_unlock(&pm_data->l2_wake);
 
@@ -379,7 +379,7 @@ void request_active_lock_release(const char *name)
 void request_boot_lock_set(const char *name)
 {
 	struct mdm_hsic_pm_data *pm_data = get_pm_data_by_dev_name(name);
-	pr_info("%s\n", __func__);
+	//pr_info("%s\n", __func__);
 	if (pm_data)
 		wake_lock(&pm_data->boot_wake);
 }
@@ -387,7 +387,7 @@ void request_boot_lock_set(const char *name)
 void request_boot_lock_release(const char *name)
 {
 	struct mdm_hsic_pm_data *pm_data = get_pm_data_by_dev_name(name);
-	pr_info("%s\n", __func__);
+	//pr_info("%s\n", __func__);
 	if (pm_data)
 		wake_unlock(&pm_data->boot_wake);
 }
@@ -628,7 +628,7 @@ static void mdm_hsic_rpm_check(struct work_struct *work)
 	if (pm_data->shutdown)
 		return;
 
-	pr_info("%s\n", __func__);
+	//pr_info("%s\n", __func__);
 
 	if (!pm_data->udev)
 		return;
@@ -854,8 +854,8 @@ static irqreturn_t mdm_hsic_irq_handler(int irq, void *data)
 	 */
 
 	irq_level = gpio_get_value(pm_data->gpio_host_wake);
-	pr_info("%s: detect %s edge\n", __func__,
-					irq_level ? "Rising" : "Falling");
+	/*pr_info("%s: detect %s edge\n", __func__,
+					irq_level ? "Rising" : "Falling");*/
 
 	if (irq_level != HSIC_RESUME_TRIGGER_LEVEL)
 		return IRQ_HANDLED;
@@ -972,13 +972,13 @@ static int link_pm_netdev_event(struct notifier_block *this,
 	if (!strncmp(dev->name, "rndis", 5)) {
 		switch (event) {
 		case NETDEV_UP:
-			pr_info("%s: %s UP\n", __func__, dev->name);
+			//pr_info("%s: %s UP\n", __func__, dev->name);
 			if (mdm_pdata->freq_lock)
 				mdm_pdata->freq_lock(mdm_pdata->dev);
 
 			break;
 		case NETDEV_DOWN:
-			pr_info("%s: %s DOWN\n", __func__, dev->name);
+			//pr_info("%s: %s DOWN\n", __func__, dev->name);
 			if (mdm_pdata->freq_unlock)
 				mdm_pdata->freq_unlock(mdm_pdata->dev);
 			break;
