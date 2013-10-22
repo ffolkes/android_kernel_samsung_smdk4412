@@ -330,6 +330,9 @@
 #define DEF_FREQ_STEP				  (5)	// ZZ: default for freq step at awake
 #define DEF_FREQ_STEP_SLEEP			  (5)	// ZZ: default for freq step at early suspend
 
+#define DEF_FASTDOWN_FREQ               (0)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
+#define DEF_FASTDOWN_UP_THRESHOLD       (95)    // ff: default for fastdown up threshold. the up_threshold when fastdown_freq has been exceeded
+
 // ZZ: LCDFreq Scaling default values
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 #define LCD_FREQ_KICK_IN_DOWN_DELAY		(20)	// ZZ: default for kick in down delay
@@ -584,6 +587,8 @@ static struct dbs_tuners {
 	unsigned int hotplug_up_block_cycles;		// ZZ: Hotplug block cycles
     unsigned int hotplug_down_block_cycles;		// ff: Hotplug down block cycles
 	unsigned int hotplug_idle_threshold;		// ZZ: Hotplug idle threshold
+    unsigned int fastdown_freq;                 // ff: frequency beyond which we apply a different up_threshold
+    unsigned int fastdown_up_threshold;         // ff: up_threshold when fastdown_freq exceeded
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
     #endif
@@ -660,6 +665,8 @@ static struct dbs_tuners {
             .hotplug_up_block_cycles = DEF_HOTPLUG_UP_BLOCK_CYCLES,				// ZZ: Hotplug block cycles default
             .hotplug_down_block_cycles = DEF_HOTPLUG_DOWN_BLOCK_CYCLES,				// ff: Hotplug down block cycles default
             .hotplug_idle_threshold = DEF_HOTPLUG_IDLE_THRESHOLD,				// ZZ: Hotplug idle threshold default
+            .fastdown_freq = DEF_FASTDOWN_FREQ,               // ff: frequency beyond which we apply a different up_threshold
+            .fastdown_up_threshold = DEF_FASTDOWN_UP_THRESHOLD, // ff: up_threshold when fastdown_freq exceeded
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
             #endif
@@ -978,6 +985,8 @@ show_one(disable_hotplug_sleep, disable_hotplug_sleep);				// ZZ: added Hotplug 
 show_one(hotplug_up_block_cycles, hotplug_up_block_cycles);				// ZZ: added Hotplug block cycles
 show_one(hotplug_down_block_cycles, hotplug_down_block_cycles);				// ff: added Hotplug down block cycles
 show_one(hotplug_idle_threshold, hotplug_idle_threshold);			// ZZ: added Hotplug idle threshold
+show_one(fastdown_freq, fastdown_freq);                 // ff: frequency beyond which we apply a different up_threshold
+show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when fastdown_freq exceeded
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
 #endif
@@ -1752,6 +1761,38 @@ static ssize_t store_hotplug_idle_threshold(struct kobject *a, struct attribute 
 	return count;
 }
 
+// ff: added tuneable fastdown_freq -> possible values: range from 0 (disabled) to policy->max, if not set default is 0
+static ssize_t store_fastdown_freq(struct kobject *a, struct attribute *b,
+                                            const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+    struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+    
+	ret = sscanf(buf, "%u", &input);
+    
+	if ((ret != 1 || input < 0 || input > policy->max) && input != 0)
+		return -EINVAL;
+    
+	dbs_tuners_ins.fastdown_freq = input;
+	return count;
+}
+
+// ff: added tuneable fastdown_up_threshold -> possible values: range from 0 (disabled) to 100, if not set default is 0
+static ssize_t store_fastdown_up_threshold(struct kobject *a, struct attribute *b,
+                                   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input > 100 || input <= dbs_tuners_ins.down_threshold)
+		return -EINVAL;
+    
+	dbs_tuners_ins.fastdown_up_threshold = input;
+	return count;
+}
+
 // Yank: add hotplug up/down threshold sysfs store interface
 
 #define store_up_threshold_hotplug_freq(name,core)						\
@@ -1917,6 +1958,8 @@ define_one_global_rw(disable_hotplug_sleep);			// ZZ: Hotplug switch for sleep
 define_one_global_rw(hotplug_up_block_cycles);			// ZZ: Hotplug block cycles
 define_one_global_rw(hotplug_down_block_cycles);			// ff: Hotplug down block cycles
 define_one_global_rw(hotplug_idle_threshold);			// ZZ: Hotplug idle threshold
+define_one_global_rw(fastdown_freq);            // ff: frequency beyond which we apply a different up_threshold
+define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdown_freq exceeded
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
 #endif
@@ -1959,6 +2002,8 @@ static struct attribute *dbs_attributes[] = {
     &fast_scaling_sleep.attr,                   // ZZ: added tuneable
     &grad_up_threshold.attr,                    // ZZ: Early demand tuneable
     &early_demand.attr,                         // ZZ: Early demand tuneable
+    &fastdown_freq.attr,                        // ff: added tuneable
+    &fastdown_up_threshold.attr,                // ff: added tuneable
 #ifdef ENABLE_LEGACY_MODE
     &legacy_mode.attr,                          // ZZ: Legacy Mode switch
     #endif
@@ -2025,6 +2070,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	int boost_freq = 0;					// ZZ: Early demand boost freq switch
 	struct cpufreq_policy *policy;
 	unsigned int j;
+	unsigned int up_threshold;
     
 	policy = this_dbs_info->cur_policy;
     
@@ -2177,8 +2223,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
             ctr_hotplug_up_block_cycles++;
 	}
     
+    // ff: added fastdown.
+    if (dbs_tuners_ins.fastdown_freq != 0 && policy->cur > dbs_tuners_ins.fastdown_freq)
+        up_threshold = dbs_tuners_ins.fastdown_up_threshold;
+    else
+        up_threshold = dbs_tuners_ins.up_threshold;
+    
 	/* Check for frequency increase */
-	if (max_load > dbs_tuners_ins.up_threshold || boost_freq) { // ZZ: Early demand - added boost switch
+	if (max_load > up_threshold || boost_freq) { // ZZ: Early demand - added boost switch
         
 	    /* ZZ: Sampling down momentum - if momentum is inactive switch to "down_skip" method */
 	    if (dbs_tuners_ins.sampling_down_max_mom == 0 && dbs_tuners_ins.sampling_down_factor > 1)
