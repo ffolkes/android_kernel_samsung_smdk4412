@@ -1916,79 +1916,75 @@ static DEVICE_ATTR(version, S_IRUGO , show_version, NULL);
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
 	&sampling_rate.attr,
-	&sampling_rate_sleep_multiplier.attr,			// ZZ: added tuneable
+	&sampling_rate_sleep_multiplier.attr,		// ZZ: added tuneable
 	&sampling_down_factor.attr,
 	&sampling_down_max_momentum.attr,			// ZZ: Sampling down momentum tuneable
-	&sampling_down_momentum_sensitivity.attr,		// ZZ: Sampling down momentum tuneable
+	&sampling_down_momentum_sensitivity.attr,	// ZZ: Sampling down momentum tuneable
+    &up_threshold.attr,
+    &down_threshold.attr,
+    &up_threshold_sleep.attr,                   // ZZ: added tuneable
+    &down_threshold_sleep.attr,                 // ZZ: added tuneable
+    &ignore_nice_load.attr,
+    &freq_step.attr,
+    &freq_step_sleep.attr,                      // ZZ: added tuneable
+    &smooth_up.attr,
+    &smooth_up_sleep.attr,                      // ZZ: added tuneable
+    &freq_limit.attr,                           // ZZ: added tuneable
+    &freq_limit_sleep.attr,                     // ZZ: added tuneable
+    &fast_scaling.attr,                         // ZZ: added tuneable
+    &fast_scaling_sleep.attr,                   // ZZ: added tuneable
+    &grad_up_threshold.attr,                    // ZZ: Early demand tuneable
+    &early_demand.attr,                         // ZZ: Early demand tuneable
+#ifdef ENABLE_LEGACY_MODE
+    &legacy_mode.attr,                          // ZZ: Legacy Mode switch
+    #endif
+    &hotplug_sleep.attr,                        // ZZ: added tuneable
+    &disable_hotplug.attr,                      // ZZ: Hotplug switch
+    &disable_hotplug_sleep.attr,				// ZZ: Hotplug switch sleep
+    &hotplug_block_cycles.attr,                 // ZZ: Hotplug block cycles
+    &hotplug_idle_threshold.attr,				// ZZ: Hotplug idle threshold
 	&up_threshold_hotplug1.attr,				// ZZ: added tuneable
 	&up_threshold_hotplug_freq1.attr,			// Yank: added tuneable
-    #if (MAX_CORES == 4 || MAX_CORES == 8)
-        &up_threshold_hotplug2.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq2.attr,			// Yank: added tuneable
-        &up_threshold_hotplug3.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq3.attr,			// Yank: added tuneable
-        #endif
+    &down_threshold_hotplug1.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq1.attr,			// Yank: added tuneable
+#if (MAX_CORES == 4 || MAX_CORES == 8)
+    &up_threshold_hotplug2.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq2.attr,			// Yank: added tuneable
+	&down_threshold_hotplug2.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq2.attr,			// Yank: added tuneable
+    &up_threshold_hotplug3.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq3.attr,			// Yank: added tuneable
+	&down_threshold_hotplug3.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq3.attr,			// Yank: added tuneable
+#endif
 #if (MAX_CORES == 8)
-        &up_threshold_hotplug4.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq4.attr,			// Yank: added tuneable
-        &up_threshold_hotplug5.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq5.attr,			// Yank: added tuneable
-        &up_threshold_hotplug6.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq6.attr,			// Yank: added tuneable
-        &up_threshold_hotplug7.attr,				// ZZ: added tuneable
-        &up_threshold_hotplug_freq7.attr,			// Yank: added tuneable
-        #endif
-        &down_threshold.attr,
-        &down_threshold_sleep.attr,				// ZZ: added tuneable
-        &down_threshold_hotplug1.attr,				// ZZ: added tuneable
-        &down_threshold_hotplug_freq1.attr,			// Yank: added tuneable
-        #if (MAX_CORES == 4 || MAX_CORES == 8)
-            &down_threshold_hotplug2.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq2.attr,			// Yank: added tuneable
-            &down_threshold_hotplug3.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq3.attr,			// Yank: added tuneable
-            #endif
-#if (MAX_CORES == 8)
-            &down_threshold_hotplug4.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq4.attr,			// Yank: added tuneable
-            &down_threshold_hotplug5.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq5.attr,			// Yank: added tuneable
-            &down_threshold_hotplug6.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq6.attr,			// Yank: added tuneable
-            &down_threshold_hotplug7.attr,				// ZZ: added tuneable
-            &down_threshold_hotplug_freq7.attr,			// Yank: added tuneable
-            #endif
-            &ignore_nice_load.attr,
-            &freq_step.attr,
-            &freq_step_sleep.attr,					// ZZ: added tuneable
-            &smooth_up.attr,
-            &smooth_up_sleep.attr,					// ZZ: added tuneable
-            &up_threshold.attr,
-            &up_threshold_sleep.attr,				// ZZ: added tuneable
-            &hotplug_sleep.attr,					// ZZ: added tuneable
-            &freq_limit.attr,					// ZZ: added tuneable
-            &freq_limit_sleep.attr,					// ZZ: added tuneable
-            &fast_scaling.attr,					// ZZ: added tuneable
-            &fast_scaling_sleep.attr,				// ZZ: added tuneable
-            &grad_up_threshold.attr,				// ZZ: Early demand tuneable
-            &early_demand.attr,					// ZZ: Early demand tuneable
-            &disable_hotplug.attr,					// ZZ: Hotplug switch
-            &disable_hotplug_sleep.attr,				// ZZ: Hotplug switch sleep
-            &hotplug_block_cycles.attr,				// ZZ: Hotplug block cycles
-            &hotplug_idle_threshold.attr,				// ZZ: Hotplug idle threshold
-            #ifdef ENABLE_LEGACY_MODE
-            &legacy_mode.attr,					// ZZ: Legacy Mode switch
-            #endif
+    &up_threshold_hotplug4.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq4.attr,			// Yank: added tuneable
+	&down_threshold_hotplug4.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq4.attr,			// Yank: added tuneable
+    &up_threshold_hotplug5.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq5.attr,			// Yank: added tuneable
+	&down_threshold_hotplug5.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq5.attr,			// Yank: added tuneable
+    &up_threshold_hotplug6.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq6.attr,			// Yank: added tuneable
+	&down_threshold_hotplug6.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq6.attr,			// Yank: added tuneable
+    &up_threshold_hotplug7.attr,				// ZZ: added tuneable
+    &up_threshold_hotplug_freq7.attr,			// Yank: added tuneable
+	&down_threshold_hotplug7.attr,				// ZZ: added tuneable
+    &down_threshold_hotplug_freq7.attr,			// Yank: added tuneable
+#endif
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
-            &lcdfreq_enable.attr,					// ZZ: LCD Freq Scaling tuneable
-            &lcdfreq_kick_in_down_delay.attr,			// ZZ: LCD Freq Scaling tuneable
-            &lcdfreq_kick_in_up_delay.attr,				// ZZ: LCD Freq Scaling tuneable
-            &lcdfreq_kick_in_freq.attr,				// ZZ: LCD Freq Scaling tuneable
-            &lcdfreq_kick_in_cores.attr,				// ZZ: LCD Freq Scaling tuneable
-            #endif
-            &dev_attr_version.attr,					// Yank: zzmoove version
-            NULL
-            };
+    &lcdfreq_enable.attr,					// ZZ: LCD Freq Scaling tuneable
+    &lcdfreq_kick_in_down_delay.attr,			// ZZ: LCD Freq Scaling tuneable
+    &lcdfreq_kick_in_up_delay.attr,				// ZZ: LCD Freq Scaling tuneable
+    &lcdfreq_kick_in_freq.attr,				// ZZ: LCD Freq Scaling tuneable
+    &lcdfreq_kick_in_cores.attr,				// ZZ: LCD Freq Scaling tuneable
+#endif
+    &dev_attr_version.attr,					// Yank: zzmoove version
+    NULL
+};
 
 static struct attribute_group dbs_attr_group = {
 	.attrs = dbs_attributes,
