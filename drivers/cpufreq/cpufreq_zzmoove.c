@@ -368,11 +368,12 @@ static int scaling_mode_up;				// ZZ: fast scaling up mode holding up value duri
 static int scaling_mode_down;				// ZZ: fast scaling down mode holding down value during runtime
 
 // ZZ: added hotplug idle threshold and block cycles
-#define DEF_HOTPLUG_BLOCK_CYCLES		(0)
+#define DEF_HOTPLUG_UP_BLOCK_CYCLES		(0)
+#define DEF_HOTPLUG_DOWN_BLOCK_CYCLES		(0)
 #define DEF_HOTPLUG_IDLE_THRESHOLD		(0)
 static unsigned int hotplug_idle_flag = 0;
-static unsigned int hotplug_down_block_cycles = 0;
-static unsigned int hotplug_up_block_cycles = 0;
+static unsigned int ctr_hotplug_down_block_cycles = 0;
+static unsigned int ctr_hotplug_up_block_cycles = 0;
 
 // ZZ: current load & freq. for hotplugging work
 static int cur_load = 0;
@@ -580,7 +581,8 @@ static struct dbs_tuners {
 	unsigned int early_demand;			// ZZ: Early demand master switch
 	unsigned int disable_hotplug;			// ZZ: Hotplug switch
 	unsigned int disable_hotplug_sleep;		// ZZ: Hotplug switch for sleep
-	unsigned int hotplug_block_cycles;		// ZZ: Hotplug block cycles
+	unsigned int hotplug_up_block_cycles;		// ZZ: Hotplug block cycles
+    unsigned int hotplug_down_block_cycles;		// ff: Hotplug down block cycles
 	unsigned int hotplug_idle_threshold;		// ZZ: Hotplug idle threshold
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
@@ -655,7 +657,8 @@ static struct dbs_tuners {
             .early_demand = 0,								// ZZ: Early demand default off
             .disable_hotplug = false,							// ZZ: Hotplug switch default off (=hotplugging on)
             .disable_hotplug_sleep = false,							// ZZ: Hotplug switch for sleep default off (=hotplugging on)
-            .hotplug_block_cycles = DEF_HOTPLUG_BLOCK_CYCLES,				// ZZ: Hotplug block cycles default
+            .hotplug_up_block_cycles = DEF_HOTPLUG_UP_BLOCK_CYCLES,				// ZZ: Hotplug block cycles default
+            .hotplug_down_block_cycles = DEF_HOTPLUG_DOWN_BLOCK_CYCLES,				// ff: Hotplug down block cycles default
             .hotplug_idle_threshold = DEF_HOTPLUG_IDLE_THRESHOLD,				// ZZ: Hotplug idle threshold default
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
@@ -972,7 +975,8 @@ show_one(grad_up_threshold, grad_up_threshold);					// ZZ: added Early demand tu
 show_one(early_demand, early_demand);						// ZZ: added Early demand tuneable master switch
 show_one(disable_hotplug, disable_hotplug);					// ZZ: added Hotplug switch
 show_one(disable_hotplug_sleep, disable_hotplug_sleep);				// ZZ: added Hotplug switch for sleep
-show_one(hotplug_block_cycles, hotplug_block_cycles);				// ZZ: added Hotplug block cycles
+show_one(hotplug_up_block_cycles, hotplug_up_block_cycles);				// ZZ: added Hotplug block cycles
+show_one(hotplug_down_block_cycles, hotplug_down_block_cycles);				// ff: added Hotplug down block cycles
 show_one(hotplug_idle_threshold, hotplug_idle_threshold);			// ZZ: added Hotplug idle threshold
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
@@ -1676,7 +1680,7 @@ static ssize_t store_disable_hotplug_sleep(struct kobject *a, struct attribute *
 }
 
 // ZZ: added tuneable hotplug block cycles -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
-static ssize_t store_hotplug_block_cycles(struct kobject *a, struct attribute *b,
+static ssize_t store_hotplug_up_block_cycles(struct kobject *a, struct attribute *b,
                                           const char *buf, size_t count)
 {
 	unsigned int input;
@@ -1687,9 +1691,28 @@ static ssize_t store_hotplug_block_cycles(struct kobject *a, struct attribute *b
         return -EINVAL;
     
 	if (input == 0)
-        hotplug_up_block_cycles = 0;
+        ctr_hotplug_up_block_cycles = 0;
     
-	dbs_tuners_ins.hotplug_block_cycles = input;
+	dbs_tuners_ins.hotplug_up_block_cycles = input;
+    
+	return count;
+}
+
+// ff: added tuneable hotplug down block cycles -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
+static ssize_t store_hotplug_down_block_cycles(struct kobject *a, struct attribute *b,
+                                          const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (input < 0)
+        return -EINVAL;
+    
+	if (input == 0)
+        ctr_hotplug_down_block_cycles = 0;
+    
+	dbs_tuners_ins.hotplug_down_block_cycles = input;
     
 	return count;
 }
@@ -1891,7 +1914,8 @@ define_one_global_rw(grad_up_threshold);			// ZZ: Early demand tuneable
 define_one_global_rw(early_demand);				// ZZ: Early demand tuneable
 define_one_global_rw(disable_hotplug);				// ZZ: Hotplug switch
 define_one_global_rw(disable_hotplug_sleep);			// ZZ: Hotplug switch for sleep
-define_one_global_rw(hotplug_block_cycles);			// ZZ: Hotplug block cycles
+define_one_global_rw(hotplug_up_block_cycles);			// ZZ: Hotplug block cycles
+define_one_global_rw(hotplug_down_block_cycles);			// ff: Hotplug down block cycles
 define_one_global_rw(hotplug_idle_threshold);			// ZZ: Hotplug idle threshold
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
@@ -1941,7 +1965,8 @@ static struct attribute *dbs_attributes[] = {
     &hotplug_sleep.attr,                        // ZZ: added tuneable
     &disable_hotplug.attr,                      // ZZ: Hotplug switch
     &disable_hotplug_sleep.attr,				// ZZ: Hotplug switch sleep
-    &hotplug_block_cycles.attr,                 // ZZ: Hotplug block cycles
+    &hotplug_up_block_cycles.attr,                 // ZZ: Hotplug up block cycles
+    &hotplug_down_block_cycles.attr,            // ff: Hotplug down block cycles
     &hotplug_idle_threshold.attr,				// ZZ: Hotplug idle threshold
 	&up_threshold_hotplug1.attr,				// ZZ: added tuneable
 	&up_threshold_hotplug_freq1.attr,			// Yank: added tuneable
@@ -2143,13 +2168,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     
 	// ZZ: added block cycles to be able slow down hotplugging
 	if ((!dbs_tuners_ins.disable_hotplug && skip_hotplug_flag == 0 && num_online_cpus() != num_possible_cpus() && policy->cur != policy->min) || hotplug_idle_flag == 1) {
-	    if (hotplug_up_block_cycles > dbs_tuners_ins.hotplug_block_cycles || dbs_tuners_ins.hotplug_block_cycles == 0) {
+	    if (ctr_hotplug_up_block_cycles > dbs_tuners_ins.hotplug_up_block_cycles || dbs_tuners_ins.hotplug_up_block_cycles == 0) {
 		    schedule_work_on(0, &hotplug_online_work);
-		    if (dbs_tuners_ins.hotplug_block_cycles != 0)
-                hotplug_up_block_cycles = 0;
+		    if (dbs_tuners_ins.hotplug_up_block_cycles != 0)
+                ctr_hotplug_up_block_cycles = 0;
 	    }
-        if (dbs_tuners_ins.hotplug_block_cycles != 0)
-            hotplug_up_block_cycles++;
+        if (dbs_tuners_ins.hotplug_up_block_cycles != 0)
+            ctr_hotplug_up_block_cycles++;
 	}
     
 	/* Check for frequency increase */
@@ -2324,13 +2349,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     
 	// ZZ: added block cycles to be able slow down hotplugging
 	if (!dbs_tuners_ins.disable_hotplug && skip_hotplug_flag == 0 && num_online_cpus() != 1 && hotplug_idle_flag == 0) {
-	    if (hotplug_down_block_cycles > dbs_tuners_ins.hotplug_block_cycles || dbs_tuners_ins.hotplug_block_cycles == 0) {
+	    if (ctr_hotplug_down_block_cycles > dbs_tuners_ins.hotplug_down_block_cycles || dbs_tuners_ins.hotplug_down_block_cycles == 0) {
             schedule_work_on(0, &hotplug_offline_work);
-            if (dbs_tuners_ins.hotplug_block_cycles != 0)
-                hotplug_down_block_cycles = 0;
+            if (dbs_tuners_ins.hotplug_down_block_cycles != 0)
+                ctr_hotplug_down_block_cycles = 0;
 	    }
-        if (dbs_tuners_ins.hotplug_block_cycles != 0)
-            hotplug_down_block_cycles++;
+        if (dbs_tuners_ins.hotplug_down_block_cycles != 0)
+            ctr_hotplug_down_block_cycles++;
 	}
     
 	/* ZZ: Sampling down momentum - if momentum is inactive switch to down skip method and if sampling_down_factor is active break out early */
