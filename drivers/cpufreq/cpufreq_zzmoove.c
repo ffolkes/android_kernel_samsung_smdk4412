@@ -1206,9 +1206,14 @@ static ssize_t store_down_threshold(struct kobject *a, struct attribute *b,
 	ret = sscanf(buf, "%u", &input);
     
 	/* cannot be lower than 11 otherwise freq will not fall */
-	if (ret != 1 || input < 11 || input > 100 ||
-        input >= dbs_tuners_ins.up_threshold)
+	if (ret != 1 || input < 11)
 		return -EINVAL;
+    
+    // ff: instead of failing when set too high,
+    //     set it to the highest it can safely go.
+    if (input >= dbs_tuners_ins.up_threshold) {
+        input = dbs_tuners_ins.up_threshold - 1;
+    }
     
 	dbs_tuners_ins.down_threshold = input;
 	return count;
@@ -1223,9 +1228,14 @@ static ssize_t store_down_threshold_sleep(struct kobject *a, struct attribute *b
 	ret = sscanf(buf, "%u", &input);
     
 	/* cannot be lower than 11 otherwise freq will not fall */
-	if (ret != 1 || input < 11 || input > 100 ||
-        input >= dbs_tuners_ins.up_threshold_sleep)
+	if (ret != 1 || input < 11)
 		return -EINVAL;
+    
+    // ff: instead of failing when set too high,
+    //     set it to the highest it can safely go.
+    if (input >= dbs_tuners_ins.up_threshold_sleep) {
+        input = dbs_tuners_ins.up_threshold_sleep - 1;
+    }
     
 	dbs_tuners_ins.down_threshold_sleep = input;
 	return count;
