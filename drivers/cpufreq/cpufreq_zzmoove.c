@@ -2258,8 +2258,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     
 	// ZZ: added block cycles to be able slow down hotplugging
     // ff: also added check for multicore_engage_freq (to limit to one core until a tuneable frequency threshold is reached)
+    // ff: also added a check to see if hotplug_limit is requesting only 1 core - if so, no sense in wasting time with hotplugging work
 	if (((!dbs_tuners_ins.disable_hotplug && skip_hotplug_flag == 0 && num_online_cpus() != num_possible_cpus() && policy->cur != policy->min) || hotplug_idle_flag == 1)
-        && (!dbs_tuners_ins.multicore_engage_freq || policy->cur >= dbs_tuners_ins.multicore_engage_freq)) {
+        && (!dbs_tuners_ins.multicore_engage_freq || policy->cur >= dbs_tuners_ins.multicore_engage_freq) && (!dbs_tuners_ins.hotplug_limit || dbs_tuners_ins.hotplug_limit > 1)) {
 	    if (ctr_hotplug_up_block_cycles > dbs_tuners_ins.hotplug_up_block_cycles || dbs_tuners_ins.hotplug_up_block_cycles == 0) {
 		    schedule_work_on(0, &hotplug_online_work);
 		    if (dbs_tuners_ins.hotplug_up_block_cycles != 0)
