@@ -376,6 +376,9 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -mtune=cortex-a9 \
 		   -ftree-vectorize \
 		   -pipe \
+           -munaligned-access \
+           -mcpu=cortex-a9 \
+           -marm \
 		   -fno-schedule-insns2
 
 KBUILD_AFLAGS_KERNEL :=
