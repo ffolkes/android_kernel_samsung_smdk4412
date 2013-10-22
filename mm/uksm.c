@@ -4941,7 +4941,7 @@ static ssize_t sleep_millisecs_store(struct kobject *kobj,
 	int err;
 
 	err = strict_strtoul(buf, 10, &msecs);
-	if (err || msecs > MSEC_PER_SEC)
+	if (err || msecs > 60000)
 		return -EINVAL;
 
 	uksm_sleep_jiffies = msecs_to_jiffies(msecs);
@@ -4950,6 +4950,29 @@ static ssize_t sleep_millisecs_store(struct kobject *kobj,
 	return count;
 }
 UKSM_ATTR(sleep_millisecs);
+
+static ssize_t cpu_governor_numeric_show(struct kobject *kobj,
+                                    struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", uksm_cpu_governor);
+}
+
+static ssize_t cpu_governor_numeric_store(struct kobject *kobj,
+                                     struct kobj_attribute *attr,
+                                     const char *buf, size_t count)
+{
+	unsigned long input;
+	int err;
+    
+	err = strict_strtoul(buf, 10, &input);
+	if (err || input < 0 || input > 3)
+		return -EINVAL;
+    
+	uksm_cpu_governor = input;
+    
+	return count;
+}
+UKSM_ATTR(cpu_governor_numeric);
 
 
 static ssize_t cpu_governor_show(struct kobject *kobj,
@@ -5313,6 +5336,7 @@ UKSM_ATTR_RO(sleep_times);
 static struct attribute *uksm_attrs[] = {
 	&max_cpu_percentage_attr.attr,
 	&sleep_millisecs_attr.attr,
+    &cpu_governor_numeric_attr.attr,
 	&cpu_governor_attr.attr,
 	&run_attr.attr,
 	&ema_per_page_time_attr.attr,
