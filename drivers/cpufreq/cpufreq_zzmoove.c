@@ -332,7 +332,8 @@
 
 #define DEF_FASTDOWN_FREQ               (0)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
 #define DEF_FASTDOWN_UP_THRESHOLD       (95)    // ff: default for fastdown up threshold. the up_threshold when fastdown_freq has been exceeded
-#define DEF_MULTICORE_ENGAGE_FREQ           (0)	// ff: default for multicore_engage_freq. the frequency below which we run on only one core (0 = disabled)
+#define DEF_MULTICORE_ENGAGE_FREQ       (0)     // ff: default for multicore_engage_freq. the frequency below which we run on only one core (0 = disabled)
+#define DEF_HOTPLUG_LIMIT               (0)     // ff: default for hotplug_limit. the number of cores we allow to be online (0 = disabled)
 
 // ZZ: LCDFreq Scaling default values
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
@@ -588,6 +589,7 @@ static struct dbs_tuners {
 	unsigned int hotplug_up_block_cycles;		// ZZ: Hotplug block cycles
     unsigned int hotplug_down_block_cycles;		// ff: Hotplug down block cycles
 	unsigned int hotplug_idle_threshold;		// ZZ: Hotplug idle threshold
+    unsigned int hotplug_limit;                 // ff: the number of cores we allow to be online
     unsigned int multicore_engage_freq;         // ff: frequency below which we run on only one core
     unsigned int fastdown_freq;                 // ff: frequency beyond which we apply a different up_threshold
     unsigned int fastdown_up_threshold;         // ff: up_threshold when fastdown_freq exceeded
@@ -667,6 +669,7 @@ static struct dbs_tuners {
             .hotplug_up_block_cycles = DEF_HOTPLUG_UP_BLOCK_CYCLES,				// ZZ: Hotplug block cycles default
             .hotplug_down_block_cycles = DEF_HOTPLUG_DOWN_BLOCK_CYCLES,				// ff: Hotplug down block cycles default
             .hotplug_idle_threshold = DEF_HOTPLUG_IDLE_THRESHOLD,				// ZZ: Hotplug idle threshold default
+            .hotplug_limit = DEF_HOTPLUG_LIMIT,                                 // ff: the number of cores we allow to be online
             .multicore_engage_freq = DEF_MULTICORE_ENGAGE_FREQ,                 // ff: frequency below which we run on only one core
             .fastdown_freq = DEF_FASTDOWN_FREQ,               // ff: frequency beyond which we apply a different up_threshold
             .fastdown_up_threshold = DEF_FASTDOWN_UP_THRESHOLD, // ff: up_threshold when fastdown_freq exceeded
@@ -988,6 +991,7 @@ show_one(disable_hotplug_sleep, disable_hotplug_sleep);				// ZZ: added Hotplug 
 show_one(hotplug_up_block_cycles, hotplug_up_block_cycles);				// ZZ: added Hotplug block cycles
 show_one(hotplug_down_block_cycles, hotplug_down_block_cycles);				// ff: added Hotplug down block cycles
 show_one(hotplug_idle_threshold, hotplug_idle_threshold);			// ZZ: added Hotplug idle threshold
+show_one(hotplug_limit, hotplug_limit);                             // ff: the number of cores we allow to be online
 show_one(multicore_engage_freq, multicore_engage_freq);             // ff: frequency below which we run on only one core
 show_one(fastdown_freq, fastdown_freq);                 // ff: frequency beyond which we apply a different up_threshold
 show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when fastdown_freq exceeded
@@ -1765,6 +1769,21 @@ static ssize_t store_hotplug_idle_threshold(struct kobject *a, struct attribute 
 	return count;
 }
 
+// ff: added tuneable hotplug_limit -> possible values: range from 0 disabled to 8, if not set default is 0
+static ssize_t store_hotplug_limit(struct kobject *a, struct attribute *b,
+                                            const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if ((ret != 1 || input < 0 || input > 8) && input != 0)
+		return -EINVAL;
+    
+	dbs_tuners_ins.hotplug_limit = input;
+	return count;
+}
+
 // ff: added tuneable multicore_engage_freq -> possible values: range from 0 (disabled) to policy->max, if not set default is 0
 static ssize_t store_multicore_engage_freq(struct kobject *a, struct attribute *b,
                                    const char *buf, size_t count)
@@ -1979,6 +1998,7 @@ define_one_global_rw(disable_hotplug_sleep);			// ZZ: Hotplug switch for sleep
 define_one_global_rw(hotplug_up_block_cycles);			// ZZ: Hotplug block cycles
 define_one_global_rw(hotplug_down_block_cycles);			// ff: Hotplug down block cycles
 define_one_global_rw(hotplug_idle_threshold);			// ZZ: Hotplug idle threshold
+define_one_global_rw(hotplug_limit);            // ff: the number of cores we allow to be online
 define_one_global_rw(multicore_engage_freq);    // ff: frequency below which we run on only one core
 define_one_global_rw(fastdown_freq);            // ff: frequency beyond which we apply a different up_threshold
 define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdown_freq exceeded
@@ -2035,6 +2055,7 @@ static struct attribute *dbs_attributes[] = {
     &hotplug_up_block_cycles.attr,                 // ZZ: Hotplug up block cycles
     &hotplug_down_block_cycles.attr,            // ff: Hotplug down block cycles
     &hotplug_idle_threshold.attr,				// ZZ: Hotplug idle threshold
+    &hotplug_limit.attr,                        // ff: added tuneable
     &multicore_engage_freq.attr,                // ff: added tuneable
 	&up_threshold_hotplug1.attr,				// ZZ: added tuneable
 	&up_threshold_hotplug_freq1.attr,			// Yank: added tuneable
@@ -2690,7 +2711,7 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 	// ZZ: enable offline cores to avoid higher / achieve balanced cpu load on idle
 	if (hotplug_idle_flag == 1){
 	    for (i = 1; i < num_possible_cpus(); i++) {
-            if (!cpu_online(i))
+            if (!cpu_online(i) && (!dbs_tuners_ins.hotplug_limit || i < dbs_tuners_ins.hotplug_limit))
                 cpu_up(i);
 	    }
         return;
@@ -2734,7 +2755,8 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
                skip_hotplug_flag == 0									&&
                hotplug_thresholds[0][i-1] != 0								&&
                cur_load >= hotplug_thresholds[0][i-1]							&&
-               (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1])       )
+               (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1])    &&
+               (!dbs_tuners_ins.hotplug_limit || i < dbs_tuners_ins.hotplug_limit)       )
 			    cpu_up(i);
 	    }
 #ifdef ENABLE_LEGACY_MODE
