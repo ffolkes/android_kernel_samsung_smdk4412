@@ -959,7 +959,6 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			rss[MM_ANONPAGES]++;
 		else
 			rss[MM_FILEPAGES]++;
-		#endif
 	#ifdef CONFIG_LOWMEM_CHECK
 		rss[type]++;
 		if (is_lowmem_page(page)) {
