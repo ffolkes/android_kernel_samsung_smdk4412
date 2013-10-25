@@ -57,7 +57,8 @@ unsigned int g_cpufreq_lock_id;
 unsigned int g_cpufreq_lock_val[DVFS_LOCK_ID_END];
 unsigned int g_cpufreq_lock_level;
 
-int cpufreq_pm_lock_idx = 0;
+unsigned int cpufreq_pm_lock_idx = 14;
+unsigned int cpufreq_pm_lock_freq = 800000;
 
 int exynos_verify_speed(struct cpufreq_policy *policy)
 {
@@ -701,6 +702,7 @@ static int exynos_cpufreq_notifier_event(struct notifier_block *this,
 		if (cpufreq_pm_lock_idx == 0) {
 			pr_info("PM_RESTORE_PREPARE for CPUFREQ. cpufreq_pm_lock_idx was %d. now: %d\n", cpufreq_pm_lock_idx, exynos_info->pm_lock_idx);
 			cpufreq_pm_lock_idx = exynos_info->pm_lock_idx;
+			cpufreq_pm_lock_freq = 800000;
 		} else {
 			pr_info("PM_RESTORE_PREPARE for CPUFREQ. gonna set: %d\n", cpufreq_pm_lock_idx);
 		}
@@ -808,14 +810,14 @@ static int exynos_cpufreq_cpu_init(struct cpufreq_policy *policy)
 
 	cpufreq_frequency_table_cpuinfo(policy, exynos_info->freq_table);
 	
-	pr_info("cpufreq: init()\n");
+	//pr_info("cpufreq: init()\n");
 
 	/* Safe default startup limits */
 	if (samsung_rev() >= EXYNOS4412_REV_2_0)
 		policy->max = 1600000;
 	else
 		policy->max = 1400000;
-	policy->min = 200000;
+        policy->min = 200000;
 
 	return 0;
 }
@@ -906,7 +908,9 @@ static int __init exynos_cpufreq_init(void)
 	g_cpufreq_lock_level = exynos_info->min_support_idx;
 	g_cpufreq_limit_level = exynos_info->max_support_idx;
 	
-	cpufreq_pm_lock_idx = exynos_info->pm_lock_idx;
+	// set default safe pm_lock values (800MHz, L14)
+	cpufreq_pm_lock_idx = 14;
+	cpufreq_pm_lock_freq = 800000;
 
 	if (cpufreq_register_driver(&exynos_driver)) {
 		pr_err("failed to register cpufreq driver\n");

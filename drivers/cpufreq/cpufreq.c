@@ -32,6 +32,8 @@
 
 #include <trace/events/power.h>
 
+#include <mach/cpufreq.h>
+
 /**
  * The "cpufreq driver" - the arch- or hardware-dependent low
  * level driver of CPUFreq support, and its spinlock. This lock
@@ -563,6 +565,49 @@ extern ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf);
 
 extern ssize_t show_UV_uV_table(struct cpufreq_policy *policy, char *buf);
 
+static ssize_t store_pm_lock_freq(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count)
+{
+	unsigned int freq = 0;
+	unsigned int ret;
+    
+	ret = sscanf(buf, "%u", &freq);
+	if (ret != 1)
+		return -EINVAL;
+    
+	// sanitize.
+	if (freq == 0) {
+		// reset.
+		cpufreq_pm_lock_idx = 14;
+        cpufreq_pm_lock_freq = 800000;
+        pr_info("cpufreq: reset to default");
+		return count;
+	} else if (freq < 100000) {
+		return -EINVAL;
+	} else if (freq > 1000000) {
+		return -EINVAL;
+	}
+    
+    cpufreq_pm_lock_freq = freq;
+	
+	if (exynos_cpufreq_get_level(freq, &cpufreq_pm_lock_idx)) {
+		pr_info("cpufreq: failed to get cpufreq level for %dMHz", freq);
+		return -EINVAL;
+	}
+	
+	pr_info("cpufreq: got level for %d (L%d) and set pm_lock_idx\n", freq, cpufreq_pm_lock_idx);
+    
+	return count;
+}
+
+static ssize_t show_pm_lock_freq(struct cpufreq_policy *policy, char *buf)
+{
+    
+    exynos_cpufreq_get_freq(cpufreq_pm_lock_idx, &cpufreq_pm_lock_freq);
+    
+	return sprintf(buf, "%u\n", cpufreq_pm_lock_freq);
+}
+
 /**
  * show_scaling_driver - show the current cpufreq HW/BIOS limitation
  */
@@ -594,6 +639,7 @@ cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
 cpufreq_freq_attr_rw(UV_mV_table);
 cpufreq_freq_attr_rw(UV_uV_table);
+cpufreq_freq_attr_rw(pm_lock_freq);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -609,6 +655,7 @@ static struct attribute *default_attrs[] = {
 	&scaling_setspeed.attr,
 	&UV_mV_table.attr,
 	&UV_uV_table.attr,
+    &pm_lock_freq.attr,
 	NULL
 };
 

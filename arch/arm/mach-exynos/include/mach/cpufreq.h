@@ -70,7 +70,8 @@ enum cpufreq_lock_ID {
 	DVFS_LOCK_ID_QOS_DMA_LATENCY,
 	DVFS_LOCK_ID_END,
 };
-extern int cpufreq_pm_lock_idx;
+extern unsigned int cpufreq_pm_lock_idx;
+extern unsigned int cpufreq_pm_lock_freq;
 int exynos_cpufreq_get_curfreq(void);
 int exynos_cpufreq_get_maxfreq(void);
 int exynos_cpufreq_get_minfreq(void);
