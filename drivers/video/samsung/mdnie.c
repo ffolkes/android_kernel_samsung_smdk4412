@@ -995,7 +995,7 @@ void mdnie_toggle_negative(void)
 	g_mdnie->negative = !g_mdnie->negative;
 	mutex_unlock(&g_mdnie->lock);
 
-	set_mdnie_value(g_mdnie);
+	set_mdnie_value(g_mdnie, 0);
 }
 
 static int mdnie_probe(struct platform_device *pdev)
