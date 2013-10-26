@@ -499,6 +499,11 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 				&hotkey, &index_hotkey);
 	}
 #endif
+    
+    if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_persistent && sttg_touchwake_ignorepowerkey && button->code == KEY_POWER) {
+        printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
+        return;
+    }
 
 	if (type == EV_ABS) {
 		if (state) {
@@ -566,6 +571,11 @@ static irqreturn_t gpio_keys_isr(int irq, void *dev_id)
 	struct irq_desc *desc = irq_to_desc(irq);
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0)
 		^ button->active_low;
+    
+    if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_persistent && sttg_touchwake_ignorepowerkey && button->code == KEY_POWER) {
+        printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
+        return IRQ_HANDLED;
+    }
 
 	BUG_ON(irq != gpio_to_irq(button->gpio));
 
