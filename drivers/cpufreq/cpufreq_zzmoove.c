@@ -469,8 +469,8 @@ static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off o
  * the value is equivalent to the amount of cores which should be online on early suspend
  */
 
-#define DEF_HOTPLUG_SLEEP			(0)	// ZZ: default for tuneable hotplug_sleep
-#define DEF_GRAD_UP_THRESHOLD			(25)	// ZZ: default for grad up threshold
+#define DEF_HOTPLUG_SLEEP			(1)	// ZZ: default for tuneable hotplug_sleep
+#define DEF_GRAD_UP_THRESHOLD			(50)	// ZZ: default for grad up threshold
 
 /*
  * ZZ: Frequency Limit: 0 do not limit frequency and use the full range up to policy->max limit
@@ -2118,6 +2118,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     
 	policy = this_dbs_info->cur_policy;
     
+    cur_freq = policy->cur;  // Yank: store current frequency for hotplugging frequency thresholds
+    
 	/*
 	 * ZZ: Frequency Limit: we try here at a verly early stage to limit freqencies above limit by setting the current target_freq to freq_limit.
 	 * This could be for example wakeup or touchboot freqencies which could be above the limit and are out of governors control.
@@ -2182,8 +2184,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			max_load = load;
 			cur_load = load; // ZZ: current load for hotplugging functions
 		}
-        
-		cur_freq = policy->cur;  // Yank: store current frequency for hotplugging frequency thresholds
         
         /*
          * ZZ: Early demand by stratosk
