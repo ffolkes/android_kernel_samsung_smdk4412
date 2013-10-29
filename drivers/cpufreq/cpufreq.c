@@ -593,7 +593,7 @@ static ssize_t store_pm_lock_freq(struct cpufreq_policy *policy,
 		return count;
 	} else if (freq < 100000) {
 		return -EINVAL;
-	} else if (freq > 1000000) {
+	} else if (freq > 2000000) {
 		return -EINVAL;
 	}
     
