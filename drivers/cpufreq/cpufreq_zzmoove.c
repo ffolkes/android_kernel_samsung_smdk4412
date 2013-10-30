@@ -2986,6 +2986,12 @@ static void powersave_early_suspend(struct early_suspend *handler)
 #endif
     }
     
+    if (dbs_tuners_ins.up_threshold < 11) {
+        // this shouldn't happen!
+        pr_info("zzmoove: wtf! up_threshold was set to: %d on suspend\n", dbs_tuners_ins.up_threshold);
+        dbs_tuners_ins.up_threshold = 70;
+    }
+    
     mutex_unlock(&dbs_mutex);
     for (i = 0; i < 1000; i++);						// ZZ: wait a few samples to be sure hotplugging is off (never be sure so this is dirty)
     skip_hotplug_flag = 0;						// ZZ: enable hotplugging again
@@ -3077,6 +3083,13 @@ static void powersave_late_resume(struct early_suspend *handler)
             }
         }
     }
+    
+    if (dbs_tuners_ins.up_threshold < 11) {
+        // this shouldn't happen!
+        pr_info("zzmoove: wtf! up_threshold was set to: %d on resume\n", dbs_tuners_ins.up_threshold);
+        dbs_tuners_ins.up_threshold = 70;
+    }
+    
     mutex_unlock(&dbs_mutex);
     for (i = 0; i < 1000; i++);						// ZZ: wait a few samples to be sure hotplugging is off (never be sure so this is dirty)
     skip_hotplug_flag = 0;						// ZZ: enable hotplugging again
