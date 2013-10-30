@@ -517,6 +517,12 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 				&hotkey, &index_hotkey);
 	}
 #endif
+	
+	if (state && button->code == KEY_POWER) {
+        gesturebooster_dvfs_lock_on(0);
+        bus_dvfs_lock_on(0);
+        pr_info("[keys] boosters on\n");
+    }
     
     if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_persistent && sttg_touchwake_ignorepowerkey && button->code == KEY_POWER) {
         printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
