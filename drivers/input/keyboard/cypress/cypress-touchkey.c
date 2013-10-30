@@ -52,6 +52,9 @@
 
 #include <linux/wacom_i2c.h>
 
+bool flg_touchkey_pressed = false;
+bool flg_touchkey_was_pressed = false;
+
 /* M0 Touchkey temporary setting */
 
 #if defined(CONFIG_MACH_M0) || defined(CONFIG_MACH_M3)
@@ -108,7 +111,7 @@ static struct touchkey_i2c *touchwakedevdata;
 #endif
 
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-static int gesture_delay = 0;
+unsigned int sttg_gesture_delay = 0;
 #endif
 
 #if defined(CONFIG_TARGET_LOCALE_KOR)
@@ -748,11 +751,29 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
             }
         }
     }
+    
+    if (pressed) {
+        flg_touchkey_pressed = true;
+        if (get_tsp_status()) {
+            flg_touchkey_was_pressed = true;
+            printk("[TSP/gestures] touchkey_was_pressed = true\n");
+            return IRQ_HANDLED;
+        } else {
+            //flg_touchkey_was_pressed = false;
+        }
+    } else {
+        flg_touchkey_pressed = false;
+        if (!get_tsp_status()) {
+            if (flg_touchkey_was_pressed) {
+                flg_touchkey_was_pressed = false;
+            }
+        }
+    }
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (!ignore_gestures && pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && sttg_gesture_delay > 0) {
 		tsp_gestures_only(true);
-	} else if (gesture_delay > 0) {
+	} else if (sttg_gesture_delay > 0) {
 		tsp_gestures_only(false);
 	}
 #endif
@@ -763,11 +784,18 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
-	if (!ignore_gestures && pressed && gesture_delay > 0) {
+	if (!ignore_gestures && pressed && sttg_gesture_delay > 0) {
 		// if ignore_gestures is true, then gestures are disabled, so don't even bother.
 		//
 		// immediately set gesture mode (fast gestures might execute before the msleep() is up)
 		// wait x ms and recheck touchscreen.
+        
+        if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_ignoretkeys) {
+            // if touchwake is enabled, active, and set to ignore tkeys, then we can stop now.
+            return IRQ_HANDLED;
+        }
+        
+        flg_touchkey_was_pressed = true;
 		
 		// reset touch_was_pressed flag.
 		tsp_check_touched_flag(0);
@@ -776,12 +804,12 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		tsp_gestures_only(true);
 		
 		// wait to see if we need to block this touchkey press.
-		msleep(gesture_delay);
+		msleep(sttg_gesture_delay);
 		
 		// check to see if the screen has been touched.
-		if (tsp_check_touched_flag(1)) {
-			// touchscreen has been touched. presumably a gesture is being drawn. don't report this keypress.
-			pr_info("[Touchkey] looks like this is a gesture.\n");
+		if (tsp_check_touched_flag(1) || get_tsp_status()) {
+			// touchscreen has been touched, or is being touched. presumably a gesture is being drawn. don't report this keypress.
+			//pr_info("[Touchkey] looks like this is a gesture.\n");
 			return IRQ_HANDLED;
 		} else {
 			// cancel the preemptive gesture mode, user wasn't doing a gesture after all. carry on.
@@ -791,9 +819,9 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 #endif
 
-	if (get_tsp_status() && pressed)
-		printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
-	else {
+	if (get_tsp_status() && pressed) {
+		//printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
+	} else {
 		
 #ifdef CONFIG_TOUCH_WAKE
 		
@@ -830,7 +858,19 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		} else {*/
 			
 		//	printk(KERN_DEBUG "[TouchKey] doubletap ignored.\n");
-			touch_press();
+			
+        
+        if (pressed && touchwake_enabled && flg_touchwake_active) {
+            // if touchwake is enable and active, decide if it should be triggered.
+            // either way, exit early so the tap doesn't vibrate.
+            
+            if (sttg_touchwake_ignoretkeys) {
+                //pr_info("[touchkey/touchwake] ignoring touchkey press\n");
+            } else {
+                touch_press();
+            }
+            return IRQ_HANDLED;
+        }
 			
 		//}
 #endif
@@ -1013,6 +1053,8 @@ static int sec_touchkey_early_suspend(struct early_suspend *h)
 	
 #ifdef CONFIG_TOUCH_WAKE
 	tkey_i2c->pdata->led_power_on(0);
+    flg_touchkey_pressed = false;
+    flg_touchkey_was_pressed = false;
 #else
 	int ret;
 	int i;
@@ -1055,9 +1097,13 @@ static int sec_touchkey_late_resume(struct early_suspend *h)
 
 	struct touchkey_i2c *tkey_i2c =
 	container_of(h, struct touchkey_i2c, early_suspend);
+    
+    flg_touchkey_was_pressed = false;
 	
 #ifdef CONFIG_TOUCH_WAKE
 	tkey_i2c->pdata->led_power_on(1);
+    flg_touchkey_pressed = false;
+    flg_touchkey_was_pressed = false;
 #else
 #ifdef TEST_JIG_MODE
 	unsigned char get_touch = 0x40;
@@ -1388,7 +1434,7 @@ static ssize_t gesture_delay_show(struct device *dev,
 {
 	int ret;
 	
-	ret = sprintf(buf, "%d\n", gesture_delay);
+	ret = sprintf(buf, "%d\n", sttg_gesture_delay);
 	
 	return ret;
 }
@@ -1404,7 +1450,7 @@ static ssize_t gesture_delay_store(struct device *dev,
 		return -EINVAL;
 	}
 	
-	gesture_delay = data;
+	sttg_gesture_delay = data;
 	pr_info("[Touchkey] gesture_delay set to %d\n", data);
 	
 	return size;

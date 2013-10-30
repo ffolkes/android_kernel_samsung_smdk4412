@@ -46,6 +46,8 @@
 #include <mach/cpufreq.h>
 #include <mach/dev.h>
 
+#include <linux/cpuidle.h>
+
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 #include <linux/spinlock.h>
 #include <linux/miscdevice.h>
@@ -105,6 +107,7 @@ static int gesturebooster_dvfs_locked;
 static struct mutex gesturebooster_dvfs_lock;
 static struct delayed_work work_gesturebooster_dvfs_off;
 static int flg_gestures_detected = 0;
+bool flg_gestures_touchkey_was_pressed = false;
 #endif
 #endif
 
@@ -252,11 +255,44 @@ int touch_is_pressed;
 
 bool flg_touch_was_pressed = false;
 
-static unsigned int wake_start = -1;
-static unsigned int wake_start_y = -100;
+bool flg_touchwake_slide2wake = true;
+bool flg_touchwake_arc_started = false;
+bool flg_touchwake_swipe_started = false;
+bool flg_touchwake_longpressoff = false;
+
+struct timeval time_touchwake_longpressoff;
+struct timeval time_touchwake_longpressoff_start;
+static int touchwake_longpressoff_time_start_secs = -1;
+static spinlock_t touchwake_longpressoff_lock;
+
+static void touchwake_reset_longpressoff(struct work_struct * touchwake_reset_longpressoff_work);
+static DECLARE_DELAYED_WORK(touchwake_reset_longpressoff_work, touchwake_reset_longpressoff);
+
+static void touchwake_check_longpressoff(struct work_struct * touchwake_check_longpressoff_work);
+static DECLARE_DELAYED_WORK(touchwake_check_longpressoff_work, touchwake_check_longpressoff);
+
+static unsigned int arc_start_x_min;
+static unsigned int arc_start_x_max;
+static unsigned int arc_start_y_min;
+static unsigned int arc_start_y_max;
+static unsigned int arc_end_y_min;
+static unsigned int arc_end_y_max;
+
+static unsigned int rh_arc_end_x_min;
+static unsigned int rh_arc_end_x_max;
+static unsigned int lh_arc_end_x_min;
+static unsigned int lh_arc_end_x_max;
+
+static int wake_start = -1;
+static unsigned int swipe_x_start = 0;
+static unsigned int swipe_y_start = 0;
 static unsigned int x_lo;
 static unsigned int x_hi;
-static unsigned int y_tolerance = 132;
+
+static bool sttg_longpressoff_alwayson = false;
+bool flg_screen_on = true;
+
+static bool flg_swipe_in_progress = false;
 
 #define ISC_DL_MODE	1
 
@@ -405,6 +441,10 @@ struct tsp_lcd_callbacks {
 };
 #endif
 
+bool bus_dvfs_lock_status;
+struct mutex bus_dvfs_lock;
+struct delayed_work work_bus_dvfs_off;
+
 struct mms_ts_info {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
@@ -422,14 +462,7 @@ struct mms_ts_info {
 
 	struct melfas_tsi_platform_data *pdata;
 	struct early_suspend early_suspend;
-#if TOUCH_BOOSTER
-	struct delayed_work work_dvfs_off;
-	struct delayed_work work_dvfs_chg;
-	bool dvfs_lock_status;
-	int cpufreq_level;
-	struct mutex dvfs_lock;
-#endif
-
+    
 	/* protects the enabled flag */
 	struct mutex lock;
 	bool enabled;
@@ -552,9 +585,61 @@ struct tsp_cmd tsp_cmds[] = {
 };
 #endif
 
+static void touchwake_reset_longpressoff(struct work_struct * touchwake_reset_longpressoff_work)
+{
+    flg_touchwake_longpressoff = false;
+    pr_info("[TSP/touch] flg_touchwake_longpressoff unset\n");
+	return;
+}
+
+#ifdef CONFIG_TOUCHSCREEN_GESTURES
+static void press_power()
+{
+	input_event(powerkey_device, EV_KEY, KEY_POWER, 1);
+    //input_event(powerkey_device, EV_SYN, 0, 0);
+    input_sync(powerkey_device);
+    msleep(10);
+    input_event(powerkey_device, EV_KEY, KEY_POWER, 0);
+    input_sync(powerkey_device);
+    //input_event(powerkey_device, EV_SYN, 0, 0);
+}
+
+static void touchwake_check_longpressoff(struct work_struct * touchwake_check_longpressoff_work)
+{
+    // time is up from when the longpressoff started. has it been broken?
+    if (flg_screen_on && flg_touchwake_longpressoff && swipe_x_start < 9999) {
+        // looks good, press power.
+        
+        // turn off!
+        flg_screen_on = false;
+        pr_info("[TSP/touch]: longpressoff still down, pressing power...\n");
+        touchwake_longpressoff_time_start_secs = -1;
+        flg_touchwake_longpressoff = false;
+        
+        press_power();
+        return;
+    }
+    
+    pr_info("[TSP/touch] longpressoff not down anymore, skipping\n");
+	return;
+}
+
+// probably should be called with the gestures_lock spinlock held
+static void reset_gesture_progress(int gesture_no)
+{
+    int finger_no;
+    
+    gestures_detected[gesture_no] = false;
+    for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
+        gesture_fingers[gesture_no][finger_no].finger_order = -1;
+        gesture_fingers[gesture_no][finger_no].current_step = -1;
+    }
+}
+#endif
+
 #if GESTURE_BOOSTER
 static void gesturebooster_dvfs_lock_off(struct work_struct *work)
-{	
+{
 	mutex_lock(&gesturebooster_dvfs_lock);
 
 	exynos_cpufreq_lock_free(DVFS_LOCK_ID_GESTURE_BOOSTER);
@@ -564,29 +649,36 @@ static void gesturebooster_dvfs_lock_off(struct work_struct *work)
 	mutex_unlock(&gesturebooster_dvfs_lock);
 }
 
-static void gesturebooster_dvfs_lock_on(void)
+void gesturebooster_dvfs_lock_on(int gesturebooster_freq_override)
 {
 	unsigned int maxfreq = 0;
 	unsigned int minfreq = 0;
 	
 	mutex_lock(&gesturebooster_dvfs_lock);
 	
-	if (gesturebooster_freq == 0) {
-		pr_info("[TSP/gesturebooster] boost_freq max autodetect\n");
-		// use the highest frequency we can.
-		maxfreq = exynos_cpufreq_get_maxfreq();
-		gesturebooster_actual_freq = maxfreq;
-		
-		// if this has changed, we need to refresh the level.
-		if (prev_gesturebooster_actual_freq != gesturebooster_actual_freq) {
-			gesturebooster_cpufreq_level = -1;
-			pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n");
-		}
-		
-	} else {
-		// use whatever frequency has been set.
-		gesturebooster_actual_freq = gesturebooster_freq;
-	}
+    if (gesturebooster_freq_override == 0) {
+        // no override is set, proceed normally.
+        
+        if (gesturebooster_freq == 0) {
+            pr_info("[TSP/gesturebooster] boost_freq max autodetect\n");
+            // use the highest frequency we can.
+            maxfreq = exynos_cpufreq_get_maxfreq();
+            gesturebooster_actual_freq = maxfreq;
+        } else {
+            // use whatever frequency has been set.
+            gesturebooster_actual_freq = gesturebooster_freq;
+        }
+        
+    } else {
+        // use the override frequency instead.
+        gesturebooster_actual_freq = gesturebooster_freq_override;
+    }
+    
+    // if this has changed, we need to refresh the level.
+    if (prev_gesturebooster_actual_freq != gesturebooster_actual_freq) {
+        gesturebooster_cpufreq_level = -1;
+        pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n");
+    }
 	
 	if (gesturebooster_cpufreq_level < 0) {
 		
@@ -640,95 +732,63 @@ static void gesturebooster_dvfs_lock_on(void)
 
 	mutex_unlock(&gesturebooster_dvfs_lock);
 }
+EXPORT_SYMBOL(gesturebooster_dvfs_lock_on);
 #endif
 
-#if TOUCH_BOOSTER
-static void change_dvfs_lock(struct work_struct *work)
+static void bus_dvfs_lock_off(struct work_struct *work)
 {
-	struct mms_ts_info *info = container_of(work,
-				struct mms_ts_info, work_dvfs_chg.work);
 	int ret;
 
-	mutex_lock(&info->dvfs_lock);
-
-	ret = dev_lock(bus_dev, sec_touchscreen, 267160); /* 266 Mhz setting */
-
-	if (ret < 0)
-		pr_err("%s: dev change bud lock failed(%d)\n",\
-				__func__, __LINE__);
-	else
-		pr_info("[TSP] change_dvfs_lock");
-	mutex_unlock(&info->dvfs_lock);
-}
-static void set_dvfs_off(struct work_struct *work)
-{
-
-	struct mms_ts_info *info = container_of(work,
-				struct mms_ts_info, work_dvfs_off.work);
-	int ret;
-
-	mutex_lock(&info->dvfs_lock);
+	mutex_lock(&bus_dvfs_lock);
 
 	ret = dev_unlock(bus_dev, sec_touchscreen);
 	if (ret < 0)
-			pr_err("%s: dev unlock failed(%d)\n",
-			       __func__, __LINE__);
+			pr_err("%s: dev unlock failed(%d)\n", __func__, __LINE__);
+    
+    flg_ignore_cpuidle = false;
 
-	exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
-	info->dvfs_lock_status = false;
-	pr_info("[TSP] DVFS Off!");
-	mutex_unlock(&info->dvfs_lock);
-	}
-
-static void set_dvfs_lock(struct mms_ts_info *info, uint32_t on)
-{
-	int ret;
-
-	mutex_lock(&info->dvfs_lock);
-	if (info->cpufreq_level <= 0) {
-		ret = exynos_cpufreq_get_level(800000, &info->cpufreq_level);
-		if (ret < 0)
-			pr_err("[TSP] exynos_cpufreq_get_level error");
-		goto out;
-	}
-	if (on == 0) {
-		if (info->dvfs_lock_status) {
-			cancel_delayed_work(&info->work_dvfs_chg);
-			schedule_delayed_work(&info->work_dvfs_off,
-				msecs_to_jiffies(TOUCH_BOOSTER_OFF_TIME));
-		}
-
-	} else if (on == 1) {
-		cancel_delayed_work(&info->work_dvfs_off);
-		if (!info->dvfs_lock_status) {
-			ret = dev_lock(bus_dev, sec_touchscreen, 400200);
-			if (ret < 0) {
-				pr_err("%s: dev lock failed(%d)\n",\
-							__func__, __LINE__);
-			}
-
-			ret = exynos_cpufreq_lock(DVFS_LOCK_ID_TSP,
-							info->cpufreq_level);
-			if (ret < 0)
-				pr_err("%s: cpu lock failed(%d)\n",\
-							__func__, __LINE__);
-
-			schedule_delayed_work(&info->work_dvfs_chg,
-				msecs_to_jiffies(TOUCH_BOOSTER_CHG_TIME));
-
-			info->dvfs_lock_status = true;
-			pr_info("[TSP] DVFS On![%d]", info->cpufreq_level);
-		}
-	} else if (on == 2) {
-		cancel_delayed_work(&info->work_dvfs_off);
-		cancel_delayed_work(&info->work_dvfs_chg);
-		schedule_work(&info->work_dvfs_off.work);
-	}
-out:
-	mutex_unlock(&info->dvfs_lock);
+	bus_dvfs_lock_status = false;
+	pr_info("[TSP/touch] dvfs buslock off\n");
+    
+	mutex_unlock(&bus_dvfs_lock);
 }
 
-#endif
+void bus_dvfs_lock_on(unsigned int mode)
+{
+	int ret;
+    int busfreqs = 440220;
+
+	mutex_lock(&bus_dvfs_lock);
+    
+    cancel_delayed_work(&work_bus_dvfs_off);
+    
+    if (mode == 0) {
+        // if mode is 0, set to the highest memory/bus freqs.
+        busfreqs = 440220;
+    } else {
+        // otherwise set to whatever it wants to override with.
+        // yes, i know there should be a sanity check here...
+        busfreqs = mode;
+    }
+    
+    if (!bus_dvfs_lock_status) {
+		
+		flg_ignore_cpuidle = true;
+        
+        ret = dev_lock(bus_dev, sec_touchscreen, busfreqs);
+        if (ret < 0) {
+            pr_err("%s: dev lock failed(%d)\n", __func__, __LINE__);
+        }
+        
+        schedule_delayed_work(&work_bus_dvfs_off, msecs_to_jiffies(2000));
+        
+        bus_dvfs_lock_status = true;
+        pr_info("[TSP/touch] dvfs buslock on at %d\n", busfreqs);
+        
+    }
+	mutex_unlock(&bus_dvfs_lock);
+}
+EXPORT_SYMBOL(bus_dvfs_lock_on);
 
 #ifdef CONFIG_INPUT_FBSUSPEND
 #ifdef CONFIG_DRM
@@ -805,7 +865,8 @@ melfas_fb_notifier_callback(struct notifier_block *self,
 	case FB_BLANK_UNBLANK:
 		if (info->enabled == 0) {
 			info->pdata->power(true);
-			msleep(200);
+			msleep(20);
+            pr_info("[TSP/touch] delay was here\n");
 			enable_irq(info->client->irq);
 			info->enabled = 1;
 		} else {
@@ -869,6 +930,8 @@ static inline void mms_pwr_on_reset(struct mms_ts_info *info)
 
 	info->pdata->mux_fw_flash(false);
 	i2c_unlock_adapter(adapter);
+    
+    pr_info("[TSP/touch] mms_pwr_on\n");
 
 	/* TODO: Seems long enough for the firmware to boot.
 	 * Find the right value */
@@ -1043,11 +1106,21 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	bool track_gestures;
 	int flg_call_gesturebooster = 0;
 	bool flg_gestures_only = false;
+    unsigned int gesturebooster_freq_override = 0;
+    bool flg_call_touchwake_droplock = false;
 	
 	track_gestures = info->enabled;
 	if (sttg_gestures_only) {
 		flg_gestures_only = true;
 	}
+    
+    if (flg_swipe_in_progress) {
+        flg_gestures_only = true;
+    }
+    
+    if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_ignoregestures) {
+        track_gestures = false;
+    }
 #endif
 	if (get_epen_status()) {
 		//pr_info("[TSP] screen touched but potential gesture ignored because of epen input\n");
@@ -1075,6 +1148,12 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			goto out;
 		}
 	}
+    
+    if (prox_near && !flg_screen_on) {
+        // if the proximity sensor has been activated and the screen is off, skip input.
+        pr_info("[TSP/touch] ignoring touch event because prox_near (%d) and screen is off (%d)\n", prox_near, flg_screen_on);
+        goto out;
+    }
 
 	if (sz == 0)
 		goto out;
@@ -1345,24 +1424,261 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 #ifdef CONFIG_TOUCH_WAKE
 			// slide2wake trigger
-			if (wake_start == i && x > x_hi
-			&& 	abs(wake_start_y - y) < y_tolerance
-			&& get_touchoff_delay() == 0 ) {
-				printk(KERN_ERR "[TSP] slide2wake up at: %4d\n",
-					x);
-				touch_press();
-			}
-			wake_start = -1;
+			if (id == 0
+                && touchwake_enabled
+                && flg_touchwake_active
+                && flg_touchwake_slide2wake
+                && wake_start == id
+                && flg_touchwake_swipe_started
+                && x > x_hi
+                //&& tmp[4] <= sttg_touchwake_swipe_max_pressure
+                && tmp[6] <= sttg_touchwake_swipe_max_pressure
+                //&& abs(angle) <= sttg_touchwake_swipe_finger_angle_tolerance
+                && flg_touchwake_swipe_only
+                && !flg_touchkey_pressed
+                && !flg_touchkey_was_pressed) {
+                
+                gesturebooster_dvfs_lock_on(1600000);
+                
+                bus_dvfs_lock_on(0);
+                pr_info("[TSP] dvfs_lock buslock started...\n ");
+                
+                pr_info("[TSP touch] slide2wake up at: %4d\n", x);
+				flg_call_gesturebooster = 1;
+                touch_press();
+                gesturebooster_freq_override = 1200000;
+                track_gestures = false;
+			} else if (id == 0) {
+                // debug code. this will run once on swipe failure, to let us know which parameter was violated.
+                if (flg_touchwake_slide2wake) {
+                    if (id != 0) {
+                        pr_info("[TSP/touch] slide2wake cancelled because id was %d (not 0).\n", id);
+                    }
+                    //if (tmp[4] > sttg_touchwake_swipe_max_pressure) {
+                    //    pr_info("[TSP/touch] slide2wake cancelled because pressure (width) was %d (not <= %d).\n", tmp[4], sttg_touchwake_swipe_max_pressure);
+                    //}
+                    if (tmp[6] > sttg_touchwake_swipe_max_pressure) {
+                        pr_info("[TSP/touch] slide2wake cancelled because pressure (touch) was %d (not <= %d).\n", tmp[6], sttg_touchwake_swipe_max_pressure);
+                    }
+                    if (abs(angle) > sttg_touchwake_swipe_finger_angle_tolerance) {
+                        pr_info("[TSP/touch] slide2wake cancelled because angle was %d (not <= %d).\n", angle, sttg_touchwake_swipe_finger_angle_tolerance);
+                    }
+                }
+                flg_touchwake_slide2wake = false;
+            }
+            
+            if (id == 0) {
+                // also reset slide2wake detection flag.
+                //printk("[TSP/touchwake] resetting all on finger 0\n");
+                wake_start = -1;
+                flg_touchwake_slide2wake = true;
+                touchwake_longpressoff_time_start_secs = -1;
+                flg_touchwake_swipe_started = false;
+                flg_touchwake_arc_started = false;
+                
+                flg_swipe_in_progress = false;
+                
+                // finger is up or broken, do not press power.
+                cancel_delayed_work_sync(&touchwake_check_longpressoff_work);
+            }
 #endif
 			continue;
 		}
 #ifdef CONFIG_TOUCH_WAKE
 		// slide2wake gesture start
-		if (x < x_lo) {
-			printk(KERN_ERR "[TSP] slide2wake down at: %4d\n", x);
-			wake_start = i;
-			wake_start_y = y;
-		}
+		if (id == 0
+            && touchwake_enabled
+            && flg_touchwake_active
+            && flg_touchwake_slide2wake
+            //&& (!flg_touchwake_swipe_started || (flg_touchwake_swipe_started && tmp[4] <= sttg_touchwake_swipe_max_pressure))
+            && (!flg_touchwake_swipe_started || (flg_touchwake_swipe_started && tmp[6] <= sttg_touchwake_swipe_max_pressure))
+            //&& (!flg_touchwake_swipe_started || (flg_touchwake_swipe_started && abs(angle) <= sttg_touchwake_swipe_finger_angle_tolerance))
+            ) {
+            
+            if (wake_start == -1) {
+                swipe_x_start = x;
+                swipe_y_start = y;
+                wake_start = id;
+                flg_touchwake_arc_started = false;
+                flg_touchwake_swipe_started = false;
+                //pr_info("[TSP touch] slide2wake wake_start init at: %4d, %4d\n", x, y);
+            }
+            
+            // check for arc end first.
+            if (flg_touchwake_arc_started
+                && (
+                    (sttg_touchwake_swipe_arc_rh && x >= rh_arc_end_x_min && x <= rh_arc_end_x_max
+                     && y >= arc_end_y_min && y <= arc_end_y_max)
+                    
+                    || (sttg_touchwake_swipe_arc_lh && x >= lh_arc_end_x_min && x <= lh_arc_end_x_max
+                     && y >= arc_end_y_min && y <= arc_end_y_max)
+                    )
+                ) {
+                
+                gesturebooster_dvfs_lock_on(1600000);
+                
+                bus_dvfs_lock_on(0);
+                pr_info("[TSP] dvfs_lock buslock started...\n ");
+                
+                pr_info("[TSP touch] slide2wake arc crossed at: %4d, %4d\n", x, y);
+                touch_press();
+                wake_start = -1;
+                flg_swipe_in_progress = true;
+                
+                if (sttg_touchwake_longpressoff_enabled) {
+                    // only set the longpressoff flag if the user has requested it.
+                    
+                    // set the flag.
+                    flg_touchwake_longpressoff = true;
+                    
+                    if (sttg_touchwake_longpressoff_timeout > 0) {
+                        // if the timeout is set to 0, assume infinite mode, otherwise schedule delayed work to turn it off
+                        
+                        schedule_delayed_work(&touchwake_reset_longpressoff_work, msecs_to_jiffies(sttg_touchwake_longpressoff_timeout));
+                    }
+                }
+                
+                // stop reporting this finger to prevent accidental input.
+                return IRQ_HANDLED;
+            }
+            
+            // if we're at this point, then no arc end was found. so now check for arc start.
+            // if that fails, check for swipe start. if that fails, disable slide2wake until
+            // finger-up.
+            if (!flg_touchwake_swipe_started
+                && !flg_touchwake_arc_started
+                && swipe_x_start >= arc_start_x_min && swipe_x_start <= arc_start_x_max
+                && swipe_y_start >= arc_start_y_min && swipe_y_start <= arc_start_y_max) {
+                
+                // we're within the boundaries of the arc starting area.
+                // there is no drift protection, so just set a flag, as
+                // this code doesn't have to be run anymore.
+                
+                flg_touchwake_arc_started = true;
+                
+                pr_info("[TSP touch] slide2wake rh arc down at: id: %d, x: %4d, y: %4d, width: %3d, touch: %3d, angle: %d. swipe_y_start: %d.\n", id, x, y, tmp[4], tmp[6], angle, swipe_y_start);
+                
+            } else if (!flg_touchwake_arc_started
+                       && swipe_x_start < x_lo) {
+                
+                // we aren't within the start boundaries of the arc, but we are within
+                // the starting boundaries of the swipe. so this must be a swipe.
+                
+                //pr_info("[TSP touch] slide2wake down at: id: %d, x: %4d, y: %4d, width: %3d, touch: %3d, angle: %d. swipe_y_start: %d. swipe_y_drift: %d\n", id, x, y, tmp[4], tmp[6], angle, swipe_y_start, (abs(swipe_y_start - y)));
+                
+                flg_touchwake_swipe_started = true;
+                
+                if (abs(swipe_y_start - y) > sttg_touchwake_swipe_y_drift_tolerance) {
+                    // swipe drifted too far vertically, resetting detection.
+                    pr_info("[TSP touch] slide2wake y_drift_tolerance exceeded at id: %d, x: %4d, y: %4d, swipe_y_start: %d (drifted %d), width: %3d, touch: %3d, angle: %d. detection reset.\n", id, x, y, swipe_y_start, abs(swipe_y_start - y), tmp[4], tmp[6], angle);
+                    flg_touchwake_slide2wake = false;
+                    wake_start = -1;
+                }
+                
+                if (sttg_touchwake_swipe_fast_trigger && x > x_hi) {
+                    gesturebooster_dvfs_lock_on(1600000);
+                    bus_dvfs_lock_on(0);
+                    pr_info("[TSP] dvfs_lock buslock started...\n ");
+                    pr_info("[TSP touch] slide2wake crossed at: %4d\n", x);
+                    touch_press();
+                    wake_start = -1;
+                    flg_swipe_in_progress = true;
+                    // stop reporting this finger to prevent accidental input.
+                    return IRQ_HANDLED;
+                }
+                
+            } else if (!flg_touchwake_arc_started && !flg_touchwake_swipe_started) {
+                
+                // this finger event is not within the starting boundaries of the arc
+                // or the swipe. cancel slide2wake until finger-up.
+                    
+                flg_touchwake_slide2wake = false;
+                wake_start = -1;
+            
+            }
+            
+		} else if (touchwake_enabled && flg_touchwake_active && id == 0) {
+            // debug code. this will run once on swipe failure, to let us know which parameter was violated.
+            if (flg_touchwake_slide2wake) {
+                if (id != 0) {
+                    pr_info("[TSP/touch] slide2wake cancelled because id was %d (not 0).\n", id);
+                }
+                //if (tmp[4] > sttg_touchwake_swipe_max_pressure) {
+                //    pr_info("[TSP/touch] slide2wake cancelled because pressure (width) was %d (not <= %d).\n", tmp[4], sttg_touchwake_swipe_max_pressure);
+                //}
+                if (tmp[6] > sttg_touchwake_swipe_max_pressure) {
+                    pr_info("[TSP/touch] slide2wake cancelled because pressure (touch) was %d (not <= %d).\n", tmp[6], sttg_touchwake_swipe_max_pressure);
+                }
+                if (abs(angle) > sttg_touchwake_swipe_finger_angle_tolerance) {
+                    pr_info("[TSP/touch] slide2wake cancelled because angle was %d (not <= %d).\n", angle, sttg_touchwake_swipe_finger_angle_tolerance);
+                }
+            }
+            flg_touchwake_slide2wake = false;
+        }
+        
+        // we are out of the touchwake IF block now, the code below runs on every update.
+        if (((sttg_longpressoff_alwayson && flg_screen_on) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && touchwake_longpressoff_time_start_secs == -1 && id == 0 && y > 320 && tmp[6] >= sttg_touchwake_longpressoff_min_pressure) {
+            // finger is down and longpressoff is starting.
+            
+            // we need a fairly unique identifier to check against later, otherwise
+            // we won't be able to tell if the finger was maybe lifted, cancelled, and back
+            // down again within the 5 seconds.
+            
+            // in n seconds we will schedule work to be done that will check to see if the finger
+            // has moved or otherwise been cancelled or broken. if it hasn't, power will be pressed.
+            touchwake_longpressoff_time_start_secs = 1;
+            pr_info("[TSP/touch]: longpressoff started, blocking press and scheduling check in %i ms...\n", sttg_touchwake_longpressoff_duration);
+            schedule_delayed_work(&touchwake_check_longpressoff_work, msecs_to_jiffies(sttg_touchwake_longpressoff_duration));
+            
+            // in case we got here from sttg_longpressoff_alwayson, the longpressoff flag might not be set,
+            // so set it again just to be sure.
+            flg_touchwake_longpressoff = true;
+            
+            swipe_x_start = x;
+            swipe_y_start = y;
+            
+            // lift this finger to prevent accidental input.
+            input_mt_slot(info->input_dev, 0);
+            input_mt_report_slot_state(info->input_dev, MT_TOOL_FINGER, false);
+            input_sync(info->input_dev);
+            
+            // stop reporting this finger to prevent accidental input.
+            return IRQ_HANDLED;
+            
+        } else if (swipe_x_start < 9999 && ((sttg_longpressoff_alwayson && flg_screen_on) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && id == 0 && y > 640 && abs(x - swipe_x_start) <= sttg_touchwake_longpressoff_xy_drift_tolerance && abs(y - swipe_y_start) <= sttg_touchwake_longpressoff_xy_drift_tolerance && tmp[6] >= sttg_touchwake_longpressoff_min_pressure) {
+            
+            // even though this is a new event, it is still the same finger-down since swipe_x_start hasn't been set to 9999 yet.
+            // there's nothing to do but block this input, and reset it back to finger-up
+            
+            input_mt_slot(info->input_dev, 0);
+            input_mt_report_slot_state(info->input_dev, MT_TOOL_FINGER, false);
+            input_sync(info->input_dev);
+            
+            //pr_info("[TSP/touch]: longpressoff INTACT. x-drift: %3d (%i), y-drift: %4d (%i), pressure (width): %i (n/a), pressure (touch): %i (%i)\n", abs(x - swipe_x_start), sttg_touchwake_longpressoff_xy_drift_tolerance, abs(y - swipe_y_start), sttg_touchwake_longpressoff_xy_drift_tolerance, tmp[4], tmp[6], sttg_touchwake_longpressoff_min_pressure);
+            
+            // stop reporting this finger to prevent accidental input.
+            return IRQ_HANDLED;
+            
+        } else if (swipe_x_start < 9999 && ((sttg_longpressoff_alwayson && flg_screen_on) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && id == 0) {
+            
+            pr_info("[TSP/touch]: longpressoff BROKEN. x-drift: %3d, y-drift: %4d, pressure (width): %i, pressure (touch): %i\n", abs(x - swipe_x_start), abs(y - swipe_y_start), tmp[4], tmp[6]);
+            
+            // block this last input, as it was still part of the initial longpressoff finger-down.
+            swipe_x_start = 9999;
+            
+            // finger is up or broken, do not press power.
+            cancel_delayed_work_sync(&touchwake_check_longpressoff_work);
+            
+            input_mt_slot(info->input_dev, 0);
+            input_mt_report_slot_state(info->input_dev, MT_TOOL_FINGER, false);
+            input_sync(info->input_dev);
+            
+            // stop reporting this finger to prevent accidental input.
+            return IRQ_HANDLED;
+        }
+        
+        // longtap off.
+        
 #endif
 
 		if (info->panel == 'M') {
@@ -1375,10 +1691,16 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 						// Ignore further movement for gestures already reported
 						continue;
 					
-					if (!flg_gestures_only && (ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey)) {
-						// this gesture requires the touchkey to be held down.
-						//printk("[TSP] M this gesture (%d) requires touchkey!\n", gesture_no + 1);
-						continue;
+					// check to see if this gesture requires a touchkey, or if they all do.
+                    // and skip gesture 0 because it is the power gesture and needs to be easier to trigger.
+					if ((ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey) && gesture_no != 0) {
+                        // if we're here, we need a touckey to be down.
+                        if (sttg_gesture_delay == 0 || !flg_gestures_only) {
+                            // this gesture requires a touchkey to be held down but one isn't,
+                            // or the gesture_delay isn't set. either way, let's skip it.
+                            //printk("[TSP] this gesture (%d) requires touchkey!\n", gesture_no + 1);
+                            continue;
+                        }
 					}
 					
 					// Find which finger definition this touch maps to
@@ -1439,24 +1761,26 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 			}
 #endif
 			if (!flg_gestures_only) {
-				
-			input_mt_slot(info->input_dev, id);
-			input_mt_report_slot_state(info->input_dev,
-						   MT_TOOL_FINGER, true);
-			input_report_abs(info->input_dev,
-				ABS_MT_POSITION_X, x);
-			input_report_abs(info->input_dev,
-				ABS_MT_POSITION_Y, y);
-			input_report_abs(info->input_dev,
-				ABS_MT_WIDTH_MAJOR, tmp[4]);
-			input_report_abs(info->input_dev,
-				ABS_MT_TOUCH_MAJOR, tmp[6]);
-			input_report_abs(info->input_dev,
-				ABS_MT_TOUCH_MINOR, tmp[7]);
-			input_report_abs(info->input_dev,
-				ABS_MT_ANGLE, angle);
-			input_report_abs(info->input_dev,
-				ABS_MT_PALM, palm);
+                
+                //pr_info("[TSP/touch] x: %d, y: %d, fingerwidth: %d, touchpointwidth: %d, minor: %d, angle: %d, palm: %d\n", x, y, tmp[4], tmp[6], tmp[7], angle, palm);
+                
+                input_mt_slot(info->input_dev, id);
+                input_mt_report_slot_state(info->input_dev,
+                                           MT_TOOL_FINGER, true);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_POSITION_X, x);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_POSITION_Y, y);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_WIDTH_MAJOR, tmp[4]);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_TOUCH_MAJOR, tmp[6]);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_TOUCH_MINOR, tmp[7]);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_ANGLE, angle);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_PALM, palm);
 				
 			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
@@ -1500,10 +1824,16 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 						// Ignore further movement for gestures already reported
 						continue;
 					
-					if (!flg_gestures_only && (ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey)) {
-						// this gesture requires the touchkey to be held down.
-						//printk("[TSP] this gesture (%d) requires touchkey!\n", gesture_no + 1);
-						continue;
+					// check to see if this gesture requires a touchkey, or if they all do.
+                    // and skip gesture 0 because it is the power gesture and needs to be easier to trigger.
+					if ((ary_gestures_flg_touchkey[gesture_no] || sttg_require_touchkey) && gesture_no != 0) {
+                        // if we're here, we need a touckey to be down.
+                        if (sttg_gesture_delay == 0 || !flg_gestures_only) {
+                            // this gesture requires a touchkey to be held down but one isn't,
+                            // or the gesture_delay isn't set. either way, let's skip it.
+                            //printk("[TSP] this gesture (%d) requires touchkey!\n", gesture_no + 1);
+                            continue;
+                        }
 					}
 					
 					// Find which finger definition this touch maps to
@@ -1565,18 +1895,18 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 			
 			if (!flg_gestures_only) {
-			
-			input_mt_slot(info->input_dev, id);
-			input_mt_report_slot_state(info->input_dev,
-						   MT_TOOL_FINGER, true);
-			input_report_abs(info->input_dev,
-				ABS_MT_POSITION_X, x);
-			input_report_abs(info->input_dev,
-				ABS_MT_POSITION_Y, y);
-			input_report_abs(info->input_dev,
-				ABS_MT_TOUCH_MAJOR, tmp[4]);
-			input_report_abs(info->input_dev,
-				ABS_MT_PRESSURE, tmp[5]);
+                
+                input_mt_slot(info->input_dev, id);
+                input_mt_report_slot_state(info->input_dev,
+                                           MT_TOOL_FINGER, true);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_POSITION_X, x);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_POSITION_Y, y);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_TOUCH_MAJOR, tmp[4]);
+                input_report_abs(info->input_dev,
+                                 ABS_MT_PRESSURE, tmp[5]);
 				
 			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
@@ -1596,8 +1926,21 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 		}
 		touch_is_pressed++;
 #ifdef CONFIG_TOUCH_WAKE
-if (get_touchoff_delay() != 0)
-  touch_press();
+        if (id == 0
+            && touchwake_enabled
+            && flg_touchwake_active
+            && !flg_touchwake_swipe_only
+            && !flg_touchkey_pressed
+            && !flg_touchkey_was_pressed) {
+            flg_call_gesturebooster = 1;
+            touch_press();
+            flg_touchwake_active = false;
+            gesturebooster_freq_override = 1600000;
+            track_gestures = false;
+            pr_info("TSP/touchwake] single tap detected.\n");
+            // stop reporting this finger to prevent accidental input.
+            return IRQ_HANDLED;
+        }
 #endif
 	}
 	
@@ -1608,12 +1951,53 @@ if (get_touchoff_delay() != 0)
 		// Check completed gestures or reset all progress if all fingers released
 		spin_lock_irqsave(&gestures_lock, flags);
 		for (gesture_no = 0; gesture_no <= max_configured_gesture; gesture_no++) {
-			if (gestures_detected[gesture_no])
+            
+			if (gestures_detected[gesture_no]) {
 				// Gesture already reported, skip
+                //printk("[TSP/gestures] gesture %d already reported.\n", gesture_no);
+                
+                // but before we skip, check to see if gesture 0 (power) needs to be processed again.
+                if (!touch_is_pressed) {
+                    // below are gestures that need processing after finger-up.
+                    
+                    if (gestures_detected[0]) {
+                        // post-processing for gesture #0 (power).
+                        //printk("[TSP/gestures] post-processing gesture %d...\n", gesture_no);
+                        
+                        if (ary_gestures_flg_touchkey[gesture_no] && (flg_touchkey_pressed || flg_touchkey_was_pressed || flg_gestures_only)) {
+                            // if this gesture requires a touchkey, AND either a.) a touchkey is pressed, or b.) a touchkey was pressed at some
+                            // point while this finger was down, or c.) the gestures only flag is set (which would mean a touchkey was pressed)
+
+                            //printk("[TSP/gestures] trap 2: touchkey is/was down\n");
+                            
+                            // GESTURE #1
+                            // Power off
+                            //
+                            // special kernel-level processing for the power-off gesture.
+                            
+                            printk("[TSP/gestures] pressing power key\n");
+                            press_power();
+                            
+                            // reset the flag.
+                            flg_touchkey_was_pressed = false;
+                        }
+                        
+                        // regardless of whether or not a touchkey was pressed, this gesture is done. reset it.
+                        //printk("[TSP/gestures] trap 2: resetting gesture %d progress\n", gesture_no);
+                        gestures_detected[gesture_no] = false;
+                        
+                        // and reset this gesture's progress on all fingers.
+                        reset_gesture_progress(gesture_no);
+                    }
+                }
+                
 				continue;
+            }
 			
-			if (gestures_step_count[gesture_no][0] < 1)
+			if (gestures_step_count[gesture_no][0] < 1) {
+                //printk("[TSP/gestures] gesture %d no configured.\n", gesture_no);
 				continue; // Gesture not configured
+            }
 			
 			fingers_completed = true;
 			for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
@@ -1645,14 +2029,116 @@ if (get_touchoff_delay() != 0)
 					}
 				}
 				printk("[TSP/gestures] gesture %d completed, waking consumers\n", gesture_no + 1);
+                
 				flg_gestures_detected = 1;
-				// give gesturebooster its own flag so we don't call it a zillion times.
-				flg_call_gesturebooster = 1;
+                
+                // give gesturebooster its own flag so we don't call it a zillion times.
+                flg_call_gesturebooster = 1;
+                
+                // ff - Oct 7 2013 - some gestures can be handled very quickly natively within the kernel
+                //      instead of waiting for a userspace script to process them.
+                //
+                //      also, in order to make it easier to trigger the modifier key, there are two traps
+                //      to detect it a touchkey being pressed. the first is directly below, if that fails
+                //      to detect a touchkey pressed event, processing is defered until finger-up, where
+                //      it is checked again, in case the user ends up pressing the tk after finger-down.
+                //      for now, this method is limited to gestures that are processed within the kernel.
+                
+                if (gesture_no == 0) {
+                    // GESTURE #1
+                    // Power off
+                    //
+                    // special kernel-level processing for the power-off gesture.
+                    // also, don't use the gesturebooster for this.
+                    
+                    // disable gesturebooster
+                    flg_call_gesturebooster = 0;
+                    
+                    // check to see if touchwake is inactive. we don't want the power on gesture triggering unless the screen is on (aka touchwake isn't active).
+                    if (!flg_touchwake_active) {
+                        
+                        // check to see if a touckey has been pressed yet. if not, we will check again on finger-up.
+                        if (ary_gestures_flg_touchkey[gesture_no] && (flg_touchkey_pressed || flg_touchkey_was_pressed || flg_gestures_only)) {
+                            //printk("[TSP/gestures] trap 1: touchkey is/was down\n");
+                            
+                            printk("[TSP/gestures] trap 1: pressing power key\n");
+                            press_power();
+                            
+                            // reset the touchkey_was_pressed flag.
+                            flg_touchkey_was_pressed = false;
+                            
+                            // reset this gesture's progress
+                            //printk("[TSP/gestures] trap 1: resetting gesture %d progress\n", gesture_no);
+                            reset_gesture_progress(gesture_no);
+                            
+                            // since we just processed this gesture internally, no need to wake the handler script.
+                            // just continue to the next gesture.
+                            continue;
+                            
+                        } else if (ary_gestures_flg_touchkey[gesture_no]) {
+                            
+                            //printk("[TSP/gestures] gesture %d found and it requires a touchkey. scheduling for trap 2...\n", gesture_no);
+                            gestures_detected[gesture_no] = true;
+                            
+                            // since we just processed this gesture internally, no need to wake the handler script.
+                            // just continue to the next gesture.
+                            continue;
+                        }
+                        
+                    } else {
+                        
+                        // reset this gesture's progress
+                        //printk("[TSP/gestures] trap 1: resetting gesture %d progress\n", gesture_no);
+                        reset_gesture_progress(gesture_no);
+                        
+                        // since we just processed this gesture internally, no need to wake the handler script.
+                        // just continue to the next gesture.
+                        continue;
+                    }
+                    
+                } else if (gesture_no == 1) {
+                    
+                    // GESTURE #2
+                    // Toggle touchwake persistent mode
+                    printk("[TSP/gestures] toggling touchwake persistent mode. was: %d now: %d\n", sttg_touchwake_persistent, !sttg_touchwake_persistent);
+                    
+                    // disable gesturebooster
+                    flg_call_gesturebooster = 0;
+                    
+                    /* TODO: change next three variables to sttg_touchwake_persistent_wakelock when deepsleep works */
+                    sttg_touchwake_persistent = !sttg_touchwake_persistent;
+                    if (!sttg_touchwake_persistent) {
+                        if (flg_touchwake_active) {
+                            flg_call_touchwake_droplock = true;
+                        }
+                    }
+                    
+                    // reset the touchkey_was_pressed flag.
+                    flg_touchkey_was_pressed = false;
+                    
+                    // reset this gesture's progress
+                    //printk("[TSP/gestures] trap 1: resetting gesture %d progress\n", gesture_no);
+                    reset_gesture_progress(gesture_no);
+                    
+                    // since we just processed this gesture internally, no need to wake the handler script.
+                    // just continue to the next gesture.
+                    continue;
+                }
+                
+                printk("[TSP/gestures] gesture %d completed\n", gesture_no + 1);
 				gestures_detected[gesture_no] = true;
 				has_gestures = true;
 				wake_up_interruptible_all(&gestures_wq);
+                
 			} else if (!touch_is_pressed) {
 				// All fingers released, reset progress for all paths
+                
+                if (gestures_detected[0] || gestures_detected[1]) {
+                    //printk("[TSP/gestures] gesture %d not resetting touchkey_was_pressed because gesture 0 or 1 is awaiting post-processing\n", gesture_no);
+                } else if (gesture_no == max_configured_gesture) {
+                    //printk("[TSP/gestures] gesture %d resetting touchkey_was_pressed\n", gesture_no);
+                    flg_touchkey_was_pressed = false;
+                }
 				for (finger_no = 0; finger_no <= max_gesture_finger[gesture_no]; finger_no++) {
 					gesture_fingers[gesture_no][finger_no].finger_order = -1;
 					gesture_fingers[gesture_no][finger_no].current_step = -1;
@@ -1660,23 +2146,32 @@ if (get_touchoff_delay() != 0)
 			}
 		}
 		spin_unlock_irqrestore(&gestures_lock, flags);
-
-#if GESTURE_BOOSTER
-		if (flg_call_gesturebooster) {
-			if (gesturebooster_enabled) {
-				//printk("[TSP] calling gesturebooster\n");
-				gesturebooster_dvfs_lock_on();
-			}
-			
-			// gesture is complete, but don't unblock touch events yet,
-			// or else the OS will get a few points before the user
-			// pulls their finger away completely.
-			
-			// reset flag.
-			flg_call_gesturebooster = 0;
-		}
-#endif
+        
+        // move this outside the spinlock so we don't crash.
+        if (flg_call_touchwake_droplock) {
+            flg_call_touchwake_droplock = false;
+            printk("[TSP/gestures] unlocking wakelock...\n");
+            touchwake_droplock();
+        }
 	}
+#endif
+    
+#if GESTURE_BOOSTER
+    // ff - Oct 5 2013 - move this outside of above gesture track/ignore if statement
+    //      so other things can use the booster regardless of gesture engine status.
+    if (flg_call_gesturebooster) {
+        if (gesturebooster_enabled) {
+            //printk("[TSP] calling gesturebooster\n");
+            gesturebooster_dvfs_lock_on(gesturebooster_freq_override);
+        }
+        
+        // gesture is complete, but don't unblock touch events yet,
+        // or else the OS will get a few points before the user
+        // pulls their finger away completely.
+        
+        // reset flag.
+        flg_call_gesturebooster = 0;
+    }
 #endif
 
 #if TOUCH_BOOSTER
@@ -4424,9 +4919,37 @@ static ssize_t enable_lcdfreq_touchboost_show(struct device *dev,
 	return strlen(buf);
 }
 
-static ssize_t enable_lcdfreq_touchboost_store(struct device *dev, 
+static ssize_t longpressoff_alwayson_store(struct device *dev,
 										struct device_attribute *attr, 
 										char *buf, size_t size)
+{
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data == 1) {
+		sttg_longpressoff_alwayson = true;
+		pr_info("TOUCHWAKE longpressoff_alwayson has been set\n");
+	} else {
+		sttg_longpressoff_alwayson = false;
+		pr_info("TOUCHWAKE longpressoff_alwayson has been unset\n");
+	}
+	
+	return size;
+}
+#endif
+
+static ssize_t longpressoff_alwayson_show(struct device *dev,
+                                              struct device_attribute *attr,
+                                              char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_longpressoff_alwayson);
+}
+
+static ssize_t enable_lcdfreq_touchboost_store(struct device *dev,
+                                               struct device_attribute *attr,
+                                               char *buf, size_t size)
 {
 	if (!strncmp(buf, "1", 1)) {
 		flg_enable_lcdfreq_touchboost = 1;
@@ -4435,7 +4958,6 @@ static ssize_t enable_lcdfreq_touchboost_store(struct device *dev,
 	}
 	return size;
 }
-#endif
 
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 // Must be called with the gestures_lock spinlock held
@@ -5001,6 +5523,8 @@ static DEVICE_ATTR(close_tsp_test, S_IRUGO, show_close_tsp_test, NULL);
 static DEVICE_ATTR(cmd, S_IWUSR | S_IWGRP, NULL, store_cmd);
 static DEVICE_ATTR(cmd_status, S_IRUGO, show_cmd_status, NULL);
 static DEVICE_ATTR(cmd_result, S_IRUGO, show_cmd_result, NULL);
+static DEVICE_ATTR(longpressoff_alwayson, S_IRUGO | S_IWUSR,
+				   longpressoff_alwayson_show, longpressoff_alwayson_store);
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 static DEVICE_ATTR(enable_lcdfreq_touchboost, S_IRUGO | S_IWUSR,
 				   enable_lcdfreq_touchboost_show, enable_lcdfreq_touchboost_store);
@@ -5018,6 +5542,7 @@ static struct attribute *sec_touch_facotry_attributes[] = {
 	&dev_attr_cmd.attr,
 	&dev_attr_cmd_status.attr,
 	&dev_attr_cmd_result.attr,
+    &dev_attr_longpressoff_alwayson.attr,
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	&dev_attr_enable_lcdfreq_touchboost.attr,
 #endif
@@ -5122,11 +5647,35 @@ static int mms_ts_resume(struct device *dev)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void mms_ts_early_suspend(struct early_suspend *h)
 {
-#ifndef CONFIG_TOUCH_WAKE
-	struct mms_ts_info *info;
+    flg_screen_on = false;
+    sttg_gestures_only = false;
+    flg_touchwake_slide2wake = true;
+    wake_start = -1;
+    flg_touchwake_longpressoff = false;
+    touchwake_longpressoff_time_start_secs = -1;
+    flg_touchkey_was_pressed = false;
+    flg_swipe_in_progress = false;
+    pr_info("[TSP/touch] cleared variables on sleep\n");
+    
+    cancel_delayed_work_sync(&touchwake_reset_longpressoff_work);
+    cancel_delayed_work_sync(&touchwake_check_longpressoff_work);
+    
+    // unlock busfreqs just in case.
+    dev_unlock(bus_dev, sec_touchscreen);
+    bus_dvfs_lock_status = false;
+    
+    // unlock the cpu just in case.
+    exynos_cpufreq_lock_free(DVFS_LOCK_ID_GESTURE_BOOSTER);
+	gesturebooster_dvfs_locked = 0;
+    
+    flg_ignore_cpuidle = false;
+    
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	reset_gestures_detection(false);
 #endif
+    
+#ifndef CONFIG_TOUCH_WAKE
+	struct mms_ts_info *info;
 	info = container_of(h, struct mms_ts_info, early_suspend);
 	mms_ts_suspend(&info->client->dev);
 #endif
@@ -5134,7 +5683,29 @@ static void mms_ts_early_suspend(struct early_suspend *h)
 
 static void mms_ts_late_resume(struct early_suspend *h)
 {
-sttg_gestures_only = false;
+    flg_screen_on = true;
+    sttg_gestures_only = false;
+    flg_touchwake_slide2wake = true;
+    wake_start = -1;
+    touchwake_longpressoff_time_start_secs = -1;
+    flg_touchkey_was_pressed = false;
+    
+    pr_info("[TSP/touch] set variables on wake\n");
+    
+    if (sttg_longpressoff_alwayson) {
+        // only set the longpressoff flag if the user has requested it always be on.
+        
+        pr_info("[TSP/Touch] longpressoff always on.\n");
+        
+        // set the flag.
+        flg_touchwake_longpressoff = true;
+        
+        if (sttg_touchwake_longpressoff_timeout > 0) {
+            // if the timeout is set to 0, assume infinite mode, otherwise schedule delayed work to turn it off
+            pr_info("[TSP/Touch] longpressoff always on. turning off in: %i ms\n", sttg_touchwake_longpressoff_timeout);
+            schedule_delayed_work(&touchwake_reset_longpressoff_work, msecs_to_jiffies(sttg_touchwake_longpressoff_timeout));
+        }
+    }
 #ifndef CONFIG_TOUCH_WAKE
 	struct mms_ts_info *info;
 	info = container_of(h, struct mms_ts_info, early_suspend);
@@ -5158,6 +5729,8 @@ void touchscreen_enable(void)
 {
   if (likely(touchwake_data != NULL))
     mms_ts_resume(&touchwake_data->client->dev);
+    
+    flg_touchwake_active = false;
 
     return;
 }
@@ -5172,6 +5745,7 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	struct input_dev *input_dev;
 	int ret = 0;
 	char buf[4] = { 0, };
+    struct gesture_point *point;
 
 #ifdef SEC_TSP_FACTORY_TEST
 	int i;
@@ -5205,6 +5779,8 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	}
 	info->irq = -1;
 	mutex_init(&info->lock);
+    
+    spin_lock_init(&touchwake_longpressoff_lock);
 	
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	spin_lock_init(&gestures_lock);
@@ -5458,14 +6034,12 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 		goto err_reg_input_dev;
 	}
 
-#if TOUCH_BOOSTER
-	mutex_init(&info->dvfs_lock);
-	INIT_DELAYED_WORK(&info->work_dvfs_off, set_dvfs_off);
-	INIT_DELAYED_WORK(&info->work_dvfs_chg, change_dvfs_lock);
+//#if TOUCH_BOOSTER
+	mutex_init(&bus_dvfs_lock);
+	INIT_DELAYED_WORK(&work_bus_dvfs_off, bus_dvfs_lock_off);
 	bus_dev = dev_get("exynos-busfreq");
-	info->cpufreq_level = -1;
-	info->dvfs_lock_status = false;
-#endif
+	bus_dvfs_lock_status = false;
+//#endif
 	
 #if GESTURE_BOOSTER
 	mutex_init(&gesturebooster_dvfs_lock);
@@ -5473,6 +6047,47 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	gesturebooster_cpufreq_level = -1;
 	gesturebooster_dvfs_locked = 0;
 #endif
+    
+    
+    max_configured_gesture = 1;
+    
+    max_gesture_finger[0] = 0;
+    max_gesture_finger[1] = 0;
+    
+    gestures_step_count[0][0] = 1;
+    gestures_step_count[1][0] = 2;
+
+    ary_gestures_flg_touchkey[0] = 1;
+    ary_gestures_flg_exclusive[0] = 1;
+    
+    ary_gestures_flg_touchkey[1] = 1;
+    ary_gestures_flg_exclusive[1] = 1;
+    
+    point = &gesture_points[0][0][0];
+    point->min_x = 0;
+    point->max_x = 720;
+    point->min_y = 0;
+    point->max_y = 427;
+    
+    //point = &gesture_points[0][0][1];
+    //point->min_x = 0;
+    //point->max_x = 720;
+    //point->min_y = 427;
+    //point->max_y = 1280;
+    
+    point = &gesture_points[1][0][0];
+    point->min_x = 0;
+    point->max_x = 360;
+    point->min_y = 480;
+    point->max_y = 800;
+    
+    point = &gesture_points[1][0][1];
+    point->min_x = 360;
+    point->max_x = 720;
+    point->min_y = 480;
+    point->max_y = 800;
+    
+    reset_gestures_detection(true);
 
 	info->enabled = true;
 
@@ -5510,9 +6125,23 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
   touchwake_data = info;
   	if (touchwake_data == NULL)
 		pr_err("[TOUCHWAKE] Failed to set touchwake_data\n");
-  x_lo = info->max_x / 10 * 1;  /* 10% display width */
-  x_hi = info->max_x / 10 * 9;  /* 90% display width */
-  y_tolerance = info->max_y / 10 * 3 / 2;
+    
+    x_lo = info->max_x / 10 * 1;  /* 10% display width */
+    x_hi = info->max_x / 10 * 7;  /* 70% display width */
+    
+    arc_start_x_min = 275;
+    arc_start_x_max = 445;
+    arc_start_y_min = 1210;
+    arc_start_y_max = info->max_y;
+    arc_end_y_min = 600;
+    arc_end_y_max = 1000;
+    
+    rh_arc_end_x_min = 620;
+    rh_arc_end_x_max = info->max_x;
+    
+    lh_arc_end_x_min = 0;
+    lh_arc_end_x_max = 100;
+    
 #endif  
 
 #ifdef CONFIG_INPUT_FBSUSPEND
