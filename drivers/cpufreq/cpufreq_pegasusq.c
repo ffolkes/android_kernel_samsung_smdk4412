@@ -198,7 +198,6 @@ static unsigned int flg_booted = 0;
 static unsigned int time_boot = 0;
 static unsigned int policy_max_awake = 0;
 atomic_t pegasusq_cpufreq_lock;
-static unsigned int cpufreq_pm_lock_freq;
 static unsigned int flg_keep_sleep_freq_fixed = 0;
 static unsigned int prev_max_freq_sleep = 0;
 //struct device *pegasusq_dev;
@@ -2137,9 +2136,9 @@ static int pm_notifier_call(struct notifier_block *this,
 			// if the user wakes within the touchwake period, we no longer need to apply the screen-off policy.
 			if (flg_suspended) {
                 
-                if (touchwake_enabled) {
-                    msleep(100);
-                }
+                //if (touchwake_enabled) {
+                    //msleep(100);
+                //}
 				
 				if (flg_suspended && dbs_tuners_ins.max_freq_sleep > 0 && dbs_tuners_ins.max_freq_sleep_fixed > 0) {
 					// if max_freq_sleep is set and there is a max_freq_sleep_fixed to alternate to.
@@ -2195,46 +2194,24 @@ int max_freq_sleep_idx;
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 int prev_lcdfreq_enable;
 #endif
-static void cpufreq_pegasusq_early_suspend(struct early_suspend *h)
-{
-	
-	flg_suspended = 1;
-	
-#ifdef CONFIG_TOUCH_WAKE
-	// if the screen has timed out and touchwake has activated, we don't
-	// want to enable potentially aggressive screen-off policies until
-	// after the user has had a few seconds to tap the screen.
-	if (touchwake_enabled && flg_touchwake_active) {
-		// touchwake is active, so don't apply any screen-off policies.
-		pr_info("pegasusq: touchwake active - pausing screen-off policies for 5 seconds\n");
-		schedule_delayed_work_on(0, &earlysuspend_work, msecs_to_jiffies(touchoff_delay));
-		return;
-	}
-#endif
-	schedule_delayed_work_on(0, &earlysuspend_work, 0);
-}
 
-static void early_suspend_work(struct work_struct *work)
+static void cpufreq_pegasusq_early_suspend(struct early_suspend *h)
 {
 	struct cpufreq_policy *policy;
     
-    if (touchwake_enabled) {
-        
-        // if the user wakes within the touchwake period, we no longer need to apply the screen-off policy.
-        if (!flg_suspended) {
-            cancel_delayed_work_sync(&earlysuspend_work);
-            pr_info("pegasusq: aborting early suspend work! (1)\n");
-            return;
-        }
-        
-        msleep(100);
-        
-        if (!flg_suspended) {
-            cancel_delayed_work_sync(&earlysuspend_work);
-            pr_info("pegasusq: aborting early suspend work! (2)\n");
-            return;
-        }
-    }
+    flg_suspended = 1;
+    
+#ifdef CONFIG_TOUCH_WAKE
+    //if (touchwake_enabled) {
+        // wait 2 seconds.
+    //    msleep(2000);
+    //}
+    
+    if (flg_suspended && !flg_touchwake_pressed) {
+#else
+    if (flg_suspended) {
+#endif
+        pr_info("pegasusq: suspended, so doing work.\n");
 		
 	policy = cpufreq_cpu_get(0);
 	
@@ -2262,13 +2239,20 @@ static void early_suspend_work(struct work_struct *work)
 	prev_lcdfreq_enable = dbs_tuners_ins.lcdfreq_enable;
 	dbs_tuners_ins.lcdfreq_enable = false;
 #endif
-	prev_up_threshold = dbs_tuners_ins.up_threshold;
 	prev_freq_step = dbs_tuners_ins.freq_step;
 	prev_sampling_rate = dbs_tuners_ins.sampling_rate;
 	dbs_tuners_ins.freq_step = 20;
 	dbs_tuners_ins.sampling_rate *= 4;
 	if (flg_booted) {
-		dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_sleep;
+        if (dbs_tuners_ins.up_threshold_sleep > 0) {
+            prev_up_threshold = dbs_tuners_ins.up_threshold;
+            dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_sleep;
+        }
+        if (dbs_tuners_ins.up_threshold < 11) {
+            // this shouldn't happen!
+            pr_info("pegasusq: wtf! up_threshold was set to: %d on suspend\n", dbs_tuners_ins.up_threshold);
+            dbs_tuners_ins.up_threshold = 82;
+        }
 		if (dbs_tuners_ins.hotplug_sleep > 0) {
 			prev_max_cpu_lock = dbs_tuners_ins.max_cpu_lock;
 			dbs_tuners_ins.max_cpu_lock = min(dbs_tuners_ins.hotplug_sleep, num_possible_cpus());
@@ -2289,14 +2273,15 @@ static void early_suspend_work(struct work_struct *work)
 		}
 	} else {
 		pr_info("pegasusq: early_suspend() NOT locking cores because device still within booting window\n");
-		schedule_delayed_work(&earlysuspend_work, msecs_to_jiffies((dbs_tuners_ins.afterboot_delay * 1000)));
+		//schedule_delayed_work(&earlysuspend_work, msecs_to_jiffies((dbs_tuners_ins.afterboot_delay * 1000)));
 	}
+    }
 }
 
 static void cpufreq_pegasusq_late_resume(struct early_suspend *h)
 {
 	flg_suspended = 0;
-	cancel_delayed_work_sync(&earlysuspend_work);
+	//cancel_delayed_work_sync(&earlysuspend_work);
 	flg_keep_sleep_freq_fixed = 0;
 	pr_info("pegasusq: late_resume() set flg_keep_sleep_freq_fixed to 0\n");
 	struct cpufreq_policy *policy;
@@ -2359,6 +2344,12 @@ static void cpufreq_pegasusq_late_resume(struct early_suspend *h)
 		dbs_tuners_ins.sampling_rate = prev_sampling_rate;
 		prev_sampling_rate = -1;
 	}
+    
+    if (dbs_tuners_ins.up_threshold < 11) {
+        // this shouldn't happen!
+        pr_info("pegasusq: wtf! up_threshold was set to: %d on resume\n", dbs_tuners_ins.up_threshold);
+        dbs_tuners_ins.up_threshold = 82;
+    }
 	
 }
 #endif
@@ -2499,7 +2490,7 @@ static int __init cpufreq_gov_dbs_init(void)
 {
 	int ret;
 	
-	INIT_DELAYED_WORK(&earlysuspend_work, early_suspend_work);
+	//INIT_DELAYED_WORK_DEFERRABLE(&earlysuspend_work, early_suspend_work);
 
 	hotplug_history = kzalloc(sizeof(struct cpu_usage_history), GFP_KERNEL);
 	if (!hotplug_history) {
