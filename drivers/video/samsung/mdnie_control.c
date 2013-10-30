@@ -458,7 +458,7 @@ update_previous:
 	return;
 }
 
-static inline void scheduled_refresh(void)
+inline void scheduled_refresh(void)
 {
 	cancel_delayed_work_sync(&mdnie_refresh_work);
 	schedule_delayed_work_on(0, &mdnie_refresh_work, REFRESH_DELAY);

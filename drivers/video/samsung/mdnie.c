@@ -131,6 +131,8 @@ struct sysfs_debug_info {
 
 static struct sysfs_debug_info negative[5];
 static u8 negative_idx;
+int prev_mdnie_mode = -1;
+bool prev_sequence_hook;
 
 /*ff int mdnie_send_sequence(struct mdnie_info *mdnie, const unsigned short *seq)*/
 
@@ -992,9 +994,45 @@ static int mdniemod_create_sysfs(void)
 void mdnie_toggle_negative(void)
 {
 	mutex_lock(&g_mdnie->lock);
-	g_mdnie->negative = !g_mdnie->negative;
+	g_mdnie->negative = !g_mdnie->negative;    
 	mutex_unlock(&g_mdnie->lock);
 
+	set_mdnie_value(g_mdnie, 0);
+}
+
+void mdnie_toggle_nightmode(void)
+{
+	mutex_lock(&g_mdnie->lock);
+    
+    if (prev_mdnie_mode == -1) {
+        // sequence_hook disables mdnie modes, so save previous sequence_hook
+        // and then disable it.
+        prev_sequence_hook = sequence_hook;
+        sequence_hook = false;
+        scheduled_refresh();
+        
+        // save previous mode.
+        prev_mdnie_mode = g_mdnie->mode;
+        g_mdnie->mode = NIGHTMODE;
+    } else {
+        
+        if (!sequence_hook) {
+            // sequence_hook should still be false. but if someone started with it off, toggled this, then
+            // enabled the seequence_hook via sysfs, then this would get out of sync and
+            // we'd end up "overwriting" the user's change.
+            
+            // restore previous sequence_hook.
+            sequence_hook = prev_sequence_hook;
+            scheduled_refresh();
+        }
+        
+        // restore previous mode.
+        g_mdnie->mode = prev_mdnie_mode;
+        prev_mdnie_mode = -1;
+    }
+    
+	mutex_unlock(&g_mdnie->lock);
+    
 	set_mdnie_value(g_mdnie, 0);
 }
 
