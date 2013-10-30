@@ -26,6 +26,7 @@
 
 static unsigned long pwm_val = 50; /* duty in percent */
 static int pwm_duty = 27787; /* duty value, 37050=100%, 27787=50%, 18525=0% */
+static bool sttg_enabled = true;
 
 struct max77693_haptic_data {
 	struct max77693_dev *max77693;
@@ -152,6 +153,11 @@ static void haptic_work(struct work_struct *work)
 {
 	struct max77693_haptic_data *hap_data
 		= container_of(work, struct max77693_haptic_data, work);
+    
+    if (!sttg_enabled) {
+        // haptic is disabled via sysfs.
+        return;
+    }
 
 	pr_debug("[VIB] %s\n", __func__);
 	if (hap_data->timeout > 0) {
@@ -291,7 +297,18 @@ ssize_t pwm_value_store(struct device *dev,
 		const char *buf, size_t size)
 {
 	if (kstrtoul(buf, 0, &pwm_val))
-		pr_err("[VIB] %s: error on storing pwm_val\n", __func__); 
+		pr_err("[VIB] %s: error on storing pwm_val\n", __func__);
+    
+    if (pwm_val == 0) {
+        sttg_enabled = false;
+        pr_info("[VIB] sttg_enabled turned off");
+        return size;
+    } else {
+        if (!sttg_enabled) {
+            pr_info("[VIB] sttg_enabled turned on");
+        }
+        sttg_enabled = true;
+    }
 
 	pr_info("[VIB] %s: pwm_value=%lu\n", __func__, pwm_val);
 
@@ -317,7 +334,18 @@ ssize_t pwm_val_store(struct device *dev,
 		const char *buf, size_t size)
 {
 	if (kstrtoul(buf, 0, &pwm_val))
-		pr_err("[VIB] %s: error on storing pwm_val\n", __func__); 
+		pr_err("[VIB] %s: error on storing pwm_val\n", __func__);
+    
+    if (pwm_val == 0) {
+        sttg_enabled = false;
+        pr_info("[VIB] sttg_enabled turned off");
+        return size;
+    } else {
+        if (!sttg_enabled) {
+            pr_info("[VIB] sttg_enabled turned on");
+        }
+        sttg_enabled = true;
+    }
 
 	pr_info("[VIB] %s: pwm_value=%lu\n", __func__, pwm_val);
 
