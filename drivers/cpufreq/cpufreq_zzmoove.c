@@ -332,7 +332,7 @@
 #define DEF_RESPONSIVENESS_FREQ	  (400000)	// ff: default frequency below which we use a lower up_threshold
 #define DEF_RESPONSIVENESS_UP_THRESHOLD	  (40)	// ff: default up_threshold we use when below responsiveness_freq
 
-#define DEF_FASTDOWN_FREQ               (0)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
+#define DEF_FASTDOWN_FREQ               (1200000)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
 #define DEF_FASTDOWN_UP_THRESHOLD       (95)    // ff: default for fastdown up threshold. the up_threshold when fastdown_freq has been exceeded
 #define DEF_MULTICORE_ENGAGE_FREQ       (0)     // ff: default for multicore_engage_freq. the frequency below which we run on only one core (0 = disabled)
 #define DEF_HOTPLUG_MAX_LIMIT               (0)		// ff: default for hotplug_max_limit. the number of cores we allow to be online (0 = disabled)
@@ -482,7 +482,7 @@ static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off o
  */
 
 #define DEF_FREQ_LIMIT				(0)	// ZZ: default for tuneable freq_limit
-#define DEF_FREQ_LIMIT_SLEEP			(0)	// ZZ: default for tuneable freq_limit_sleep
+#define DEF_FREQ_LIMIT_SLEEP			(400000)	// ZZ: default for tuneable freq_limit_sleep
 
 /*
  * ZZ: Fast Scaling: 0 do not activate fast scaling function
