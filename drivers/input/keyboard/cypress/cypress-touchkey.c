@@ -54,6 +54,19 @@
 
 bool flg_touchkey_pressed = false;
 bool flg_touchkey_was_pressed = false;
+bool flg_cypress_suspended = false;
+
+// Yank555.lu : Add cleartext status settings for h/w key LED lightup on touchscreen touch
+#define TOUCHKEY_LED_DISABLED	0
+#define TOUCHKEY_LED_ENABLED	1
+
+// Yank555.lu : Add cleartext status settings for kernel / ROM handling h/w key LED
+#define TOUCHKEY_LED_ROM	1
+#define TOUCHKEY_LED_KERNEL	0
+
+// Yank555.lu : Add cleartext status settings for h/w key pressed
+#define TOUCHKEY_HW_TIMEDOUT	0
+#define TOUCHKEY_HW_PRESSED	1
 
 /* M0 Touchkey temporary setting */
 
@@ -75,7 +88,7 @@ static int touchkey_keycode[] = { 0,
 	KEY_MENU, KEY_ENTER, KEY_BACK, KEY_END,
 
 #elif defined(TK_USE_4KEY_TYPE_NA)
-	KEY_SEARCH, KEY_BACK, KEY_HOME, KEY_MENU,
+	KEY_SEARCH, KEY_BACK, KEY_HOMEPAGE, KEY_MENU,
 
 #elif defined(TK_USE_2KEY_TYPE_M0)
 	KEY_BACK, KEY_MENU,
@@ -91,6 +104,9 @@ struct touchkey_i2c *tkey_i2c_local;
 struct timer_list touch_led_timer;
 int touch_led_timeout = 3; // timeout for the touchkey backlight in secs
 int touch_led_disabled = 0; // 1= force disable the touchkey backlight
+int touch_led_on_screen_touch	= TOUCHKEY_LED_ENABLED;	// Yank555.lu : Light up h/w key on touchscreen touch by default
+int touchkey_pressed		= TOUCHKEY_HW_TIMEDOUT;	// Yank555.lu : Consider h/w keys as not pressed on start
+int touch_led_handling		= TOUCHKEY_LED_ROM;	// Yank555.lu : Consider h/w keys handled by ROM (newer CM)
 
 #if defined(TK_HAS_AUTOCAL)
 static u16 raw_data0;
@@ -348,7 +364,7 @@ static ssize_t set_touchkey_autocal_testmode(struct device *dev,
 			tkey_i2c->pdata->power_on(1);
 			msleep(50);
 #if defined(TK_HAS_AUTOCAL)
-			touchkey_autocalibration(tkey_i2c);
+			touchkey_autocalibration();
 #endif
 		}
 	} else {
@@ -695,7 +711,6 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
-	//int time_between_tap = 0;
 
 	set_touchkey_debug('a');
 
@@ -727,30 +742,52 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	if (pressed) {
 		set_touchkey_debug('P');
 
-        // enable lights on keydown
-        if (touch_led_disabled == 0) {
-            if (touchkey_led_status == TK_CMD_LED_OFF) {
-                pr_info("[Touchkey] %s: keydown - LED ON\n", __func__);
-                i2c_touchkey_write(tkey_i2c->client, (u8 *) &ledCmd[0], 1);
-                touchkey_led_status = TK_CMD_LED_ON;
-            }
-            if (timer_pending(&touch_led_timer) == 1) {
-                mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
-            }
-        }
-        
-    } else {
-        // touch led timeout on keyup
-        if (touch_led_disabled == 0) {
-            if (timer_pending(&touch_led_timer) == 0) {
-                pr_info("[Touchkey] %s: keyup - add_timer\n", __func__);
-                touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
-                add_timer(&touch_led_timer);
-            } else {
-                mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
-            }
-        }
-    }
+		// Yank555.lu : ROM is handling (newer CM)
+		if (touch_led_handling == TOUCHKEY_LED_ROM) {
+
+			// Yank555.lu : enable lights on h/w key pressed
+			touchkey_pressed = TOUCHKEY_HW_PRESSED;
+			if (touchkey_led_status       == TK_CMD_LED_OFF	       &&
+			    touch_led_on_screen_touch == TOUCHKEY_LED_DISABLED   ) {
+				pr_debug("[Touchkey] %s: enabling touchled\n", __func__);
+				i2c_touchkey_write(tkey_i2c->client, (u8 *) &ledCmd[0], 1);
+				touchkey_led_status = TK_CMD_LED_ON;
+			}
+
+		} else {
+
+		// Yank555.lu : Kernel is handling (older CM)
+		        // enable lights on keydown
+			if (touch_led_disabled == 0) {
+			    if (touchkey_led_status == TK_CMD_LED_OFF) {
+				pr_debug("[Touchkey] %s: keydown - LED ON\n", __func__);
+				i2c_touchkey_write(tkey_i2c->client, (u8 *) &ledCmd[0], 1);
+				touchkey_led_status = TK_CMD_LED_ON;
+			    }
+			    if (timer_pending(&touch_led_timer) == 1) {
+				mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
+			    }
+			}
+
+		}
+
+	} else {
+
+		// Yank555.lu : Kernel is handling (older CM)
+		if (touch_led_handling == TOUCHKEY_LED_KERNEL) {
+			// touch led timeout on keyup
+			if (touch_led_disabled == 0) {
+			    if (timer_pending(&touch_led_timer) == 0) {
+				pr_debug("[Touchkey] %s: keyup - add_timer\n", __func__);
+				touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
+				add_timer(&touch_led_timer);
+			    } else {
+				mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
+			    }
+			}
+		}
+		// Yank555.lu : ROM is handling (newer CM) - nothing to do
+	}
     
     if (pressed) {
         flg_touchkey_pressed = true;
@@ -790,12 +827,12 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		// immediately set gesture mode (fast gestures might execute before the msleep() is up)
 		// wait x ms and recheck touchscreen.
         
-        if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_ignoretkeys) {
-            // if touchwake is enabled, active, and set to ignore tkeys, then we can stop now.
-            return IRQ_HANDLED;
-        }
+        	if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_ignoretkeys) {
+			// if touchwake is enabled, active, and set to ignore tkeys, then we can stop now.
+			return IRQ_HANDLED;
+        	}
         
-        flg_touchkey_was_pressed = true;
+        	flg_touchkey_was_pressed = true;
 		
 		// reset touch_was_pressed flag.
 		tsp_check_touched_flag(0);
@@ -824,61 +861,24 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	} else {
 		
 #ifdef CONFIG_TOUCH_WAKE
-		
-		/*if (doubletap_enabled && touchwake_suspended) {
-			// enabled and touchwake thinks we are suspended.
-			// ignore single taps.
-			
-			if (pressed){
-				// this is a keydown event.
-				
-				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is pressed.\n");
-				
-				timetappedlast = timetapped;
-				
-				printk(KERN_DEBUG "[TouchKey] saved sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
-				
-				do_gettimeofday(&timetapped);
-				
-				printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
-				
-				time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
-				
-				printk(KERN_DEBUG "[TouchKey] time between tap: %d\n", time_between_tap);
-				
-				if (time_between_tap > 100 && time_between_tap < 750)
-					touch_press();
-			} else {
-				// this is a keyup event.
-				
-				printk(KERN_DEBUG "[TouchKey] doubletap checked for. state is NOT pressed.\n");
-				
-			}
-			
-		} else {*/
-			
-		//	printk(KERN_DEBUG "[TouchKey] doubletap ignored.\n");
-			
-        
-        if (pressed && touchwake_enabled && flg_touchwake_active) {
-            // if touchwake is enable and active, decide if it should be triggered.
-            // either way, exit early so the tap doesn't vibrate.
+
+        	if (pressed && touchwake_enabled && flg_touchwake_active) {
+			// if touchwake is enable and active, decide if it should be triggered.
+			// either way, exit early so the tap doesn't vibrate.
             
-            if (sttg_touchwake_ignoretkeys) {
-                //pr_info("[touchkey/touchwake] ignoring touchkey press\n");
-            } else {
-                touch_press();
-            }
-            return IRQ_HANDLED;
-        }
-			
-		//}
+			if (sttg_touchwake_ignoretkeys) {
+				//pr_info("[touchkey/touchwake] ignoring touchkey press\n");
+			} else {
+				touch_press();
+		}
+		return IRQ_HANDLED;
+	}
+
 #endif
-		
+
 		input_report_key(tkey_i2c->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
-		
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_type], pressed);
@@ -981,9 +981,8 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		return IRQ_HANDLED;
 	}
 
-	if (pressed) {
+	if (pressed)
 		set_touchkey_debug('P');
-    }
 
 	if (get_tsp_status() && pressed)
 		printk(KERN_DEBUG "[TouchKey] touchkey pressed"
@@ -992,34 +991,9 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_report_key(touchkey_driver->input_dev,
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(touchkey_driver->input_dev);
-		
+
 #ifdef CONFIG_TOUCH_WAKE
-		
-		/*if (doubletap_enabled && touchwake_suspended) {
-			// enabled and touchwake thinks we are suspended.
-			// ignore single taps.
-			
-			timetappedlast = timetapped;
-			
-			printk(KERN_DEBUG "[TouchKey2] doubletap checked for. saving sec: %d and usec: %d.\n", timetappedlast.tv_sec, timetappedlast.tv_usec);
-			
-			do_gettimeofday(&timetapped);
-			
-			printk(KERN_DEBUG "[TouchKey] new sec: %d and usec: %d.\n", timetapped.tv_sec, timetapped.tv_usec);
-			
-			time_between_tap = (timetapped.tv_sec - timetappedlast.tv_sec) * MSEC_PER_SEC + (timetapped.tv_usec - timetappedlast.tv_usec) / USEC_PER_MSEC;
-			
-			printk(KERN_DEBUG "[TouchKey2] time between tap: %d\n", time_between_tap);
-			
-			if (time_between_tap < 500)
-				touch_press();
-			
-		} else {
-			
-			printk(KERN_DEBUG "[TouchKey2] doubletap ignored.\n");*/
-			touch_press();
-			
-		//}
+	touch_press();
 #endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */
@@ -1053,8 +1027,8 @@ static int sec_touchkey_early_suspend(struct early_suspend *h)
 	
 #ifdef CONFIG_TOUCH_WAKE
 	tkey_i2c->pdata->led_power_on(0);
-    flg_touchkey_pressed = false;
-    flg_touchkey_was_pressed = false;
+    	flg_touchkey_pressed = false;
+    	flg_touchkey_was_pressed = false;
 #else
 	int ret;
 	int i;
@@ -1098,12 +1072,12 @@ static int sec_touchkey_late_resume(struct early_suspend *h)
 	struct touchkey_i2c *tkey_i2c =
 	container_of(h, struct touchkey_i2c, early_suspend);
     
-    flg_touchkey_was_pressed = false;
+    	flg_touchkey_was_pressed = false;
 	
 #ifdef CONFIG_TOUCH_WAKE
 	tkey_i2c->pdata->led_power_on(1);
-    flg_touchkey_pressed = false;
-    flg_touchkey_was_pressed = false;
+    	flg_touchkey_pressed = false;
+    	flg_touchkey_was_pressed = false;
 #else
 #ifdef TEST_JIG_MODE
 	unsigned char get_touch = 0x40;
@@ -1131,9 +1105,13 @@ static int sec_touchkey_late_resume(struct early_suspend *h)
 
 	if (touchled_cmd_reversed) {
 		touchled_cmd_reversed = 0;
+		// Yank555.lu : touch_led_on_screen_touch : only accept feedback from touchscreen driver if enabled
+		if (touch_led_on_screen_touch == TOUCHKEY_LED_DISABLED) {
+			touchkey_led_status = TK_CMD_LED_OFF;
+		}
 		i2c_touchkey_write(tkey_i2c->client,
 			(u8 *) &touchkey_led_status, 1);
-		printk(KERN_DEBUG "[Touchkey] LED returned on\n");
+		printk(KERN_DEBUG "[Touchkey] LED returned to desired state\n");
 	}
 #ifdef TEST_JIG_MODE
 	i2c_touchkey_write(tkey_i2c->client, &get_touch, 1);
@@ -1156,6 +1134,8 @@ static void cypress_touchwake_disable(void)
 
 	disable_irq(touchwakedevdata->irq);
 	ret = cancel_work_sync(&touchwakedevdata->update_work);
+	
+	flg_cypress_suspended = true;
 		
 	if (ret) {
 		printk(KERN_DEBUG "[Touchkey] enable_irq ret=%d\n", ret);
@@ -1187,7 +1167,10 @@ static void cypress_touchwake_disable(void)
 	
 static void cypress_touchwake_enable(void)
 {
-
+	if (!flg_cypress_suspended) {
+		return;
+	}
+	
 	printk(KERN_DEBUG "[Touchkey] touchwake_enable\n");
 	
 	set_touchkey_debug('R');
@@ -1218,6 +1201,8 @@ static void cypress_touchwake_enable(void)
 	}
 	
 	enable_irq(touchwakedevdata->irq);
+	
+	flg_cypress_suspended = false;
 
 	return;
 	
@@ -1365,6 +1350,17 @@ static ssize_t touch_update_read(struct device *dev,
 	return count;
 }
 
+static ssize_t touchkey_led_control_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+    int ret;
+
+    ret = sprintf(buf, "%d\n", touchkey_led_status);
+    pr_info("[Touchkey] %s: touchkey_led_status=%d\n", __func__, touchkey_led_status);
+
+    return ret;
+}
+
 static ssize_t touchkey_led_control(struct device *dev,
 				 struct device_attribute *attr, const char *buf,
 				 size_t size)
@@ -1391,39 +1387,57 @@ static ssize_t touchkey_led_control(struct device *dev,
 		return size;
 	}
 
-#if defined(CONFIG_TARGET_LOCALE_NA)
-	if (tkey_i2c->module_ver >= 8)
+	if (data == 2 && touch_led_handling == TOUCHKEY_LED_ROM)
+		touchkey_pressed = TOUCHKEY_HW_TIMEDOUT; // Yank555.lu : h/w light disabled, consider timeout reached
+
+	if (touchkey_led_status 	== TK_CMD_LED_OFF	 &&
+	    touchkey_pressed 		== TOUCHKEY_HW_TIMEDOUT  &&
+	    touch_led_handling		== TOUCHKEY_LED_ROM   &&
+	    touch_led_on_screen_touch	== TOUCHKEY_LED_DISABLED    ) {
+
+		data = TK_CMD_LED_OFF;
+
+	} else {
+
 		data = ledCmd[data-1];
-#else
-	data = ledCmd[data-1];
-#endif
 
-    if (touch_led_disabled == 0) {
-        ret = i2c_touchkey_write(tkey_i2c->client, (u8 *) &data, 1);
-    }
+	}
 
-    if(data == ledCmd[0]) {
-        if (touch_led_disabled == 0) {
-            if (timer_pending(&touch_led_timer) == 0) {
-                pr_info("[Touchkey] %s: add_timer\n", __func__);
-                touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
-                add_timer(&touch_led_timer);
-            } else {
-                mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
-            }
-        }
-    } else {
-        if (timer_pending(&touch_led_timer) == 1) {
-            pr_info("[Touchkey] %s: del_timer\n", __func__);
-            del_timer(&touch_led_timer);
-        }
-    }
+	// Yank555.lu : KERNEL is handling (older CM)
+	if (touch_led_handling == TOUCHKEY_LED_KERNEL) {
+	    if (touch_led_disabled == 0) {
+		ret = i2c_touchkey_write(tkey_i2c->client, (u8 *) &data, 1);
+	    }
 
-	if (ret == -ENODEV)
+	    if(data == ledCmd[0]) {
+		if (touch_led_disabled == 0) {
+		    if (timer_pending(&touch_led_timer) == 0) {
+			pr_debug("[Touchkey] %s: add_timer\n", __func__);
+			touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
+			add_timer(&touch_led_timer);
+		    } else {
+			mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
+		    }
+		}
+	    } else {
+		if (timer_pending(&touch_led_timer) == 1) {
+		    pr_debug("[Touchkey] %s: del_timer\n", __func__);
+		    del_timer(&touch_led_timer);
+		}
+	    }
+	} else {
+		// Yank555.lu : ROM is handling (newer CM)
+		ret = i2c_touchkey_write(tkey_i2c->client, (u8 *) &data, 1);
+	}
+
+	if (ret == -ENODEV) {
+		printk(KERN_DEBUG"[Touchkey] error to write i2c\n");
 		touchled_cmd_reversed = 1;
+	}
 
-    pr_info("[TouchKey] %s touchkey_led_status=%d\n", __func__, data);
 	touchkey_led_status = data;
+
+	printk("[Touchkey] %s: new status = %d\n", __func__, touchkey_led_status);
 
 	return size;
 }
@@ -1527,7 +1541,6 @@ static DEVICE_ATTR(timeout, S_IRUGO | S_IWUSR | S_IWGRP,
 
 void touch_led_timedout(unsigned long ptr)
 {
-    pr_info("[TouchKey] %s\n", __func__);
     queue_work(tkey_i2c_local->wq, &tkey_i2c_local->work);
 }
 
@@ -1548,29 +1561,35 @@ void touchscreen_state_report(int state)
 {
     static const int ledCmd[] = {TK_CMD_LED_ON, TK_CMD_LED_OFF};
 
-    if (touch_led_disabled == 0) {
-        if (state == 1) {
-            if(touchkey_led_status == TK_CMD_LED_OFF) {
-                pr_info("[TouchKey] %s enable touchleds\n", __func__);
-                i2c_touchkey_write(tkey_i2c_local->client, (u8 *) &ledCmd[0], 1);
-                touchkey_led_status = TK_CMD_LED_ON;
-            } else {
-                if (timer_pending(&touch_led_timer) == 1) {
-                    pr_info("[TouchKey] %s mod_timer\n", __func__);
-                    mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
-                }
-            }
-        } else if (state == 0) {
-            if (timer_pending(&touch_led_timer) == 1) {
-                pr_info("[TouchKey] %s mod_timer\n", __func__);
-                mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
-            } else if (touchkey_led_status == TK_CMD_LED_ON){
-                pr_info("[TouchKey] %s add_timer\n", __func__);
-                touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
-                add_timer(&touch_led_timer);
-            }
-        }
-    }
+	// Yank555.lu : KERNEL is handling (older CM)
+	if (touch_led_handling == TOUCHKEY_LED_KERNEL) {
+
+	    // Yank555.lu : touch_led_on_screen_touch : only accept feedback from touchscreen driver if enabled
+	    if (touch_led_disabled == 0 && touch_led_on_screen_touch == TOUCHKEY_LED_ENABLED) {
+		if (state == 1) {
+		    if(touchkey_led_status == TK_CMD_LED_OFF) {
+		        pr_debug("[TouchKey] %s enable touchleds\n", __func__);
+		        i2c_touchkey_write(tkey_i2c_local->client, (u8 *) &ledCmd[0], 1);
+		        touchkey_led_status = TK_CMD_LED_ON;
+		    } else {
+		        if (timer_pending(&touch_led_timer) == 1) {
+		            pr_debug("[TouchKey] %s mod_timer\n", __func__);
+		            mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
+		        }
+		    }
+		} else if (state == 0) {
+		    if (timer_pending(&touch_led_timer) == 1) {
+		        pr_debug("[TouchKey] %s mod_timer\n", __func__);
+		        mod_timer(&touch_led_timer, jiffies + (HZ * touch_led_timeout));
+		    } else if (touchkey_led_status == TK_CMD_LED_ON){
+		        pr_debug("[TouchKey] %s add_timer\n", __func__);
+		        touch_led_timer.expires = jiffies + (HZ * touch_led_timeout);
+		        add_timer(&touch_led_timer);
+		    }
+		}
+	    }
+	}
+	// Yank555.lu : ROM is handling (newer CM) - nothing to do
 }
 
 #if defined(TK_USE_4KEY)
@@ -1740,6 +1759,52 @@ static ssize_t touchkey_back_show(struct device *dev,
 }
 #endif
 
+// Yank555.lu : touch_led_on_screen_touch : only accept feedback from touchscreen driver if enabled
+static ssize_t touch_led_on_screen_touch_show(struct device *dev,
+					      struct device_attribute *attr, char *buf)
+{
+	  return sprintf(buf, "%d\n", touch_led_on_screen_touch);
+}
+
+static ssize_t touch_led_on_screen_touch_store(struct device *dev,
+					       struct device_attribute *attr, const char *buf, size_t count)
+{
+	int new_touch_led_on_screen_touch;
+
+	sscanf(buf, "%du", &new_touch_led_on_screen_touch);
+
+	switch (new_touch_led_on_screen_touch) {
+	  case TOUCHKEY_LED_DISABLED:
+	  case TOUCHKEY_LED_ENABLED:	touch_led_on_screen_touch = new_touch_led_on_screen_touch;
+					return count;
+	  default:			return -EINVAL;
+	}
+
+}
+
+// Yank555.lu : touch_led_handling : have kernel (older CM) or ROM (newer CM) handle h/w keys backlight
+static ssize_t touch_led_handling_show(struct device *dev,
+					      struct device_attribute *attr, char *buf)
+{
+	  return sprintf(buf, "%d\n", touch_led_handling);
+}
+
+static ssize_t touch_led_handling_store(struct device *dev,
+					       struct device_attribute *attr, const char *buf, size_t count)
+{
+	int new_touch_led_handling;
+
+	sscanf(buf, "%du", &new_touch_led_handling);
+
+	switch (new_touch_led_handling) {
+	  case TOUCHKEY_LED_ROM:
+	  case TOUCHKEY_LED_KERNEL:	touch_led_handling = new_touch_led_handling;
+					return count;
+	  default:			return -EINVAL;
+	}
+
+}
+
 #if defined(TK_HAS_AUTOCAL)
 static ssize_t autocalibration_enable(struct device *dev,
 				      struct device_attribute *attr,
@@ -1878,7 +1943,7 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev,
 
 	return count;
 }
-	
+
 static ssize_t mali_asv_show(struct device *dev,
 									struct device_attribute *attr, char *buf)
 {
@@ -2500,12 +2565,20 @@ static DEVICE_ATTR(recommended_version, S_IRUGO | S_IWUSR | S_IWGRP,
 		   touch_version_read, touch_version_write);
 static DEVICE_ATTR(updated_version, S_IRUGO | S_IWUSR | S_IWGRP,
 		   touch_update_read, touch_update_write);
-static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, NULL,
+static DEVICE_ATTR(brightness, S_IRUGO | S_IWUSR | S_IWGRP, touchkey_led_control_show,
 		   touchkey_led_control);
 static DEVICE_ATTR(touchkey_menu, S_IRUGO | S_IWUSR | S_IWGRP,
 		   touchkey_menu_show, NULL);
 static DEVICE_ATTR(touchkey_back, S_IRUGO | S_IWUSR | S_IWGRP,
 		   touchkey_back_show, NULL);
+
+// Yank555.lu : touch_led_on_screen_touch : only accept feedback from touchscreen driver if enabled
+static DEVICE_ATTR(touch_led_on_screen_touch, S_IRUGO | S_IWUSR | S_IWGRP,
+		   touch_led_on_screen_touch_show, touch_led_on_screen_touch_store);
+
+// Yank555.lu : touch_led_handling : have kernel (older CM) or ROM (newer CM) handle h/w keys backlight
+static DEVICE_ATTR(touch_led_handling, S_IRUGO | S_IWUSR | S_IWGRP,
+		   touch_led_handling_show, touch_led_handling_store);
 
 #if defined(TK_USE_4KEY)
 static DEVICE_ATTR(touchkey_home, S_IRUGO, touchkey_home_show, NULL);
@@ -2587,6 +2660,8 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_brightness.attr,
 	&dev_attr_touchkey_menu.attr,
 	&dev_attr_touchkey_back.attr,
+	&dev_attr_touch_led_on_screen_touch.attr, // Yank555.lu : touch_led_on_screen_touch : only accept feedback from touchscreen driver if enabled
+	&dev_attr_touch_led_handling.attr, 	  // Yank555.lu : touch_led_handling : have kernel (older CM) or ROM (newer CM) handle h/w keys backlight
 #if defined(TK_USE_4KEY)
 	&dev_attr_touchkey_home.attr,
 	&dev_attr_touchkey_search.attr,
@@ -2686,12 +2761,12 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 		printk(KERN_ERR "[Touchkey] failed to allocate tkey_i2c.\n");
 		return -ENOMEM;
 	}
-    tkey_i2c_local = tkey_i2c;
+	tkey_i2c_local = tkey_i2c;
 
 	input_dev = input_allocate_device();
 
 	if (!input_dev) {
-		printk(KERN_ERR "[Touchkey] failed to allocate input device\n");
+		printk(KERN_ERR"[Touchkey] failed to allocate input device\n");
 		kfree(tkey_i2c);
 		return -ENOMEM;
 	}
@@ -2720,7 +2795,7 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 
 	ret = input_register_device(input_dev);
 	if (ret) {
-		printk(KERN_ERR "[Touchkey] failed to register input device\n");
+		printk(KERN_ERR"[Touchkey] failed to register input device\n");
 		input_free_device(input_dev);
 		kfree(tkey_i2c);
 		return err;
@@ -2779,7 +2854,8 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 				IRQF_DISABLED | IRQF_TRIGGER_FALLING |
 				IRQF_ONESHOT, tkey_i2c->name, tkey_i2c);
 	if (ret < 0) {
-		printk(KERN_ERR "[Touchkey]: failed to request irq(%d) - %d\n",
+		printk(KERN_ERR
+			"[Touchkey]: failed to request irq(%d) - %d\n",
 			tkey_i2c->irq, ret);
 		input_unregister_device(input_dev);
 		touchkey_probe = false;
@@ -2791,7 +2867,8 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 #if defined(TK_HAS_FIRMWARE_UPDATE)
 	ret = touchkey_firmware_update(tkey_i2c);
 	if (ret < 0) {
-		printk(KERN_ERR "[Touchkey]: failed firmware updating process (%d)\n",
+		printk(KERN_ERR
+			"[Touchkey]: failed firmware updating process (%d)\n",
 			ret);
 		input_unregister_device(input_dev);
 		touchkey_probe = false;
@@ -2806,7 +2883,7 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 		(void *)sec_touchkey_late_resume;
 	register_early_suspend(&tkey_i2c->early_suspend);
 #endif
-	
+
 #ifdef CONFIG_TOUCH_WAKE
 	touchwakedevdata = tkey_i2c;
 	register_touchwake_implementation(&cypress_touchwake);
@@ -2863,7 +2940,8 @@ static int __init touchkey_init(void)
 	ret = i2c_add_driver(&touchkey_i2c_driver);
 
 	if (ret) {
-		printk(KERN_ERR "[TouchKey] registration failed, module not inserted.ret= %d\n",
+		printk(KERN_ERR
+	       "[TouchKey] registration failed, module not inserted.ret= %d\n",
 	       ret);
 	}
 #ifdef TEST_JIG_MODE
