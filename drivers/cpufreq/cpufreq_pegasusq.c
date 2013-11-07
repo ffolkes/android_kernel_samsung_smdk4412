@@ -194,6 +194,7 @@ static DEFINE_PER_CPU(struct cpu_dbs_info_s, od_cpu_dbs_info);
 struct workqueue_struct *dvfs_workqueue;
 
 static unsigned int flg_suspended = 0;
+static bool flg_awake = true;
 static unsigned int flg_booted = 0;
 static unsigned int time_boot = 0;
 static unsigned int policy_max_awake = 0;
@@ -217,6 +218,7 @@ static DEFINE_MUTEX(flex_mutex);
 static struct dbs_tuners {
 	unsigned int sampling_rate;
 	unsigned int up_threshold;
+	unsigned int up_threshold_saved;
 	unsigned int up_threshold_diff;
 	unsigned int down_differential;
 	unsigned int ignore_nice;
@@ -232,6 +234,7 @@ static struct dbs_tuners {
 	unsigned int cpu_online_bias_down_threshold;
 	unsigned int max_cpu_lock;
 	unsigned int min_cpu_lock;
+	unsigned int min_cpu_lock_saved;
 	atomic_t hotplug_lock;
 	unsigned int dvfs_debug;
 	unsigned int max_freq;
@@ -270,6 +273,7 @@ static struct dbs_tuners {
 	unsigned int freq_for_fast_down;
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
+	.up_threshold_saved = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold_diff = DEF_UP_THRESHOLD_DIFF,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.down_differential = DEF_FREQUENCY_DOWN_DIFFERENTIAL,
@@ -284,6 +288,7 @@ static struct dbs_tuners {
 	.cpu_online_bias_down_threshold = DEF_CPU_ONLINE_BIAS_DOWN_THRESHOLD,
 	.max_cpu_lock = DEF_MAX_CPU_LOCK,
 	.min_cpu_lock = DEF_MIN_CPU_LOCK,
+	.min_cpu_lock_saved = DEF_MIN_CPU_LOCK,
 	.hotplug_lock = ATOMIC_INIT(0),
 	.dvfs_debug = 0,
 	.grad_up_threshold = DEF_GRAD_UP_THRESHOLD,
@@ -626,6 +631,7 @@ static ssize_t store_up_threshold(struct kobject *a, struct attribute *b,
 		return -EINVAL;
 	}
 	dbs_tuners_ins.up_threshold = input;
+	dbs_tuners_ins.up_threshold_saved = input;
 	return count;
 }
 
@@ -833,10 +839,12 @@ static ssize_t store_min_cpu_lock(struct kobject *a, struct attribute *b,
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
 		return -EINVAL;
-	if (input == 0)
+	if (input == 0) {
 		cpufreq_pegasusq_min_cpu_unlock();
-	else
+	} else {
 		cpufreq_pegasusq_min_cpu_lock(input);
+		dbs_tuners_ins.min_cpu_lock_saved = input;
+	}
 	return count;
 }
 
@@ -1684,6 +1692,43 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 		
 	}
+	
+	if (flg_ctr_typingbooster_cycles > 0) {
+		
+		// make sure we have the minimum amount of cores requested online.
+		if (sttg_typingbooster_mincores > 1 && dbs_tuners_ins.min_cpu_lock < sttg_typingbooster_mincores) {
+			cpufreq_pegasusq_min_cpu_lock(sttg_typingbooster_mincores);
+			pr_info("[pegasusq/typingbooster] min_cpu_lock set to %d\n", sttg_typingbooster_mincores);
+		}
+		
+		// decrease the up_threshold, if requested.
+		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < dbs_tuners_ins.up_threshold) {
+			dbs_tuners_ins.up_threshold = sttg_typingbooster_upthreshold;
+			pr_info("[pegasusq/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+		}
+		
+		flg_ctr_typingbooster_cycles--;
+		
+	} else if (!flg_suspended && flg_awake) {
+		
+		if (dbs_tuners_ins.min_cpu_lock != dbs_tuners_ins.min_cpu_lock_saved){
+			// restore original min_cpu_lock.
+			pr_info("[pegasusq/typingbooster] typingbooster off. min_cpu_lock resetting from %d back to %d\n", dbs_tuners_ins.min_cpu_lock, dbs_tuners_ins.min_cpu_lock_saved);
+			
+			if (dbs_tuners_ins.min_cpu_lock_saved > 0) {
+				cpufreq_pegasusq_min_cpu_lock(dbs_tuners_ins.min_cpu_lock_saved);
+			} else {
+				cpufreq_pegasusq_min_cpu_unlock();
+			}
+		}
+		
+		if (dbs_tuners_ins.up_threshold == sttg_typingbooster_upthreshold && dbs_tuners_ins.up_threshold != dbs_tuners_ins.up_threshold_saved) {
+			// restore original up_threshold.
+			pr_info("[pegasusq/typingbooster] typingbooster off. up_threshold resetting from %d back to %d\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.up_threshold_saved);
+			dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved;
+		}
+		
+	}
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_FLEXRATE
 	int hp_s_delay = this_dbs_info->flex_hotplug_sample_delay;
@@ -1911,7 +1956,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * the threshold.
 	 */
 
-	if (policy->cur > dbs_tuners_ins.freq_for_fast_down)
+	if (policy->cur > dbs_tuners_ins.freq_for_fast_down && !flg_ctr_typingbooster_cycles)
 		up_threshold = dbs_tuners_ins.up_threshold_at_fast_down;
 	else
 		up_threshold = dbs_tuners_ins.up_threshold;
@@ -2213,69 +2258,70 @@ static void cpufreq_pegasusq_early_suspend(struct early_suspend *h)
 #endif
         pr_info("pegasusq: suspended, so doing work.\n");
 		
-	policy = cpufreq_cpu_get(0);
-	
-	if (dbs_tuners_ins.freq_for_responsiveness_sleep && dbs_tuners_ins.freq_for_responsiveness_sleep < dbs_tuners_ins.freq_for_responsiveness) {
-		prev_freq_for_responsiveness = dbs_tuners_ins.freq_for_responsiveness;
-		dbs_tuners_ins.freq_for_responsiveness = dbs_tuners_ins.freq_for_responsiveness_sleep;
-		pr_info("pegasusq: early_suspend() freq_for_responsiveness set to %i (from: %i)\n", dbs_tuners_ins.freq_for_responsiveness_sleep, prev_freq_for_responsiveness);
-	}
-	
-	if (flg_booted && atomic_read(&pegasusq_cpufreq_lock) == 0 && dbs_tuners_ins.max_freq_sleep > 0) {
+		policy = cpufreq_cpu_get(0);
 		
-		if (policy_max_awake == 0) {
-			policy_max_awake = policy->max;
+		if (dbs_tuners_ins.freq_for_responsiveness_sleep && dbs_tuners_ins.freq_for_responsiveness_sleep < dbs_tuners_ins.freq_for_responsiveness) {
+			prev_freq_for_responsiveness = dbs_tuners_ins.freq_for_responsiveness;
+			dbs_tuners_ins.freq_for_responsiveness = dbs_tuners_ins.freq_for_responsiveness_sleep;
+			pr_info("pegasusq: early_suspend() freq_for_responsiveness set to %i (from: %i)\n", dbs_tuners_ins.freq_for_responsiveness_sleep, prev_freq_for_responsiveness);
 		}
 		
-		atomic_set(&pegasusq_cpufreq_lock, 1);
-		policy->max = dbs_tuners_ins.max_freq_sleep;
-		pr_info("pegasusq: early_suspend() policy->max set to %d (L%d)\n", dbs_tuners_ins.max_freq_sleep, max_freq_sleep_idx);
-	} else {
-		pr_info("pegasusq: early_suspend() NOT reducing frequency because device still within booting window or disabled\n");
-	}
-	
-	//dbs_tuners_ins.early_suspend = atomic_read(&g_hotplug_lock);
+		if (flg_booted && atomic_read(&pegasusq_cpufreq_lock) == 0 && dbs_tuners_ins.max_freq_sleep > 0) {
+			
+			if (policy_max_awake == 0) {
+				policy_max_awake = policy->max;
+			}
+			
+			atomic_set(&pegasusq_cpufreq_lock, 1);
+			policy->max = dbs_tuners_ins.max_freq_sleep;
+			pr_info("pegasusq: early_suspend() policy->max set to %d (L%d)\n", dbs_tuners_ins.max_freq_sleep, max_freq_sleep_idx);
+		} else {
+			pr_info("pegasusq: early_suspend() NOT reducing frequency because device still within booting window or disabled\n");
+		}
+		
+		//dbs_tuners_ins.early_suspend = atomic_read(&g_hotplug_lock);
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
-	prev_lcdfreq_enable = dbs_tuners_ins.lcdfreq_enable;
-	dbs_tuners_ins.lcdfreq_enable = false;
+		prev_lcdfreq_enable = dbs_tuners_ins.lcdfreq_enable;
+		dbs_tuners_ins.lcdfreq_enable = false;
 #endif
-	prev_freq_step = dbs_tuners_ins.freq_step;
-	prev_sampling_rate = dbs_tuners_ins.sampling_rate;
-	dbs_tuners_ins.freq_step = 20;
-	dbs_tuners_ins.sampling_rate *= 4;
-	if (flg_booted) {
-        if (dbs_tuners_ins.up_threshold_sleep > 0) {
-            prev_up_threshold = dbs_tuners_ins.up_threshold;
-            dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_sleep;
-        }
-        if (dbs_tuners_ins.up_threshold < 11) {
-            // this shouldn't happen!
-            pr_info("pegasusq: wtf! up_threshold was set to: %d on suspend\n", dbs_tuners_ins.up_threshold);
-            dbs_tuners_ins.up_threshold = 82;
-        }
-		if (dbs_tuners_ins.hotplug_sleep > 0) {
-			prev_max_cpu_lock = dbs_tuners_ins.max_cpu_lock;
-			dbs_tuners_ins.max_cpu_lock = min(dbs_tuners_ins.hotplug_sleep, num_possible_cpus());
-			pr_info("pegasusq: early_suspend() limiting max cores to %i (from: %d)\n", dbs_tuners_ins.max_cpu_lock, prev_max_cpu_lock);
-			
-			if (dbs_tuners_ins.hotplug_sleep == 1) {
-				// user only wants 1 core, so let's lock it to that and skip the hotplug logic doing it for us.
-				dbs_tuners_ins.early_suspend = atomic_read(&g_hotplug_lock);
-				atomic_set(&g_hotplug_lock, 1);
-				apply_hotplug_lock();
-				pr_info("pegasusq: early_suspend() locking to 1 core (from: %d)\n", dbs_tuners_ins.early_suspend);
+		prev_freq_step = dbs_tuners_ins.freq_step;
+		prev_sampling_rate = dbs_tuners_ins.sampling_rate;
+		dbs_tuners_ins.freq_step = 20;
+		dbs_tuners_ins.sampling_rate *= 4;
+		if (flg_booted) {
+			if (dbs_tuners_ins.up_threshold_sleep > 0) {
+				prev_up_threshold = dbs_tuners_ins.up_threshold;
+				dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_sleep;
 			}
-			
-			if (dbs_tuners_ins.hotplug_rq_1_1_sleep) {
-				prev_hotplug_rq_1_1 = hotplug_rq[0][1];
-				hotplug_rq[0][1] = dbs_tuners_ins.hotplug_rq_1_1_sleep;
+			if (dbs_tuners_ins.up_threshold < 11) {
+				// this shouldn't happen!
+				pr_info("pegasusq: wtf! up_threshold was set to: %d on suspend\n", dbs_tuners_ins.up_threshold);
+				dbs_tuners_ins.up_threshold = 82;
 			}
+			if (dbs_tuners_ins.hotplug_sleep > 0) {
+				prev_max_cpu_lock = dbs_tuners_ins.max_cpu_lock;
+				dbs_tuners_ins.max_cpu_lock = min(dbs_tuners_ins.hotplug_sleep, num_possible_cpus());
+				pr_info("pegasusq: early_suspend() limiting max cores to %i (from: %d)\n", dbs_tuners_ins.max_cpu_lock, prev_max_cpu_lock);
+				
+				if (dbs_tuners_ins.hotplug_sleep == 1) {
+					// user only wants 1 core, so let's lock it to that and skip the hotplug logic doing it for us.
+					dbs_tuners_ins.early_suspend = atomic_read(&g_hotplug_lock);
+					atomic_set(&g_hotplug_lock, 1);
+					apply_hotplug_lock();
+					pr_info("pegasusq: early_suspend() locking to 1 core (from: %d)\n", dbs_tuners_ins.early_suspend);
+				}
+				
+				if (dbs_tuners_ins.hotplug_rq_1_1_sleep) {
+					prev_hotplug_rq_1_1 = hotplug_rq[0][1];
+					hotplug_rq[0][1] = dbs_tuners_ins.hotplug_rq_1_1_sleep;
+				}
+			}
+		} else {
+			pr_info("pegasusq: early_suspend() NOT locking cores because device still within booting window\n");
+			//schedule_delayed_work(&earlysuspend_work, msecs_to_jiffies((dbs_tuners_ins.afterboot_delay * 1000)));
 		}
-	} else {
-		pr_info("pegasusq: early_suspend() NOT locking cores because device still within booting window\n");
-		//schedule_delayed_work(&earlysuspend_work, msecs_to_jiffies((dbs_tuners_ins.afterboot_delay * 1000)));
-	}
     }
+	flg_awake = false;
 }
 
 static void cpufreq_pegasusq_late_resume(struct early_suspend *h)
@@ -2350,7 +2396,7 @@ static void cpufreq_pegasusq_late_resume(struct early_suspend *h)
         pr_info("pegasusq: wtf! up_threshold was set to: %d on resume\n", dbs_tuners_ins.up_threshold);
         dbs_tuners_ins.up_threshold = 82;
     }
-	
+	flg_awake = true;
 }
 #endif
 
