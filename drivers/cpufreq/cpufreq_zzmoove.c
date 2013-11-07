@@ -329,6 +329,8 @@
 #define DEF_IGNORE_NICE				  (0)	// ZZ: default for ignore nice load
 #define DEF_FREQ_STEP				  (5)	// ZZ: default for freq step at awake
 #define DEF_FREQ_STEP_SLEEP			  (5)	// ZZ: default for freq step at early suspend
+#define DEF_RESPONSIVENESS_FREQ	  (400000)	// ff: default frequency below which we use a lower up_threshold
+#define DEF_RESPONSIVENESS_UP_THRESHOLD	  (40)	// ff: default up_threshold we use when below responsiveness_freq
 
 #define DEF_FASTDOWN_FREQ               (0)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
 #define DEF_FASTDOWN_UP_THRESHOLD       (95)    // ff: default for fastdown up threshold. the up_threshold when fastdown_freq has been exceeded
@@ -602,6 +604,8 @@ static struct dbs_tuners {
     unsigned int multicore_engage_freq;         // ff: frequency below which we run on only one core
     unsigned int fastdown_freq;                 // ff: frequency beyond which we apply a different up_threshold
     unsigned int fastdown_up_threshold;         // ff: up_threshold when fastdown_freq exceeded
+	unsigned int responsiveness_freq;			// ff: frequency below which we use a lower up_threshold
+	unsigned int responsiveness_up_threshold;	// ff: up_threshold we use when below responsiveness_freq
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
     #endif
@@ -686,6 +690,8 @@ static struct dbs_tuners {
             .multicore_engage_freq = DEF_MULTICORE_ENGAGE_FREQ,                 // ff: frequency below which we run on only one core
             .fastdown_freq = DEF_FASTDOWN_FREQ,               // ff: frequency beyond which we apply a different up_threshold
             .fastdown_up_threshold = DEF_FASTDOWN_UP_THRESHOLD, // ff: up_threshold when fastdown_freq exceeded
+			.responsiveness_freq = DEF_RESPONSIVENESS_FREQ, // ff: frequency below which we use a lower up_threshold
+			.responsiveness_up_threshold = DEF_RESPONSIVENESS_UP_THRESHOLD,		// ff: up_threshold we use when below responsiveness_freq
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
             #endif
@@ -1020,6 +1026,8 @@ show_one(hotplug_min_limit, hotplug_min_limit);									// ff: min number of cor
 show_one(multicore_engage_freq, multicore_engage_freq);             // ff: frequency below which we run on only one core
 show_one(fastdown_freq, fastdown_freq);                 // ff: frequency beyond which we apply a different up_threshold
 show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when fastdown_freq exceeded
+show_one(responsiveness_freq, responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
+show_one(responsiveness_up_threshold, responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
 #endif
@@ -1938,6 +1946,47 @@ static ssize_t store_fastdown_up_threshold(struct kobject *a, struct attribute *
 	return count;
 }
 
+// ff: added tuneable responsiveness_freq -> possible values: range from 0 (disabled) to policy->max, if not set default is 0
+static ssize_t store_responsiveness_freq(struct kobject *a, struct attribute *b,
+								   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+    struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+    
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	if (input > policy->max)
+		input = policy->max;
+    
+	dbs_tuners_ins.responsiveness_freq = input;
+	return count;
+}
+
+// ff: added tuneable responsiveness_up_threshold -> possible values: range from 0 (disabled) to 100, if not set default is 0
+static ssize_t store_responsiveness_up_threshold(struct kobject *a, struct attribute *b,
+										   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	if (input > 100)
+		input = 100;
+	
+	if (input < 11 && input != 0)
+		input = 11;
+    
+	dbs_tuners_ins.responsiveness_up_threshold = input;
+	return count;
+}
+
 // Yank: add hotplug up/down threshold sysfs store interface
 
 #define store_up_threshold_hotplug_freq(name,core)						\
@@ -2109,6 +2158,8 @@ define_one_global_rw(hotplug_min_limit);				// ff: min number of cores we requir
 define_one_global_rw(multicore_engage_freq);    // ff: frequency below which we run on only one core
 define_one_global_rw(fastdown_freq);            // ff: frequency beyond which we apply a different up_threshold
 define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdown_freq exceeded
+define_one_global_rw(responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
+define_one_global_rw(responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
 #endif
@@ -2153,6 +2204,8 @@ static struct attribute *dbs_attributes[] = {
     &early_demand.attr,                         // ZZ: Early demand tuneable
     &fastdown_freq.attr,                        // ff: added tuneable
     &fastdown_up_threshold.attr,                // ff: added tuneable
+	&responsiveness_freq.attr,					// ff: added tuneable
+	&responsiveness_up_threshold.attr,			// ff: added tuneable
 #ifdef ENABLE_LEGACY_MODE
     &legacy_mode.attr,                          // ZZ: Legacy Mode switch
 #endif
@@ -2424,11 +2477,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
             ctr_hotplug_up_block_cycles++;
 	}
     
-    // ff: added fastdown.
-    if (dbs_tuners_ins.fastdown_freq != 0 && policy->cur > dbs_tuners_ins.fastdown_freq)
+    // ff: added fastdown and responsiveness tuneables to redirect up_threshold.
+    if (dbs_tuners_ins.fastdown_freq && policy->cur > dbs_tuners_ins.fastdown_freq && dbs_tuners_ins.fastdown_up_threshold > 11) {
         up_threshold = dbs_tuners_ins.fastdown_up_threshold;
-    else
+    } else if (dbs_tuners_ins.responsiveness_freq && policy->cur < dbs_tuners_ins.responsiveness_freq && dbs_tuners_ins.responsiveness_up_threshold > 11) {
+		up_threshold = dbs_tuners_ins.responsiveness_up_threshold;
+	} else {
         up_threshold = dbs_tuners_ins.up_threshold;
+	}
     
 	/* Check for frequency increase */
 	if (max_load > up_threshold || boost_freq) { // ZZ: Early demand - added boost switch
