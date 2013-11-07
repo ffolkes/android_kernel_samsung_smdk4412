@@ -350,6 +350,7 @@ static struct dbs_tuners {
 	unsigned int up_nr_cpus;
 	unsigned int max_cpu_lock;
 	unsigned int min_cpu_lock;
+	unsigned int min_cpu_lock_saved;
 	atomic_t hotplug_lock;
 	unsigned int dvfs_debug;
 	unsigned int ignore_nice;
@@ -362,6 +363,7 @@ static struct dbs_tuners {
 	.up_nr_cpus = DEF_UP_NR_CPUS,
 	.max_cpu_lock = DEF_MAX_CPU_LOCK,
 	.min_cpu_lock = DEF_MIN_CPU_LOCK,
+	.min_cpu_lock_saved = DEF_MIN_CPU_LOCK,
 	.hotplug_lock = ATOMIC_INIT(0),
 	.dvfs_debug = 0,
 	.ignore_nice = 0,
@@ -1879,6 +1881,31 @@ static void dbs_check_cpu(struct cpufreq_lulzactive_cpuinfo *this_dbs_info)
 	int max_hotplug_rate = MAX_HOTPLUG_RATE;
 
 	policy = this_dbs_info->policy;
+	
+	if (flg_ctr_typingbooster_cycles > 0) {
+		
+		// make sure we have the minimum amount of cores requested online.
+		if (sttg_typingbooster_mincores > 1 && dbs_tuners_ins.min_cpu_lock < sttg_typingbooster_mincores) {
+			cpufreq_lulzactiveq_min_cpu_lock(sttg_typingbooster_mincores);
+			pr_info("[lulzactiveq/typingbooster] min_cpu_lock set to %d\n", sttg_typingbooster_mincores);
+		}
+		
+		flg_ctr_typingbooster_cycles--;
+		
+	} else if (!early_suspended) {
+		
+		if (dbs_tuners_ins.min_cpu_lock != dbs_tuners_ins.min_cpu_lock_saved){
+			// restore original min_cpu_lock.
+			pr_info("[lulzactiveq/typingbooster] typingbooster off. min_cpu_lock resetting from %d back to %d\n", dbs_tuners_ins.min_cpu_lock, dbs_tuners_ins.min_cpu_lock_saved);
+			
+			if (dbs_tuners_ins.min_cpu_lock_saved > 0) {
+				cpufreq_lulzactiveq_min_cpu_lock(dbs_tuners_ins.min_cpu_lock_saved);
+			} else {
+				cpufreq_lulzactiveq_min_cpu_unlock();
+			}
+		}
+		
+	}
 
 	hotplug_history->usage[num_hist].freq = policy->cur;
 	hotplug_history->usage[num_hist].rq_avg = get_nr_run_avg();
