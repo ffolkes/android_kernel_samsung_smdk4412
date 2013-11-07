@@ -518,7 +518,7 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	}
 #endif
 	
-	if (state && button->code == KEY_POWER) {
+	if (state && button->code == KEY_POWER && !flg_screen_on) {
         gesturebooster_dvfs_lock_on(0);
         bus_dvfs_lock_on(0);
         pr_info("[keys] boosters on\n");
