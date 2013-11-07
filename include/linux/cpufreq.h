@@ -27,6 +27,10 @@
 #define CPUFREQ_LEVEL_END		(L21 + 1)
 #endif
 
+extern unsigned int flg_ctr_typingbooster_cycles;
+extern unsigned int sttg_typingbooster_mincores;
+extern unsigned int sttg_typingbooster_upthreshold;
+
 /*********************************************************************
  *                     CPUFREQ NOTIFIER INTERFACE                    *
  *********************************************************************/

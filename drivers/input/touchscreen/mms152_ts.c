@@ -42,6 +42,7 @@
 #include <mach/gpio.h>
 #include <linux/uaccess.h>
 #include <linux/wacom_i2c.h>
+#include <linux/cpufreq.h>
 
 #include <mach/cpufreq.h>
 #include <mach/dev.h>
@@ -244,7 +245,7 @@ enum {
 #endif
 
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
-extern void _lcdfreq_lock(int lock);
+extern int _lcdfreq_lock(int lock);
 static unsigned int flg_enable_lcdfreq_touchboost = 0;
 #endif
 
@@ -293,6 +294,19 @@ static bool sttg_longpressoff_alwayson = false;
 bool flg_screen_on = true;
 
 static bool flg_swipe_in_progress = false;
+
+static unsigned int delta_between_press;
+static unsigned int ctr_typingbooster;
+static int64_t time_last_pressed;
+
+unsigned int sttg_typingbooster_mincores = 0;
+unsigned int sttg_typingbooster_upthreshold = 50;
+unsigned int sttg_typingbooster_cycles = 30;
+unsigned int sttg_typingbooster_mintaps = 3;
+unsigned int sttg_typingbooster_maxmsbetweentaps = 250;
+unsigned int sttg_typingbooster_taptimeoutms = 1000;
+
+unsigned int flg_ctr_typingbooster_cycles = 0;
 
 #define ISC_DL_MODE	1
 
@@ -584,6 +598,14 @@ struct tsp_cmd tsp_cmds[] = {
 	{TSP_CMD("not_support_cmd", not_support_cmd),},
 };
 #endif
+
+static inline int64_t get_time_ms(void) {
+	int64_t ms;
+	struct timespec cur_time = current_kernel_time();
+	ms =  cur_time.tv_sec * MSEC_PER_SEC;
+	ms += cur_time.tv_nsec / NSEC_PER_MSEC;
+	return ms;
+}
 
 static void touchwake_reset_longpressoff(struct work_struct * touchwake_reset_longpressoff_work)
 {
@@ -1283,6 +1305,9 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 					}
 #endif
 					info->finger_state[id] = 0;
+
+					// report state to cypress-touchkey for backlight timeout
+					touchscreen_state_report(0);
 #ifdef CONFIG_LCD_FREQ_SWITCH
 					//dev_notice(&client->dev,
 					//	"R(%c)(%d) [%2d]", info->ldi,
@@ -1482,6 +1507,31 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
                 cancel_delayed_work_sync(&touchwake_check_longpressoff_work);
             }
 #endif
+			if (sttg_typingbooster_mincores
+				&& (sttg_typingbooster_mincores > 1 || sttg_typingbooster_upthreshold)
+				&& y > 680
+				&& flg_screen_on) {
+				
+				delta_between_press = get_time_ms() - time_last_pressed;
+				time_last_pressed = get_time_ms();
+				
+				if (delta_between_press > sttg_typingbooster_taptimeoutms) {
+					pr_info("[tsp/typingbooster] tapcounter: reset\n");
+					ctr_typingbooster = 0;
+					delta_between_press = 0;
+				}
+				
+				if (delta_between_press < sttg_typingbooster_maxmsbetweentaps) {
+					ctr_typingbooster++;
+					pr_info("[tsp/typingbooster] tapcounter: %d\n", ctr_typingbooster);
+				}
+				
+				if (ctr_typingbooster >= sttg_typingbooster_mintaps) {
+					flg_ctr_typingbooster_cycles = sttg_typingbooster_cycles;
+					pr_info("[tsp/typingbooster] triggered! cycle counter reset to %d\n", sttg_typingbooster_cycles);
+					ctr_typingbooster--;
+				}
+			}
 			continue;
 		}
 #ifdef CONFIG_TOUCH_WAKE
@@ -1786,6 +1836,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			if (info->finger_state[id] == 0) {
 				info->finger_state[id] = 1;
+				// report state to cypress-touchkey for backlight timeout
+				touchscreen_state_report(1);
 #ifdef CONFIG_LCD_FREQ_SWITCH
 				//dev_notice(&client->dev,
 				//	"P(%c)(%d) [%2d]", info->ldi,
@@ -1798,6 +1850,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #else
 			if (info->finger_state[id] == 0) {
 				info->finger_state[id] = 1;
+				// report state to cypress-touchkey for backlight timeout
+				touchscreen_state_report(1);
 #ifdef CONFIG_LCD_FREQ_SWITCH
 				dev_notice(&client->dev,
 					"P(%c)(%d) [%2d],([%4d],[%3d]) w=%d, major=%d, minor=%d, angle=%d, palm=%d",
@@ -1912,6 +1966,8 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			if (info->finger_state[id] == 0) {
 				info->finger_state[id] = 1;
+				// report state to cypress-touchkey for backlight timeout
+				touchscreen_state_report(1);
 				dev_notice(&client->dev,
 					"P [%2d]", id);
 			}
@@ -1925,6 +1981,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #endif
 		}
 		touch_is_pressed++;
+		
 #ifdef CONFIG_TOUCH_WAKE
         if (id == 0
             && touchwake_enabled
@@ -4919,10 +4976,26 @@ static ssize_t enable_lcdfreq_touchboost_show(struct device *dev,
 	return strlen(buf);
 }
 
-static ssize_t longpressoff_alwayson_store(struct device *dev,
-										struct device_attribute *attr, 
-										char *buf, size_t size)
+static ssize_t enable_lcdfreq_touchboost_store(struct device *dev,
+                                               struct device_attribute *attr,
+                                               char *buf, size_t size)
 {
+	if (!strncmp(buf, "1", 1)) {
+		flg_enable_lcdfreq_touchboost = 1;
+	} else if (!strncmp(buf, "0", 1)) {
+		flg_enable_lcdfreq_touchboost = 0;
+	}
+	return size;
+}
+#endif
+
+static ssize_t longpressoff_alwayson_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_longpressoff_alwayson);
+}
+
+static ssize_t longpressoff_alwayson_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
 	unsigned int ret;
 	unsigned int data;
 	
@@ -4938,24 +5011,143 @@ static ssize_t longpressoff_alwayson_store(struct device *dev,
 	
 	return size;
 }
-#endif
 
-static ssize_t longpressoff_alwayson_show(struct device *dev,
-                                              struct device_attribute *attr,
-                                              char *buf)
-{
-	return sprintf(buf, "%u\n", sttg_longpressoff_alwayson);
+static ssize_t typingbooster_mincores_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_typingbooster_mincores);
 }
 
-static ssize_t enable_lcdfreq_touchboost_store(struct device *dev,
-                                               struct device_attribute *attr,
-                                               char *buf, size_t size)
-{
-	if (!strncmp(buf, "1", 1)) {
-		flg_enable_lcdfreq_touchboost = 1;
-	} else if (!strncmp(buf, "0", 1)) {
-		flg_enable_lcdfreq_touchboost = 0;
+static ssize_t typingbooster_mincores_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if (ret != 1) {
+		return -EINVAL;
 	}
+	
+	if (data == 0) {
+		sttg_typingbooster_mincores = 0;
+		pr_info("[tsp/typingbooster] typingbooster_mincores has been disabled\n", data);
+	} else if (data > 0 && data <= 4) {
+		sttg_typingbooster_mincores = data;
+		pr_info("[tsp/typingbooster] typingbooster_mincores is enabled and has been set to: %d\n", data);
+	} else {
+		return -EINVAL;
+	}
+	
+	return size;
+}
+
+static ssize_t typingbooster_upthreshold_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_typingbooster_upthreshold);
+}
+
+static ssize_t typingbooster_upthreshold_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if (ret != 1) {
+		return -EINVAL;
+	}
+	
+	if (data == 0) {
+		sttg_typingbooster_upthreshold = 0;
+		pr_info("[tsp/typingbooster] typingbooster_upthreshold has been disabled\n", data);
+	} else if (data < 11) {
+		sttg_typingbooster_upthreshold = 11;
+		pr_info("[tsp/typingbooster] typingbooster_upthreshold is enabled and has been set to: %d\n", data);
+	} else if (data <= 100) {
+		sttg_typingbooster_upthreshold = data;
+		pr_info("[tsp/typingbooster] typingbooster_upthreshold is enabled and has been set to: %d\n", data);
+	} else {
+		return -EINVAL;
+	}
+	
+	return size;
+}
+
+static ssize_t typingbooster_cycles_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_typingbooster_cycles);
+}
+
+static ssize_t typingbooster_cycles_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if (ret != 1) {
+		return -EINVAL;
+	}
+	
+	if (data > 0 && data <= 100) {
+		sttg_typingbooster_cycles = data;
+		pr_info("[tsp/typingbooster] typingbooster_cycles has been set to: %d\n", data);
+	} else {
+		return -EINVAL;
+	}
+	
+	return size;
+}
+
+static ssize_t typingbooster_mintaps_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_typingbooster_mintaps);
+}
+
+static ssize_t typingbooster_mintaps_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if (ret != 1) {
+		return -EINVAL;
+	}
+	
+	if (data > 2 && data <= 20) {
+		sttg_typingbooster_mintaps = data;
+		pr_info("[tsp/typingbooster] typingbooster_mintaps has been set to: %d\n", data);
+	} else {
+		return -EINVAL;
+	}
+	
+	return size;
+}
+
+static ssize_t typingbooster_maxmsbetweentaps_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_typingbooster_maxmsbetweentaps);
+}
+
+static ssize_t typingbooster_maxmsbetweentaps_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if (ret != 1) {
+		return -EINVAL;
+	}
+	
+	if (data >= 50 && data <= 1000) {
+		sttg_typingbooster_maxmsbetweentaps = data;
+		pr_info("[tsp/typingbooster] typingbooster_maxmsbetweentaps has been set to: %d\n", data);
+	} else {
+		return -EINVAL;
+	}
+	
 	return size;
 }
 
@@ -5523,8 +5715,12 @@ static DEVICE_ATTR(close_tsp_test, S_IRUGO, show_close_tsp_test, NULL);
 static DEVICE_ATTR(cmd, S_IWUSR | S_IWGRP, NULL, store_cmd);
 static DEVICE_ATTR(cmd_status, S_IRUGO, show_cmd_status, NULL);
 static DEVICE_ATTR(cmd_result, S_IRUGO, show_cmd_result, NULL);
-static DEVICE_ATTR(longpressoff_alwayson, S_IRUGO | S_IWUSR,
-				   longpressoff_alwayson_show, longpressoff_alwayson_store);
+static DEVICE_ATTR(longpressoff_alwayson, S_IRUGO | S_IWUSR, longpressoff_alwayson_show, longpressoff_alwayson_store);
+static DEVICE_ATTR(typingbooster_mincores, S_IRUGO | S_IWUSR, typingbooster_mincores_show, typingbooster_mincores_store);
+static DEVICE_ATTR(typingbooster_upthreshold, S_IRUGO | S_IWUSR, typingbooster_upthreshold_show, typingbooster_upthreshold_store);
+static DEVICE_ATTR(typingbooster_cycles, S_IRUGO | S_IWUSR, typingbooster_cycles_show, typingbooster_cycles_store);
+static DEVICE_ATTR(typingbooster_maxmsbetweentaps, S_IRUGO | S_IWUSR, typingbooster_maxmsbetweentaps_show, typingbooster_maxmsbetweentaps_store);
+static DEVICE_ATTR(typingbooster_mintaps, S_IRUGO | S_IWUSR, typingbooster_mintaps_show, typingbooster_mintaps_store);
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 static DEVICE_ATTR(enable_lcdfreq_touchboost, S_IRUGO | S_IWUSR,
 				   enable_lcdfreq_touchboost_show, enable_lcdfreq_touchboost_store);
@@ -5537,12 +5733,17 @@ static DEVICE_ATTR(intensity_logging_off, S_IRUGO, show_intensity_logging_off,
 		   NULL);
 #endif
 
-static struct attribute *sec_touch_facotry_attributes[] = {
+static struct attribute *sec_touch_factory_attributes[] = {
 	&dev_attr_close_tsp_test.attr,
 	&dev_attr_cmd.attr,
 	&dev_attr_cmd_status.attr,
 	&dev_attr_cmd_result.attr,
     &dev_attr_longpressoff_alwayson.attr,
+	&dev_attr_typingbooster_mincores.attr,
+	&dev_attr_typingbooster_upthreshold.attr,
+	&dev_attr_typingbooster_cycles.attr,
+	&dev_attr_typingbooster_maxmsbetweentaps.attr,
+	&dev_attr_typingbooster_mintaps.attr,
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	&dev_attr_enable_lcdfreq_touchboost.attr,
 #endif
@@ -5555,7 +5756,7 @@ static struct attribute *sec_touch_facotry_attributes[] = {
 };
 
 static struct attribute_group sec_touch_factory_attr_group = {
-	.attrs = sec_touch_facotry_attributes,
+	.attrs = sec_touch_factory_attributes,
 };
 #endif /* SEC_TSP_FACTORY_TEST */
 
@@ -5655,6 +5856,8 @@ static void mms_ts_early_suspend(struct early_suspend *h)
     touchwake_longpressoff_time_start_secs = -1;
     flg_touchkey_was_pressed = false;
     flg_swipe_in_progress = false;
+	ctr_typingbooster = 0;
+	flg_ctr_typingbooster_cycles = 0;
     pr_info("[TSP/touch] cleared variables on sleep\n");
     
     cancel_delayed_work_sync(&touchwake_reset_longpressoff_work);
