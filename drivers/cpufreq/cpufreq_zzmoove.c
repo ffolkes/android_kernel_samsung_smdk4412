@@ -384,9 +384,6 @@ static unsigned int hotplug_idle_flag = 0;
 static unsigned int ctr_hotplug_down_block_cycles = 0;
 static unsigned int ctr_hotplug_up_block_cycles = 0;
 
-/*static void restore_hotplug_min(struct work_struct * restore_hotplug_min_work);
-static DECLARE_DELAYED_WORK(restore_hotplug_min_work, restore_hotplug_min);*/
-
 // ZZ: current load & freq. for hotplugging work
 static int cur_load = 0;
 static int cur_freq = 0;
@@ -817,16 +814,6 @@ static int leg_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned
     return (curfreq); // not found
 }
 #endif
-
-/*static void restore_hotplug_min(struct work_struct * restore_hotplug_min_work)
-{
-    if (dbs_tuners_ins.hotplug_min_limit != dbs_tuners_ins.hotplug_min_limit_saved) {
-		pr_info("[zzmoove] hotplug_min resetting to %d from %d\n", dbs_tuners_ins.hotplug_min_limit_saved, dbs_tuners_ins.hotplug_min_limit);
-		dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved;
-	}
-	
-	return;
-}*/
 
 // Yank : Return a valid value between min and max
 static int validate_min_max(int val, int min, int max) {
@@ -1694,7 +1681,6 @@ static ssize_t store_disable_hotplug(struct kobject *a, struct attribute *b,
 {
 	unsigned int input;
 	int ret;
-	//int i=0;
     
 	ret = sscanf(buf, "%u", &input);
 	if (ret != 1)
@@ -1924,8 +1910,11 @@ static ssize_t store_fastdown_freq(struct kobject *a, struct attribute *b,
     
 	ret = sscanf(buf, "%u", &input);
     
-	if ((ret != 1 || input < 0 || input > policy->max) && input != 0)
+	if (ret != 1 || input < 0)
 		return -EINVAL;
+	
+	if (input > policy->max)
+		input = policy->max;
     
 	dbs_tuners_ins.fastdown_freq = input;
 	return count;
@@ -1939,8 +1928,14 @@ static ssize_t store_fastdown_up_threshold(struct kobject *a, struct attribute *
 	int ret;
 	ret = sscanf(buf, "%u", &input);
     
-	if (ret != 1 || input > 100 || input <= dbs_tuners_ins.down_threshold)
+	if (ret != 1 || input < 0)
 		return -EINVAL;
+	
+	if (input > 100)
+		input = 100;
+	
+	if (input < 11 && input != 0)
+		input = 11;
     
 	dbs_tuners_ins.fastdown_up_threshold = input;
 	return count;
@@ -2991,26 +2986,6 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 	}
 #endif
 }
-
-/*void zzmoove_hotplug_min(int cpus, unsigned int timeout) {
-	
-	// bring the required amount of CPUs online.
-	for (i = 1; i < num_possible_cpus(); i++) {
-		if (!cpu_online(i) && i < cpus && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
-			// this core is below the minimum, so bring it up.
-			cpu_up(i);
-			pr_info("[zzmoove] zzmoove_hotplug_min: CPU%d forced up\n", i);
-		}
-	}
-	
-	dbs_tuners_ins.hotplug_min_limit = cpus;
-	
-	if (timeout > 0) {
-		// we need to revert this change after it times out.
-		
-	}
-	
-}*/
 
 static void do_dbs_timer(struct work_struct *work)
 {
