@@ -447,6 +447,7 @@ static unsigned int freq_limit_asleep;			// ZZ: for setting frequency limit valu
 static unsigned int fast_scaling_asleep;		// ZZ: for setting fast scaling value on early suspend
 static unsigned int freq_step_asleep;			// ZZ: for setting freq step value on early suspend
 static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off on early suspend
+static bool flg_suspend = false;
 
 // ZZ: midnight and zzmoove momentum defaults
 #define LATENCY_MULTIPLIER			(1000)
@@ -2464,7 +2465,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		&& (!dbs_tuners_ins.hotplug_lock || num_online_cpus() > dbs_tuners_ins.hotplug_lock)) {
 	    if (ctr_hotplug_up_block_cycles > dbs_tuners_ins.hotplug_up_block_cycles || dbs_tuners_ins.hotplug_up_block_cycles == 0) {
 		    schedule_work_on(0, &hotplug_online_work);
-			pr_info("[zzmoove] online_work\n");
+			//pr_info("[zzmoove] online_work\n");
 		    if (dbs_tuners_ins.hotplug_up_block_cycles != 0)
                 ctr_hotplug_up_block_cycles = 0;
 	    }
@@ -2475,7 +2476,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     // ff: added fastdown and responsiveness tuneables to redirect up_threshold.
     if (dbs_tuners_ins.fastdown_freq && policy->cur > dbs_tuners_ins.fastdown_freq && dbs_tuners_ins.fastdown_up_threshold > 11) {
         up_threshold = dbs_tuners_ins.fastdown_up_threshold;
-    } else if (dbs_tuners_ins.responsiveness_freq && policy->cur < dbs_tuners_ins.responsiveness_freq && dbs_tuners_ins.responsiveness_up_threshold > 11) {
+    } else if (!flg_suspend && dbs_tuners_ins.responsiveness_freq && policy->cur < dbs_tuners_ins.responsiveness_freq && dbs_tuners_ins.responsiveness_up_threshold > 11) {
+		// only apply the responsiveness up_threshold when the screen is on.
 		up_threshold = dbs_tuners_ins.responsiveness_up_threshold;
 	} else {
         up_threshold = dbs_tuners_ins.up_threshold;
@@ -3034,6 +3036,7 @@ static void powersave_early_suspend(struct early_suspend *handler)
     table = cpufreq_frequency_get_table(0);				// Yank : Get system frequency table
     
     mutex_lock(&dbs_mutex);
+	flg_suspend = true;
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	prev_lcdfreq_enable = dbs_tuners_ins.lcdfreq_enable;		// ZZ: LCDFreq Scaling - store state
 	prev_lcdfreq_lock_current = lcdfreq_lock_current;		// ZZ: LCDFreq Scaling - store lock current
@@ -3226,6 +3229,8 @@ static void powersave_late_resume(struct early_suspend *handler)
     struct cpufreq_frequency_table *table;				// Yank : Use system frequency table
     skip_hotplug_flag = 1;						// ZZ: same as above skip hotplugging to avoid deadlocks
     suspend_flag = 0;							// ZZ: we are resuming so reset supend flag
+	
+	flg_suspend = false;
     
     if (!dbs_tuners_ins.disable_hotplug_sleep) {
         for (i = 1; i < num_possible_cpus(); i++) {				// ZZ: enable offline cores to avoid stuttering after resume if hotplugging limit was active
