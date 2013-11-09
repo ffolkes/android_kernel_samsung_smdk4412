@@ -1870,8 +1870,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     	this_dbs_info->prev_load_freq = max_load_freq;
   	}
 
-	/* Check for frequency increase */
-	if (policy->cur < dbs_tuners_ins.freq_for_responsiveness)
+	/* Check for frequency increase
+	   but only apply the responsiveness up_threshold when the screen is on. */
+	if (!flg_suspended && policy->cur < dbs_tuners_ins.freq_for_responsiveness)
 		up_threshold = dbs_tuners_ins.up_threshold_at_min_freq;
 	else
 		up_threshold = dbs_tuners_ins.up_threshold;
