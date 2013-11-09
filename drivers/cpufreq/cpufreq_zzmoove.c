@@ -331,6 +331,7 @@
 #define DEF_FREQ_STEP_SLEEP			  (5)	// ZZ: default for freq step at early suspend
 #define DEF_RESPONSIVENESS_FREQ	  (400000)	// ff: default frequency below which we use a lower up_threshold
 #define DEF_RESPONSIVENESS_UP_THRESHOLD	  (40)	// ff: default up_threshold we use when below responsiveness_freq
+#define DEF_RESPONSIVENESS_SAMPLING_RATE	  (70000)	// ff: default sampling rate we use when below responsiveness_freq
 
 #define DEF_FASTDOWN_FREQ               (1200000)     // ff: default for fastdown freq. the frequency beyond which we apply a different up_threshold
 #define DEF_FASTDOWN_UP_THRESHOLD       (95)    // ff: default for fastdown up threshold. the up_threshold when fastdown_freq has been exceeded
@@ -448,6 +449,7 @@ static unsigned int fast_scaling_asleep;		// ZZ: for setting fast scaling value 
 static unsigned int freq_step_asleep;			// ZZ: for setting freq step value on early suspend
 static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off on early suspend
 static bool flg_suspend = false;
+static bool flg_responsiveness = false;
 
 // ZZ: midnight and zzmoove momentum defaults
 #define LATENCY_MULTIPLIER			(1000)
@@ -532,6 +534,7 @@ static DEFINE_MUTEX(dbs_mutex);
 
 static struct dbs_tuners {
 	unsigned int sampling_rate;
+	unsigned int sampling_rate_saved;		// ff: saved sampling_rate
 	unsigned int sampling_rate_sleep_multiplier;	// ZZ: added tuneable sampling_rate_sleep_multiplier
 	unsigned int sampling_down_factor;		// ZZ: Sampling down factor (reactivated)
 	unsigned int sampling_down_momentum;		// ZZ: Sampling down momentum tuneable
@@ -604,6 +607,7 @@ static struct dbs_tuners {
     unsigned int fastdown_up_threshold;         // ff: up_threshold when fastdown_freq exceeded
 	unsigned int responsiveness_freq;			// ff: frequency below which we use a lower up_threshold
 	unsigned int responsiveness_up_threshold;	// ff: up_threshold we use when below responsiveness_freq
+	unsigned int responsiveness_sampling_rate;	// ff: sampling_rate we use when below responsiveness_freq
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
     #endif
@@ -690,6 +694,7 @@ static struct dbs_tuners {
             .fastdown_up_threshold = DEF_FASTDOWN_UP_THRESHOLD, // ff: up_threshold when fastdown_freq exceeded
 			.responsiveness_freq = DEF_RESPONSIVENESS_FREQ, // ff: frequency below which we use a lower up_threshold
 			.responsiveness_up_threshold = DEF_RESPONSIVENESS_UP_THRESHOLD,		// ff: up_threshold we use when below responsiveness_freq
+			.responsiveness_sampling_rate = DEF_RESPONSIVENESS_SAMPLING_RATE,		// ff: sampling rate we use when below responsiveness_freq
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
             #endif
@@ -1016,6 +1021,7 @@ show_one(fastdown_freq, fastdown_freq);                 // ff: frequency beyond 
 show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when fastdown_freq exceeded
 show_one(responsiveness_freq, responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 show_one(responsiveness_up_threshold, responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
+show_one(responsiveness_sampling_rate, responsiveness_sampling_rate);		// ff: sampling rate we use when below responsiveness_freq
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
 #endif
@@ -1116,6 +1122,7 @@ static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 		return -EINVAL;
     
 	dbs_tuners_ins.sampling_rate = max(input, min_sampling_rate);
+	dbs_tuners_ins.sampling_rate_saved = max(input, min_sampling_rate);
     
 	return count;
 }
@@ -1983,6 +1990,25 @@ static ssize_t store_responsiveness_up_threshold(struct kobject *a, struct attri
 	return count;
 }
 
+// ff: added tuneable responsiveness_sampling_rate -> possible values: range from 0 (disabled) to 100, if not set default is 0
+static ssize_t store_responsiveness_sampling_rate(struct kobject *a, struct attribute *b,
+												 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1)
+		return -EINVAL;
+	
+	if (input < min_sampling_rate && input != 0) {
+		input = min_sampling_rate;
+	}
+    
+	dbs_tuners_ins.responsiveness_sampling_rate = input;
+	return count;
+}
+
 // Yank: add hotplug up/down threshold sysfs store interface
 
 #define store_up_threshold_hotplug_freq(name,core)						\
@@ -2156,6 +2182,7 @@ define_one_global_rw(fastdown_freq);            // ff: frequency beyond which we
 define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdown_freq exceeded
 define_one_global_rw(responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 define_one_global_rw(responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
+define_one_global_rw(responsiveness_sampling_rate);		// ff: sampling_rate we use when below responsiveness_freq
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
 #endif
@@ -2202,6 +2229,7 @@ static struct attribute *dbs_attributes[] = {
     &fastdown_up_threshold.attr,                // ff: added tuneable
 	&responsiveness_freq.attr,					// ff: added tuneable
 	&responsiveness_up_threshold.attr,			// ff: added tuneable
+	&responsiveness_sampling_rate.attr,			// ff: added tuneable
 #ifdef ENABLE_LEGACY_MODE
     &legacy_mode.attr,                          // ZZ: Legacy Mode switch
 #endif
@@ -2278,6 +2306,33 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	policy = this_dbs_info->cur_policy;
     
     cur_freq = policy->cur;  // Yank: store current frequency for hotplugging frequency thresholds
+	
+	// ff: check to see if we need to apply a faster sampling_rate.
+	
+	if (dbs_tuners_ins.responsiveness_sampling_rate >= min_sampling_rate
+		&& !flg_suspend
+		&& policy->cur < dbs_tuners_ins.responsiveness_freq
+		&& dbs_tuners_ins.responsiveness_sampling_rate < dbs_tuners_ins.sampling_rate) {
+		
+		dbs_tuners_ins.sampling_rate = dbs_tuners_ins.responsiveness_sampling_rate;
+		
+	} else if (!flg_suspend
+			   && (
+				   (!dbs_tuners_ins.responsiveness_sampling_rate
+					&& dbs_tuners_ins.sampling_rate != dbs_tuners_ins.sampling_rate_saved)
+				   ||
+				   (dbs_tuners_ins.responsiveness_sampling_rate
+					&& !flg_suspend
+					&& policy->cur >= dbs_tuners_ins.responsiveness_freq
+					&& dbs_tuners_ins.sampling_rate != dbs_tuners_ins.sampling_rate_saved)
+				   )
+			   ) {
+		
+		dbs_tuners_ins.sampling_rate = dbs_tuners_ins.sampling_rate_saved;
+		
+	}
+	
+	//pr_info("[zzmoove] sampling_rate: %d\n", dbs_tuners_ins.sampling_rate);
     
 	/*
 	 * ZZ: Frequency Limit: we try here at a verly early stage to limit freqencies above limit by setting the current target_freq to freq_limit.
@@ -3046,6 +3101,10 @@ static void powersave_early_suspend(struct early_suspend *handler)
 		_lcdfreq_lock(lcdfreq_lock_current);
 	}
 #endif
+	// ff: check to make sure the reponsiveness_sampling_rate has been cleared.
+	if (dbs_tuners_ins.sampling_rate == dbs_tuners_ins.responsiveness_sampling_rate) {
+		dbs_tuners_ins.sampling_rate = dbs_tuners_ins.sampling_rate_saved;
+	}
     sampling_rate_awake = dbs_tuners_ins.sampling_rate;
     up_threshold_awake = dbs_tuners_ins.up_threshold;
     down_threshold_awake = dbs_tuners_ins.down_threshold;
@@ -3444,6 +3503,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
                 orig_sampling_down_factor = dbs_tuners_ins.sampling_down_factor;	// ZZ: Sampling down momentum - set down factor
                 orig_sampling_down_max_mom = dbs_tuners_ins.sampling_down_max_mom;	// ZZ: Sampling down momentum - set max momentum
                 sampling_rate_awake = dbs_tuners_ins.sampling_rate;
+				dbs_tuners_ins.sampling_rate_saved = dbs_tuners_ins.sampling_rate;
                 up_threshold_awake = dbs_tuners_ins.up_threshold;
                 down_threshold_awake = dbs_tuners_ins.down_threshold;
                 smooth_up_awake = dbs_tuners_ins.smooth_up;
