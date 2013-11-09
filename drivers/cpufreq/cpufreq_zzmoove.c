@@ -311,6 +311,8 @@
 #include <linux/sched.h>
 #include <linux/earlysuspend.h>
 
+#define DEF_DEBUG_ENABLE			(0)
+
 // cpu load trigger
 #define DEF_SMOOTH_UP (75)
 
@@ -450,6 +452,7 @@ static unsigned int freq_step_asleep;			// ZZ: for setting freq step value on ea
 static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off on early suspend
 static bool flg_suspend = false;
 static bool flg_responsiveness = false;
+static bool flg_debug = false;
 
 // ZZ: midnight and zzmoove momentum defaults
 #define LATENCY_MULTIPLIER			(1000)
@@ -608,6 +611,7 @@ static struct dbs_tuners {
 	unsigned int responsiveness_freq;			// ff: frequency below which we use a lower up_threshold
 	unsigned int responsiveness_up_threshold;	// ff: up_threshold we use when below responsiveness_freq
 	unsigned int responsiveness_sampling_rate;	// ff: sampling_rate we use when below responsiveness_freq
+	unsigned int debug_enable;					// ff: debug mode
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
     #endif
@@ -695,6 +699,7 @@ static struct dbs_tuners {
 			.responsiveness_freq = DEF_RESPONSIVENESS_FREQ, // ff: frequency below which we use a lower up_threshold
 			.responsiveness_up_threshold = DEF_RESPONSIVENESS_UP_THRESHOLD,		// ff: up_threshold we use when below responsiveness_freq
 			.responsiveness_sampling_rate = DEF_RESPONSIVENESS_SAMPLING_RATE,		// ff: sampling rate we use when below responsiveness_freq
+			.debug_enable = DEF_DEBUG_ENABLE,
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
             #endif
@@ -1022,6 +1027,7 @@ show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when
 show_one(responsiveness_freq, responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 show_one(responsiveness_up_threshold, responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 show_one(responsiveness_sampling_rate, responsiveness_sampling_rate);		// ff: sampling rate we use when below responsiveness_freq
+show_one(debug_enable, debug_enable);						// ff: added debug mode
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
 #endif
@@ -2009,6 +2015,28 @@ static ssize_t store_responsiveness_sampling_rate(struct kobject *a, struct attr
 	return count;
 }
 
+// ff: added tuneable debug_enable -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
+static ssize_t store_debug_enable(struct kobject *a, struct attribute *b,
+											 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (input < 0)
+        return -EINVAL;
+    
+	if (input > 0)
+		input = 1;
+	else
+		input = 0;
+	
+	flg_debug = input;
+	dbs_tuners_ins.debug_enable = input;
+    
+	return count;
+}
+
 // Yank: add hotplug up/down threshold sysfs store interface
 
 #define store_up_threshold_hotplug_freq(name,core)						\
@@ -2183,6 +2211,7 @@ define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdow
 define_one_global_rw(responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 define_one_global_rw(responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 define_one_global_rw(responsiveness_sampling_rate);		// ff: sampling_rate we use when below responsiveness_freq
+define_one_global_rw(debug_enable);				// ff: debug mode
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
 #endif
@@ -2282,6 +2311,7 @@ static struct attribute *dbs_attributes[] = {
     &lcdfreq_kick_in_freq.attr,				// ZZ: LCD Freq Scaling tuneable
     &lcdfreq_kick_in_cores.attr,				// ZZ: LCD Freq Scaling tuneable
 #endif
+    &debug_enable.attr,						// ff: added tuneable
     &dev_attr_version.attr,					// Yank: zzmoove version
     NULL
 };
@@ -2332,7 +2362,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		
 	}
 	
-	//pr_info("[zzmoove] sampling_rate: %d\n", dbs_tuners_ins.sampling_rate);
+	if (flg_debug)
+		pr_info("[zzmoove] sampling_rate: %d\n", dbs_tuners_ins.sampling_rate);
     
 	/*
 	 * ZZ: Frequency Limit: we try here at a verly early stage to limit freqencies above limit by setting the current target_freq to freq_limit.
