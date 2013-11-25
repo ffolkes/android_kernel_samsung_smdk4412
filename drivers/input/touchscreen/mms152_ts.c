@@ -285,8 +285,8 @@ static unsigned int lh_arc_end_x_min;
 static unsigned int lh_arc_end_x_max;
 
 static int wake_start = -1;
-static unsigned int swipe_x_start = 0;
-static unsigned int swipe_y_start = 0;
+static unsigned int swipe_x_start = 9999;
+static unsigned int swipe_y_start = 9999;
 static unsigned int x_lo;
 static unsigned int x_hi;
 
@@ -1832,6 +1832,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
                 input_report_abs(info->input_dev,
                                  ABS_MT_PALM, palm);
 				
+			} else {
+				
+				pr_info("[TSP/touch] IGNORED! x: %d, y: %d, fingerwidth: %d, touchpointwidth: %d, minor: %d, angle: %d, palm: %d\n", x, y, tmp[4], tmp[6], tmp[7], angle, palm);
+				
 			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			if (info->finger_state[id] == 0) {
@@ -1961,6 +1965,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
                                  ABS_MT_TOUCH_MAJOR, tmp[4]);
                 input_report_abs(info->input_dev,
                                  ABS_MT_PRESSURE, tmp[5]);
+				
+			} else {
+				
+				pr_info("[TSP/touch] IGNORED! x: %d, y: %d\n", x, y);
 				
 			}
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
@@ -5858,6 +5866,8 @@ static void mms_ts_early_suspend(struct early_suspend *h)
     flg_swipe_in_progress = false;
 	ctr_typingbooster = 0;
 	flg_ctr_typingbooster_cycles = 0;
+	swipe_x_start = 9999;
+	swipe_y_start = 9999;
     pr_info("[TSP/touch] cleared variables on sleep\n");
     
     cancel_delayed_work_sync(&touchwake_reset_longpressoff_work);
@@ -5892,6 +5902,8 @@ static void mms_ts_late_resume(struct early_suspend *h)
     wake_start = -1;
     touchwake_longpressoff_time_start_secs = -1;
     flg_touchkey_was_pressed = false;
+	swipe_x_start = 9999;
+	swipe_y_start = 9999;
     
     pr_info("[TSP/touch] set variables on wake\n");
     
