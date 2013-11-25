@@ -522,7 +522,13 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
         gesturebooster_dvfs_lock_on(0);
         bus_dvfs_lock_on(0);
         pr_info("[keys] boosters on\n");
-    }
+    } else if (state && button->code == KEY_POWER) {
+		pr_info("[keys] boosters not on because screen is on\n");
+	} else if (bdata->wakeup && !state) {
+		gesturebooster_dvfs_lock_on(0);
+        bus_dvfs_lock_on(0);
+        pr_info("[keys] boosters on 2\n");
+	}
     
     if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_persistent && sttg_touchwake_ignorepowerkey && button->code == KEY_POWER) {
         printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
@@ -532,7 +538,7 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	// mdnie negative effect toggle by gm + added nightmode effect and dual toggle by ff
 	// 4x moderately quick presses = negative toggle
 	// 3x superquick presses = nightmode (red) toggle
-	if (button->code == HOME_KEY_VAL) {
+	if (button->code == HOME_KEY_VAL && flg_screen_on) {
 		if (state) {
 			// process toggle on button down-state
 			
@@ -645,6 +651,11 @@ static irqreturn_t gpio_keys_isr(int irq, void *dev_id)
         printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
         return IRQ_HANDLED;
     }
+	
+	if (sttg_keys_ignorehomekeywake && button->code == HOME_KEY_VAL && !flg_screen_on) {
+		printk(KERN_DEBUG"[keys] ignoring home key press\n");
+        return IRQ_HANDLED;
+	}
 
 	BUG_ON(irq != gpio_to_irq(button->gpio));
 
