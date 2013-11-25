@@ -45,6 +45,7 @@ bool sttg_touchwake_persistent_wakelock = false;
 bool sttg_touchwake_ignoretkeys = true;
 bool sttg_touchwake_ignoregestures = false;
 bool sttg_touchwake_ignorepowerkey = false;
+bool sttg_keys_ignorehomekeywake = false;
 bool sttg_touchwake_force_timedout_tapwake = true;
 unsigned int sttg_touchwake_delay_afterpoweroff = 0;
 unsigned int sttg_touchwake_swipe_y_drift_tolerance = 60;
@@ -537,6 +538,29 @@ static ssize_t touchwake_ignore_powerkey_write(struct device * dev, struct devic
 	return size;
 }
 
+static ssize_t touchwake_ignore_homekeywake_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_keys_ignorehomekeywake);
+}
+
+static ssize_t touchwake_ignore_homekeywake_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data == 1) {
+		sttg_keys_ignorehomekeywake = true;
+		pr_info("TOUCHWAKE ignore_homekeywake has been set\n");
+	} else {
+		sttg_keys_ignorehomekeywake = false;
+		pr_info("TOUCHWAKE ignore_homekeywake has been unset\n");
+	}
+	
+	return size;
+}
+
 static ssize_t touchwake_delay_afterpoweroff_read(struct device * dev, struct device_attribute * attr, char * buf)
 {
 	return sprintf(buf, "%u\n", sttg_touchwake_delay_afterpoweroff / 1000);
@@ -794,6 +818,7 @@ static DEVICE_ATTR(enable_persistent_wakelock, S_IRUGO | S_IWUGO, touchwake_enab
 static DEVICE_ATTR(ignore_tkeys, S_IRUGO | S_IWUGO, touchwake_ignore_tkeys_read, touchwake_ignore_tkeys_write);
 static DEVICE_ATTR(ignore_gestures, S_IRUGO | S_IWUGO, touchwake_ignore_gestures_read, touchwake_ignore_gestures_write);
 static DEVICE_ATTR(ignore_powerkey, S_IRUGO | S_IWUGO, touchwake_ignore_powerkey_read, touchwake_ignore_powerkey_write);
+static DEVICE_ATTR(ignore_homekeywake, S_IRUGO | S_IWUGO, touchwake_ignore_homekeywake_read, touchwake_ignore_homekeywake_write);
 static DEVICE_ATTR(delay_afterpoweroff, S_IRUGO | S_IWUGO, touchwake_delay_afterpoweroff_read, touchwake_delay_afterpoweroff_write);
 static DEVICE_ATTR(force_timedout_tapwake, S_IRUGO | S_IWUGO, touchwake_force_timedout_tapwake_read, touchwake_force_timedout_tapwake_write);
 static DEVICE_ATTR(swipe_y_drift_tolerance, S_IRUGO | S_IWUGO, touchwake_swipe_y_drift_tolerance_read, touchwake_swipe_y_drift_tolerance_write);
@@ -823,6 +848,7 @@ static struct attribute *touchwake_notification_attributes[] =
     &dev_attr_ignore_tkeys.attr,
     &dev_attr_ignore_gestures.attr,
     &dev_attr_ignore_powerkey.attr,
+	&dev_attr_ignore_homekeywake.attr,
     &dev_attr_delay_afterpoweroff.attr,
     &dev_attr_force_timedout_tapwake.attr,
     &dev_attr_swipe_y_drift_tolerance.attr,
