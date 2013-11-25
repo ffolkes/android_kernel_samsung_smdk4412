@@ -36,6 +36,7 @@ extern struct input_dev * powerkey_device;
 
 extern bool flg_touchwake_active;
 extern bool flg_screen_on;
+extern bool sttg_keys_ignorehomekeywake;
 extern bool touchwake_enabled;
 extern unsigned int touchoff_delay;
 extern bool sttg_touchwake_swipe_only;
