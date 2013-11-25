@@ -8,6 +8,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+extern unsigned int mali_utilization_timeout;
+
 /**
  * @file mali_osk.h
  * Defines the OS abstraction layer for the kernel device driver (OSK)

@@ -2509,7 +2509,7 @@ static ssize_t mali_s1_up_threshold_store(struct device *dev,
 ---------------------------
 */
 
-static ssize_t mali_time_in_state_show(struct device *dev,
+/*static ssize_t mali_time_in_state_show(struct device *dev,
 									struct device_attribute *attr, char *buf)
 {
 	int i, len = 0;
@@ -2534,7 +2534,7 @@ static ssize_t mali_time_in_state_store(struct device *dev,
 	set_mali_time_in_state(data);
 	
 	return size;
-}
+}*/
 
 static ssize_t mali_utilization_timeout_show(struct device *dev,
 									struct device_attribute *attr, char *buf)
@@ -2639,7 +2639,6 @@ static DEVICE_ATTR(mali_s2_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_freq_show,
 static DEVICE_ATTR(mali_s1_volt, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_volt_show, mali_s1_volt_store);
 static DEVICE_ATTR(mali_s1_freq, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_freq_show, mali_s1_freq_store);
 
-//static DEVICE_ATTR(mali_s5_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_up_threshold_show, mali_s5_up_threshold_store);
 static DEVICE_ATTR(mali_s5_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s5_down_threshold_show, mali_s5_down_threshold_store);
 static DEVICE_ATTR(mali_s4_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_up_threshold_show, mali_s4_up_threshold_store);
 static DEVICE_ATTR(mali_s4_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s4_down_threshold_show, mali_s4_down_threshold_store);
@@ -2648,9 +2647,8 @@ static DEVICE_ATTR(mali_s3_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s3_
 static DEVICE_ATTR(mali_s2_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_up_threshold_show, mali_s2_up_threshold_store);
 static DEVICE_ATTR(mali_s2_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s2_down_threshold_show, mali_s2_down_threshold_store);
 static DEVICE_ATTR(mali_s1_up_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_up_threshold_show, mali_s1_up_threshold_store);
-//static DEVICE_ATTR(mali_s1_down_threshold, S_IRUGO | S_IWUSR | S_IWGRP, mali_s1_down_threshold_show, mali_s1_down_threshold_store);
 
-static DEVICE_ATTR(mali_time_in_state, S_IRUGO | S_IWUSR | S_IWGRP, mali_time_in_state_show, mali_time_in_state_store);
+/*static DEVICE_ATTR(mali_time_in_state, S_IRUGO | S_IWUSR | S_IWGRP, mali_time_in_state_show, mali_time_in_state_store);*/
 static DEVICE_ATTR(mali_utilization_timeout, S_IRUGO | S_IWUSR | S_IWGRP, mali_utilization_timeout_show, mali_utilization_timeout_store);
 
 
@@ -2709,7 +2707,6 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_mali_s2_freq.attr,
 	&dev_attr_mali_s1_volt.attr,
 	&dev_attr_mali_s1_freq.attr,
-//	&dev_attr_mali_s5_up_threshold.attr,
 	&dev_attr_mali_s5_down_threshold.attr,
 	&dev_attr_mali_s4_up_threshold.attr,
 	&dev_attr_mali_s4_down_threshold.attr,
@@ -2718,8 +2715,7 @@ static struct attribute *touchkey_attributes[] = {
 	&dev_attr_mali_s2_up_threshold.attr,
 	&dev_attr_mali_s2_down_threshold.attr,
 	&dev_attr_mali_s1_up_threshold.attr,
-//	&dev_attr_mali_s1_down_threshold.attr,
-	&dev_attr_mali_time_in_state.attr,
+	//&dev_attr_mali_time_in_state.attr,
 	&dev_attr_mali_utilization_timeout.attr,
 	NULL,
 };
