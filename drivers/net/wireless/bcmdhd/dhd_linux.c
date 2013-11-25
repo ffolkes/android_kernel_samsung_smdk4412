@@ -377,6 +377,18 @@ uint dhd_download_fw_on_driverload = TRUE;
 char firmware_path[MOD_PARAM_PATHLEN];
 char nvram_path[MOD_PARAM_PATHLEN];
 
+int dtim_awake = 0;
+module_param(dtim_awake, int, 0660);
+
+int dtim_suspended = 0;
+module_param(dtim_suspended, int, 0660);
+
+int wifi_pm_awake = PM_FAST;
+module_param(wifi_pm_awake, int, 0660);
+
+int wifi_pm_suspended = PM_MAX;
+module_param(wifi_pm_suspended, int, 0660);
+
 int op_mode = 0;
 int disable_proptx = 0;
 module_param(op_mode, int, 0644);
@@ -747,18 +759,13 @@ void dhd_enable_packet_filter(int value, dhd_pub_t *dhd)
 #endif /* PKT_FILTER_SUPPORT */
 }
 
-bool wifi_pm = true;
-module_param(wifi_pm, bool, 0755);
-
 static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 {
 
-#ifndef SUPPORT_PM2_ONLY
-	int power_mode = PM_MAX;
-#endif /* SUPPORT_PM2_ONLY */
+	int power_mode = wifi_pm_awake;
 	/* wl_pkt_filter_enable_t	enable_parm; */
 	char iovbuf[32];
-	int bcn_li_dtim = 0; /* Default bcn_li_dtim in resume mode is 0 */
+	int bcn_li_dtim = dtim_awake; /* Default bcn_li_dtim in resume mode is 0 but honor the override instead */
 #ifndef ENABLE_FW_ROAM_SUSPEND
 	uint roamvar = 1;
 #endif /* ENABLE_FW_ROAM_SUSPEND */
@@ -773,6 +780,8 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 
 	if (!dhd)
 		return -ENODEV;
+	
+	pr_info("[dhd] dhd_set_suspend\n");
 
 	DHD_TRACE(("%s: enter, value = %d in_suspend=%d\n",
 		__FUNCTION__, value, dhd->in_suspend));
@@ -783,13 +792,14 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 #ifdef PKT_FILTER_SUPPORT
 				dhd->early_suspended = 1;
 #endif
+				power_mode = wifi_pm_suspended;
+			
 				/* Kernel suspended */
 				DHD_ERROR(("%s: force extra Suspend setting \n", __FUNCTION__));
 
-#ifndef SUPPORT_PM2_ONLY
+				pr_info("[dhd] suspend power_mode: %i\n", power_mode);
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
-#endif /* SUPPORT_PM2_ONLY */
 
 				/* Enable packet filter, only allow unicast packet to send up */
 				dhd_enable_packet_filter(1, dhd);
@@ -809,7 +819,9 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				 * each third DTIM for better power savings.  Note that
 				 * one side effect is a chance to miss BC/MC packet.
 				 */
-				bcn_li_dtim = dhd_get_suspend_bcn_li_dtim(dhd);
+				//bcn_li_dtim = dhd_get_suspend_bcn_li_dtim(dhd);	// ff: use user-definable DTIM
+				bcn_li_dtim = dtim_suspended;				// ff: use user-definable DTIM
+				pr_info("[dhd] suspend bcn_li_dtim: %i\n", bcn_li_dtim);
 				bcm_mkiovar("bcn_li_dtim", (char *)&bcn_li_dtim,
 					4, iovbuf, sizeof(iovbuf));
 				if (dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf),
@@ -835,14 +847,9 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				/* Kernel resumed  */
 				DHD_ERROR(("%s: Remove extra suspend setting \n", __FUNCTION__));
 
-#ifndef SUPPORT_PM2_ONLY
-        		   if (wifi_pm)
-		          	power_mode = PM_FAST;
-		           else
-		         	power_mode = PM_OFF;
+				pr_info("[dhd] resume power_mode: %i\n", power_mode);
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode,
 				                 sizeof(power_mode), TRUE, 0);
-#endif /* SUPPORT_PM2_ONLY */
 #ifdef PKT_FILTER_SUPPORT
 				/* disable pkt filter */
 				dhd_enable_packet_filter(0, dhd);
@@ -861,6 +868,8 @@ static int dhd_set_suspend(int value, dhd_pub_t *dhd)
 				/* restore pre-suspend setting for dtim_skip */
 				bcm_mkiovar("bcn_li_dtim", (char *)&bcn_li_dtim,
 					4, iovbuf, sizeof(iovbuf));
+				
+				pr_info("[dhd] resume bcn_li_dtim: %i\n", bcn_li_dtim);
 
 				dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 #ifndef ENABLE_FW_ROAM_SUSPEND
@@ -889,6 +898,7 @@ static int dhd_suspend_resume_helper(struct dhd_info *dhd, int val, int force)
 
 	DHD_OS_WAKE_LOCK(dhdp);
 	/* Set flag when early suspend was called */
+	pr_info("[dhd] dhd_suspend_resume_helper\n");
 	dhdp->in_suspend = val;
 	if ((force || !dhdp->suspend_disable_flag) &&
 		dhd_support_sta_mode(dhdp))
@@ -4036,10 +4046,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	dhd->suspend_bcn_li_dtim = CUSTOM_SUSPEND_BCN_LI_DTIM;
 	DHD_TRACE(("Enter %s\n", __FUNCTION__));
 	dhd->op_mode = 0;
-  	if (wifi_pm)
-	   power_mode = PM_FAST;
-	else
-	   power_mode = PM_OFF;
+	power_mode = wifi_pm_awake;
 #ifdef GET_CUSTOM_MAC_ENABLE
 	ret = dhd_custom_get_mac_address(ea_addr.octet);
 	if (!ret) {
@@ -4239,6 +4246,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	sec_control_pm(dhd, &power_mode);
 #else
 	/* Set PowerSave mode */
+	pr_info("[dhd] dhd_set_multicast_list\n");
 	dhd_wl_ioctl_cmd(dhd, WLC_SET_PM, (char *)&power_mode, sizeof(power_mode), TRUE, 0);
 #endif /* CUSTOMER_HW4 && CONFIG_CONTROL_PM */
 
@@ -5771,6 +5779,8 @@ int net_os_set_suspend(struct net_device *dev, int val, int force)
 int net_os_set_suspend_bcn_li_dtim(struct net_device *dev, int val)
 {
 	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
+	
+	pr_info("[dhd] net_os_set_suspend_bcn_li_dtim: %i\n", val);
 
 	if (dhd)
 		dhd->pub.suspend_bcn_li_dtim = val;
@@ -6128,10 +6138,10 @@ int dhd_os_wake_lock_timeout(dhd_pub_t *pub)
 #ifdef CONFIG_HAS_WAKELOCK
 		if (dhd->wakelock_rx_timeout_enable)
 			wake_lock_timeout(dhd->wl_rxwake,
-				msecs_to_jiffies(dhd->wakelock_rx_timeout_enable));
+				msecs_to_jiffies(dhd->wakelock_rx_timeout_enable)/4);
 		if (dhd->wakelock_ctrl_timeout_enable)
 			wake_lock_timeout(dhd->wl_ctrlwake,
-				msecs_to_jiffies(dhd->wakelock_ctrl_timeout_enable));
+				msecs_to_jiffies(dhd->wakelock_ctrl_timeout_enable)/4);
 #endif
 		dhd->wakelock_rx_timeout_enable = 0;
 		dhd->wakelock_ctrl_timeout_enable = 0;
