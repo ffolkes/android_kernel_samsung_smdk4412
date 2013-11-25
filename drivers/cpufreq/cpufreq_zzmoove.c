@@ -341,6 +341,9 @@
 #define DEF_HOTPLUG_MAX_LIMIT               (0)		// ff: default for hotplug_max_limit. the number of cores we allow to be online (0 = disabled)
 #define DEF_HOTPLUG_LOCK               (0)		// ff: default for hotplug_lock. the number of cores we require to be online (0 = disabled)
 #define DEF_HOTPLUG_MIN_LIMIT               (0)		// ff: default for hotplug_lock. the number of cores we require to be online (0 = disabled)
+#define DEF_ADD_CORES_FIRST_FREQ		(0)		// ff: default for add_cores_first_freq. this threshold will force cores online before scaling frequency (0 = disabled)
+#define DEF_ADD_CORES_FIRST_SKIP_CYCLES	(1)			// ff: default for add_cores_first_skip_cycles. how long to wait after we bring a core online.
+#define DEF_ADD_CORES_FIRST_SKIP_DOWN_CYCLES	(3)	// ff: default for add_cores_first_skip_down_cycles. how long to force the core online.
 
 // ZZ: LCDFreq Scaling default values
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
@@ -386,6 +389,8 @@ static int scaling_mode_down;				// ZZ: fast scaling down mode holding down valu
 static unsigned int hotplug_idle_flag = 0;
 static unsigned int ctr_hotplug_down_block_cycles = 0;
 static unsigned int ctr_hotplug_up_block_cycles = 0;
+static int flg_ctr_skip_samples = -1;
+static int flg_ctr_skip_down_samples = 0;
 
 // ZZ: current load & freq. for hotplugging work
 static int cur_load = 0;
@@ -453,6 +458,14 @@ static unsigned int disable_hotplug_asleep;		// ZZ: for setting hotplug on/off o
 static bool flg_suspend = false;
 static bool flg_responsiveness = false;
 static bool flg_debug = false;
+static int sttg_stats_hotplug_up_window = 10;
+static int ctr_stats_hotplug_up_window = 0;
+static unsigned int ctr_stats_hotplug_up[3];
+static unsigned long ctr_stats_hotplug_online[3];
+static unsigned long ctr_stats_hotplug_offline[3];
+static unsigned long time_stats_hotplug_online[3];
+static unsigned long time_stats_hotplug_offline[3];
+static unsigned int ctr_stats_hotplug_up_avg[3];
 
 // ZZ: midnight and zzmoove momentum defaults
 #define LATENCY_MULTIPLIER			(1000)
@@ -611,6 +624,9 @@ static struct dbs_tuners {
 	unsigned int responsiveness_freq;			// ff: frequency below which we use a lower up_threshold
 	unsigned int responsiveness_up_threshold;	// ff: up_threshold we use when below responsiveness_freq
 	unsigned int responsiveness_sampling_rate;	// ff: sampling_rate we use when below responsiveness_freq
+	unsigned int add_cores_first_freq;				// ff: add_cores_first_freq
+	unsigned int add_cores_first_skip_cycles;	// ff: add_cores_first_skip_cycles
+	unsigned int add_cores_first_skip_down_cycles;	// ff: add_cores_first_skip_down_cycles
 	unsigned int debug_enable;					// ff: debug mode
     #ifdef ENABLE_LEGACY_MODE
 	unsigned int legacy_mode;			// ZZ: Legacy Mode
@@ -699,6 +715,9 @@ static struct dbs_tuners {
 			.responsiveness_freq = DEF_RESPONSIVENESS_FREQ, // ff: frequency below which we use a lower up_threshold
 			.responsiveness_up_threshold = DEF_RESPONSIVENESS_UP_THRESHOLD,		// ff: up_threshold we use when below responsiveness_freq
 			.responsiveness_sampling_rate = DEF_RESPONSIVENESS_SAMPLING_RATE,		// ff: sampling rate we use when below responsiveness_freq
+			.add_cores_first_freq = DEF_ADD_CORES_FIRST_FREQ,					// ff: add_cores_first_freq
+			.add_cores_first_skip_cycles = DEF_ADD_CORES_FIRST_SKIP_CYCLES,		// ff: add_cores_first_skip_cycles
+			.add_cores_first_skip_down_cycles = DEF_ADD_CORES_FIRST_SKIP_DOWN_CYCLES,		// ff: add_cores_first_skip_down_cycles
 			.debug_enable = DEF_DEBUG_ENABLE,
             #ifdef ENABLE_LEGACY_MODE
             .legacy_mode = false,								// ZZ: Legacy Mode default off
@@ -851,26 +870,31 @@ static int mn_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 		if(unlikely(curfreq == table[i].frequency)) {
             
 			// Yank : We found where we currently are (i)
-			if(updown == SCALE_FREQ_UP)
+			if(updown == SCALE_FREQ_UP) {
+				
+				if (flg_debug)
+					pr_info("[zzmoove] UP min(%d MHz [%d], %d). freq_table_size: %d\n", table[max_scaling_freq_soft].frequency, max_scaling_freq_soft, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up  ) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size);
                 
 				return	min(	// Yank : Scale up, but don't go above softlimit
                             table[max_scaling_freq_soft                                                                                 ].frequency,
                             table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up  ) * freq_table_order, 0, freq_table_size)].frequency
                             );
             
-			else
+			} else {
                 
+				if (flg_debug)
+					pr_info("[zzmoove] DOWN max(%d MHz [%d] (hardcoded to 21), %d). freq_table_size: %d\n", table[min_scaling_freq].frequency, min_scaling_freq, table[validate_min_max((i + 1 + scaling_mode_down) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size);
+				
 				return	max(	// Yank : Scale down, but don't go below min. freq.
-                            table[min_scaling_freq                                                                                      ].frequency,
-                            table[validate_min_max((i + 1                   + scaling_mode_down) * freq_table_order, 0, freq_table_size)].frequency
-                            );
-            
+                            table[21].frequency,
+                            table[validate_min_max((i + 1 + scaling_mode_down) * freq_table_order, 0, freq_table_size)].frequency);
+				
+			}
 			return (curfreq);	// Yank : We should never get here...
             
 		}
         
 	}
-    
 	return (curfreq); // not found
     
 }
@@ -1027,6 +1051,9 @@ show_one(fastdown_up_threshold, fastdown_up_threshold); // ff: up_threshold when
 show_one(responsiveness_freq, responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 show_one(responsiveness_up_threshold, responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 show_one(responsiveness_sampling_rate, responsiveness_sampling_rate);		// ff: sampling rate we use when below responsiveness_freq
+show_one(add_cores_first_freq, add_cores_first_freq);				// ff: add_cores_first_freq
+show_one(add_cores_first_skip_cycles, add_cores_first_skip_cycles);		// ff: add_cores_first_skip_cycles
+show_one(add_cores_first_skip_down_cycles, add_cores_first_skip_down_cycles);	// ff: add_cores_first_skip_down_cycles
 show_one(debug_enable, debug_enable);						// ff: added debug mode
 #ifdef ENABLE_LEGACY_MODE
 show_one(legacy_mode, legacy_mode);						// ZZ: Legacy Mode switch
@@ -1192,8 +1219,7 @@ ret = sscanf(buf, "%u", &input);							\
 \
 if (hotplug_thresholds_tuneable[core] == 0) {						\
 \
-if (ret != 1 || input > 100								\
-|| (input <= dbs_tuners_ins.down_threshold_hotplug##name && input != 0))		\
+if (ret != 1 || input > 100)		\
 return -EINVAL;									\
 \
 dbs_tuners_ins.up_threshold_hotplug##name = input;					\
@@ -1219,8 +1245,7 @@ ret = sscanf(buf, "%u", &input);							\
 \
 if (hotplug_thresholds_tuneable[core] == 0) {					\
 \
-if (ret != 1 || input < 11 || input > 100						\
-|| input >= dbs_tuners_ins.up_threshold_hotplug##name)					\
+if (ret != 1 || input < 11 || input > 100)					\
 return -EINVAL;									\
 dbs_tuners_ins.down_threshold_hotplug##name = input;				\
 hotplug_thresholds[1][core] = input;						\
@@ -2015,6 +2040,64 @@ static ssize_t store_responsiveness_sampling_rate(struct kobject *a, struct attr
 	return count;
 }
 
+// ff: added tuneable add_cores_first_freq -> possible values: 0 to disable, any frequency above 0 to enable, if not set default is 0
+static ssize_t store_add_cores_first_freq(struct kobject *a, struct attribute *b,
+								  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+    
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	if (input > policy->max)
+		input = policy->max;
+	
+	if (input < policy->min)
+		input = policy->min;
+	
+	dbs_tuners_ins.add_cores_first_freq = input;
+    
+	return count;
+}
+
+// ff: added tuneable add_cores_first_skip_cycles -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
+static ssize_t store_add_cores_first_skip_cycles(struct kobject *a, struct attribute *b,
+									 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+    
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	dbs_tuners_ins.add_cores_first_skip_cycles = input;
+    
+	return count;
+}
+
+// ff: added tuneable add_cores_first_skip_down_cycles -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
+static ssize_t store_add_cores_first_skip_down_cycles(struct kobject *a, struct attribute *b,
+												 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+    
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	dbs_tuners_ins.add_cores_first_skip_down_cycles = input;
+    
+	return count;
+}
+
 // ff: added tuneable debug_enable -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
 static ssize_t store_debug_enable(struct kobject *a, struct attribute *b,
 											 const char *buf, size_t count)
@@ -2058,10 +2141,6 @@ hotplug_thresholds_freq[0][core] = input;					\
 return count;									\
 }											\
 \
-if (input <= dbs_tuners_ins.down_threshold_hotplug_freq##name				\
-&& dbs_tuners_ins.down_threshold_hotplug_freq##name != 0)			\
-return -EINVAL;									\
-\
 table = cpufreq_frequency_get_table(0);							\
 \
 if (!table) {										\
@@ -2098,10 +2177,6 @@ dbs_tuners_ins.down_threshold_hotplug_freq##name = input;			\
 hotplug_thresholds_freq[1][core] = input;					\
 return count;									\
 }											\
-\
-if (input >= dbs_tuners_ins.up_threshold_hotplug_freq##name				\
-&& dbs_tuners_ins.up_threshold_hotplug_freq##name != 0)				\
-return -EINVAL;									\
 \
 table = cpufreq_frequency_get_table(0);							\
 \
@@ -2211,6 +2286,9 @@ define_one_global_rw(fastdown_up_threshold);    // ff: up_threshold when fastdow
 define_one_global_rw(responsiveness_freq);		// ff: frequency below which we use a lower up_threshold
 define_one_global_rw(responsiveness_up_threshold);		// ff: up_threshold we use when below responsiveness_freq
 define_one_global_rw(responsiveness_sampling_rate);		// ff: sampling_rate we use when below responsiveness_freq
+define_one_global_rw(add_cores_first_freq);			// ff: add_cores_first_freq
+define_one_global_rw(add_cores_first_skip_cycles);		// ff: add_cores_first_skip_cycles
+define_one_global_rw(add_cores_first_skip_down_cycles);	// ff: add_cores_first_skip_cycles
 define_one_global_rw(debug_enable);				// ff: debug mode
 #ifdef ENABLE_LEGACY_MODE
 define_one_global_rw(legacy_mode);				// ZZ: Legacy Mode switch
@@ -2230,7 +2308,24 @@ static ssize_t show_version(struct device *dev, struct device_attribute *attr, c
     
 }
 
+// ff: added tunable
+static ssize_t show_stats_hotplug_tis(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	int i;
+	int len = 0;
+	
+	for (i = 1; i < num_possible_cpus(); i++) {
+	
+		len += sprintf(buf + len, "%d\t%d\n", ctr_stats_hotplug_up_avg[i], i);
+		
+	}
+    
+    return len;
+    
+}
+
 static DEVICE_ATTR(version, S_IRUGO , show_version, NULL);
+static DEVICE_ATTR(stats_hotplug_tis, S_IRUGO , show_stats_hotplug_tis, NULL);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -2272,6 +2367,9 @@ static struct attribute *dbs_attributes[] = {
     &hotplug_max_limit.attr,					// ff: added tuneable
 	&hotplug_min_limit.attr,					// ff: added tuneable
 	&hotplug_lock.attr,							// ff: added tuneable
+	&add_cores_first_freq.attr,					// ff: added tuneable
+	&add_cores_first_skip_cycles.attr,			// ff: added tuneable
+	&add_cores_first_skip_down_cycles.attr,		// ff: added tuneable
 	&up_threshold_hotplug1.attr,				// ZZ: added tuneable
 	&up_threshold_hotplug_freq1.attr,			// Yank: added tuneable
     &down_threshold_hotplug1.attr,				// ZZ: added tuneable
@@ -2313,6 +2411,7 @@ static struct attribute *dbs_attributes[] = {
 #endif
     &debug_enable.attr,						// ff: added tuneable
     &dev_attr_version.attr,					// Yank: zzmoove version
+	&dev_attr_stats_hotplug_tis.attr,
     NULL
 };
 
@@ -2332,10 +2431,53 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int j;
 	unsigned int up_threshold;
 	unsigned int i;
+	unsigned long total_time;
     
 	policy = this_dbs_info->cur_policy;
     
     cur_freq = policy->cur;  // Yank: store current frequency for hotplugging frequency thresholds
+	
+	/*for (i = 1; i < num_possible_cpus(); i++) {
+		if (cpu_online(i)) {
+			ctr_stats_hotplug_online[i]++;
+			time_stats_hotplug_online[i] += dbs_tuners_ins.sampling_rate / 10000;
+		} else {
+			ctr_stats_hotplug_offline[i]++;
+			time_stats_hotplug_offline[i] += dbs_tuners_ins.sampling_rate / 10000;
+		}
+	}
+	
+	total_time = time_stats_hotplug_online[1] + time_stats_hotplug_offline[1];
+	
+	if (sttg_stats_hotplug_up_window && total_time >= sttg_stats_hotplug_up_window * 100) {
+		
+		for (i = 1; i < num_possible_cpus(); i++) {
+			
+			//if (ctr_stats_hotplug_up[i] > 0) {
+			 //pr_info("[zzmoove] ctr_stats_hotplug_up[%d]: cpu%d was called %d/%d)\n", i, i, ctr_stats_hotplug_up[i], sttg_stats_hotplug_up_window);
+			 //}
+			
+			pr_info("[zzmoove] cpu%d was up for %lu/%lu samples %3lu%% (online %lu/%lu seconds) %d%d%d\n", i, ctr_stats_hotplug_online[i], ctr_stats_hotplug_online[i] + ctr_stats_hotplug_offline[i], (time_stats_hotplug_online[i] * 100) / total_time, time_stats_hotplug_online[i] / 100, total_time / 100, i, i, i);
+			
+			ctr_stats_hotplug_online[i] = 0;
+			ctr_stats_hotplug_offline[i] = 0;
+			time_stats_hotplug_online[i] = 0;
+			time_stats_hotplug_offline[i] = 0;
+			ctr_stats_hotplug_up[i] = 0;
+		}
+		
+		pr_info("[zzmoove] ------------------- up_threshold: %d, sampling_rate: %d -----------------\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.sampling_rate);
+		
+	}*/
+	
+	if (flg_ctr_skip_samples >= 0) {
+		if (flg_ctr_skip_samples > 0) {
+			flg_ctr_skip_samples--;
+			if (flg_debug)
+				pr_info("[zzmoove] SKIP #%d\n", flg_ctr_skip_samples);
+			return;
+		}
+	}
 	
 	// ff: check to see if we need to apply a faster sampling_rate.
 	
@@ -2509,18 +2651,21 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				for (i = 1; i < num_possible_cpus(); i++) {
 					if (!cpu_online(i) && i < sttg_typingbooster_mincores) {
 						cpu_up(i);
-						pr_info("[zzmoove/typingbooster] CPU%d forced online\n", i);
+						if (flg_debug)
+							pr_info("[zzmoove/typingbooster] CPU%d forced online\n", i);
 					}
 				}
 			}
 			dbs_tuners_ins.hotplug_min_limit = sttg_typingbooster_mincores;
-			pr_info("[zzmoove/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
+			if (flg_debug)
+				pr_info("[zzmoove/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
 		}
 		
 		// decrease the up_threshold, if requested.
 		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < dbs_tuners_ins.up_threshold) {
 			dbs_tuners_ins.up_threshold = sttg_typingbooster_upthreshold;
-			pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+			if (flg_debug)
+				pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
 		}
 		
 		flg_ctr_typingbooster_cycles--;
@@ -2529,13 +2674,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		
 		if (dbs_tuners_ins.hotplug_min_limit != dbs_tuners_ins.hotplug_min_limit_saved){
 			// restore original hotplug_min.
-			pr_info("[zzmoove/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
+			if (flg_debug)
+				pr_info("[zzmoove/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
 			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved;
 		}
 		
 		if (dbs_tuners_ins.up_threshold == sttg_typingbooster_upthreshold && dbs_tuners_ins.up_threshold != dbs_tuners_ins.up_threshold_saved) {
 			// restore original up_threshold.
-			pr_info("[zzmoove/typingbooster] typingbooster off. up_threshold resetting from %d back to %d\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.up_threshold_saved);
+			if (flg_debug)
+				pr_info("[zzmoove/typingbooster] typingbooster off. up_threshold resetting from %d back to %d\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.up_threshold_saved);
 			dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved;
 		}
 		
@@ -2548,7 +2695,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	if (((!dbs_tuners_ins.disable_hotplug && skip_hotplug_flag == 0 && num_online_cpus() != num_possible_cpus() && (policy->cur != policy->min || policy->min == policy->max)) || hotplug_idle_flag == 1)
         && (!dbs_tuners_ins.multicore_engage_freq || policy->cur >= dbs_tuners_ins.multicore_engage_freq)
 		&& (!dbs_tuners_ins.hotplug_max_limit || dbs_tuners_ins.hotplug_max_limit > 1)
-		&& (!dbs_tuners_ins.hotplug_lock || num_online_cpus() > dbs_tuners_ins.hotplug_lock)) {
+		&& (!dbs_tuners_ins.hotplug_lock || num_online_cpus() < dbs_tuners_ins.hotplug_lock)) {
 	    if (ctr_hotplug_up_block_cycles > dbs_tuners_ins.hotplug_up_block_cycles || dbs_tuners_ins.hotplug_up_block_cycles == 0) {
 		    schedule_work_on(0, &hotplug_online_work);
 			//pr_info("[zzmoove] online_work\n");
@@ -2595,9 +2742,17 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
             /* ZZ: check if requested freq is higher than max freq if so bring it down to max freq (DerTeufel1980) */
             if (unlikely(this_dbs_info->requested_freq > policy->max))
                 this_dbs_info->requested_freq = policy->max;
+			
+			if (flg_debug)
+				pr_info("[zzmoove] UP -> %d\n", this_dbs_info->requested_freq);
             
             __cpufreq_driver_target(policy, this_dbs_info->requested_freq,
                                     CPUFREQ_RELATION_H);
+			
+			if (flg_ctr_skip_samples == 0) {
+				flg_ctr_skip_samples = -1;
+				pr_info("[zzmoove] UPANYWAY -> %d\n", this_dbs_info->requested_freq);
+			}
             
 		    /* ZZ: Sampling down momentum - calculate momentum and update sampling down factor */
 		    if (dbs_tuners_ins.sampling_down_max_mom != 0 && this_dbs_info->momentum_adder < dbs_tuners_ins.sampling_down_mom_sens) {
@@ -2625,9 +2780,17 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		    /* ZZ: check if requested freq is higher than max freq if so bring it down to max freq (DerTeufel1980) */
 		    if (unlikely(this_dbs_info->requested_freq > policy->max))
                 this_dbs_info->requested_freq = policy->max;
+			
+			if (flg_debug)
+				pr_info("[zzmoove] UP2 -> %d\n", this_dbs_info->requested_freq);
             
 		    __cpufreq_driver_target(policy, this_dbs_info->requested_freq,
                                     CPUFREQ_RELATION_H);
+			
+			if (flg_ctr_skip_samples == 0) {
+				flg_ctr_skip_samples = -1;
+				pr_info("[zzmoove] UP2ANYWAY -> %d\n", this_dbs_info->requested_freq);
+			}
             
 		    /* ZZ: Sampling down momentum - calculate momentum and update sampling down factor */
 		    if (dbs_tuners_ins.sampling_down_max_mom != 0 && this_dbs_info->momentum_adder < dbs_tuners_ins.sampling_down_mom_sens) {
@@ -2649,9 +2812,58 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	    /* ZZ: check if requested freq is higher than max freq if so bring it down to max freq (DerTeufel1980) */
 	    if (unlikely(this_dbs_info->requested_freq > policy->max))
             this_dbs_info->requested_freq = policy->max;
+		
+		if (!flg_suspend
+			&& dbs_tuners_ins.add_cores_first_freq
+			&& this_dbs_info->requested_freq > dbs_tuners_ins.add_cores_first_freq
+			&& policy->cur >= dbs_tuners_ins.add_cores_first_freq
+			&& num_online_cpus() < num_possible_cpus()) {
+			
+			// bring a core online instead of increasing the frequency.
+			
+			for (i = 1; i < num_possible_cpus(); i++) {
+				if (!cpu_online(i)) {
+					// bring another core online.
+					cpu_up(i);
+					
+					// skip some samples.
+					flg_ctr_skip_samples = dbs_tuners_ins.add_cores_first_skip_cycles;
+					
+					// skip down hotplug-down samples.
+					if (dbs_tuners_ins.add_cores_first_skip_down_cycles > 0) {
+						flg_ctr_skip_down_samples = dbs_tuners_ins.add_cores_first_skip_down_cycles;
+					}
+					
+					pr_info("[zzmoove] COREUP -> %d instead of %d -> %d MHz\n", i, policy->cur, this_dbs_info->requested_freq);
+					return;
+				}
+			}
+			
+		} else {
+			
+			// all cores are online or add_cores_first_freq is disabled, so increase frequency.
+			
+			if (!flg_suspend
+				&& dbs_tuners_ins.add_cores_first_freq
+				&& this_dbs_info->requested_freq > dbs_tuners_ins.add_cores_first_freq
+				&& policy->cur < dbs_tuners_ins.add_cores_first_freq) {
+				
+				this_dbs_info->requested_freq = dbs_tuners_ins.add_cores_first_freq;
+				
+			}
+		
+			if (flg_debug)
+				pr_info("[zzmoove] UP3 -> %d\n", this_dbs_info->requested_freq);
         
-	    __cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-                                CPUFREQ_RELATION_H);
+			__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
+									CPUFREQ_RELATION_H);
+			
+			if (flg_ctr_skip_samples == 0) {
+				flg_ctr_skip_samples = -1;
+				pr_info("[zzmoove] UP3ANYWAY -> %d\n", this_dbs_info->requested_freq);
+			}
+			
+		}
         
 	    /* ZZ: Sampling down momentum - calculate momentum and update sampling down factor */
 	    if (dbs_tuners_ins.sampling_down_max_mom != 0 && this_dbs_info->momentum_adder < dbs_tuners_ins.sampling_down_mom_sens) {
@@ -2741,11 +2953,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
     
 	// ZZ: added block cycles to be able slow down hotplugging
 	if (!dbs_tuners_ins.disable_hotplug && skip_hotplug_flag == 0 && num_online_cpus() != 1 && hotplug_idle_flag == 0) {
-	    if (ctr_hotplug_down_block_cycles > dbs_tuners_ins.hotplug_down_block_cycles || dbs_tuners_ins.hotplug_down_block_cycles == 0) {
+	    if (flg_ctr_skip_down_samples <= 0 && (ctr_hotplug_down_block_cycles > dbs_tuners_ins.hotplug_down_block_cycles || dbs_tuners_ins.hotplug_down_block_cycles == 0)) {
             schedule_work_on(0, &hotplug_offline_work);
             if (dbs_tuners_ins.hotplug_down_block_cycles != 0)
                 ctr_hotplug_down_block_cycles = 0;
-	    }
+	    } else if (flg_ctr_skip_down_samples > 0) {
+			flg_ctr_skip_down_samples--;
+			if (flg_debug)
+				pr_info("[zzmoove] SKIP hotplug_offline #%d\n", flg_ctr_skip_down_samples);
+		}
         if (dbs_tuners_ins.hotplug_down_block_cycles != 0)
             ctr_hotplug_down_block_cycles++;
 	}
@@ -2825,6 +3041,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
                 }
             }
 #endif
+			
+			if (flg_debug)
+				pr_info("[zzmoove] DOWN -> %d\n", this_dbs_info->requested_freq);
             __cpufreq_driver_target(policy, this_dbs_info->requested_freq,
                                     CPUFREQ_RELATION_L);
             return;
@@ -2887,8 +3106,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
                 }
             }
 #endif
+			if (flg_debug)
+				pr_info("[zzmoove] DOWN2 -> %d\n", this_dbs_info->requested_freq);
             __cpufreq_driver_target(policy, this_dbs_info->requested_freq,
                                     CPUFREQ_RELATION_L); // ZZ: changed to relation low
+			
+			if (flg_ctr_skip_samples == 0) {
+				flg_ctr_skip_samples = -2;
+				pr_info("[zzmoove] DOWN2AFTER -> %d\n", this_dbs_info->requested_freq);
+			}
             return;
         }
         
@@ -2945,8 +3171,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			}
 		}
 #endif
+		if (flg_debug)
+			pr_info("[zzmoove] DOWN3 -> %d\n", this_dbs_info->requested_freq);
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
                                 CPUFREQ_RELATION_L); // ZZ: changed to relation low
+		
+		if (flg_ctr_skip_samples == 0) {
+			flg_ctr_skip_samples = -2;
+			pr_info("[zzmoove] DOWN3AFTER -> %d\n", this_dbs_info->requested_freq);
+		}
 		return;
 	}
 }
@@ -3062,13 +3295,16 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 #endif
 	    // Yank: added frequency thresholds
 	    for (i = 1; i < num_possible_cpus(); i++) {
-		    if( !cpu_online(i)										&&
-               skip_hotplug_flag == 0									&&
+		    if(skip_hotplug_flag == 0									&&
                hotplug_thresholds[0][i-1] != 0								&&
                cur_load >= hotplug_thresholds[0][i-1]							&&
                (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1])    &&
-               (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)       )
-			    cpu_up(i);
+               (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)       ) {
+				if (!cpu_online(i)) {
+					cpu_up(i);
+				}
+				ctr_stats_hotplug_up[i]++;
+			}
 	    }
 #ifdef ENABLE_LEGACY_MODE
 	}
