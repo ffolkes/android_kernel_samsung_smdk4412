@@ -308,6 +308,24 @@ unsigned int sttg_typingbooster_taptimeoutms = 1000;
 
 unsigned int flg_ctr_typingbooster_cycles = 0;
 
+static bool sttg_touchbooster_enabled = true;
+static unsigned int sttg_touchbooster_freq = 1000000;
+static unsigned int sttg_touchbooster_duration = 100;
+static unsigned int sttg_touchbooster_relax_delay = 300;
+static unsigned int sttg_touchbooster_relax_freq = 600000;
+static unsigned int sttg_touchbooster_mincores = 0;
+static unsigned int sttg_touchbooster_relax_mincores = 1;
+
+static struct delayed_work work_touchbooster_off;
+static struct delayed_work work_touchbooster_relax;
+static int touchbooster_actual_freq;
+static int prev_touchbooster_actual_freq;
+static int touchbooster_cpufreq_level;
+static int prev_touchbooster_relaxed_freq;
+static int touchbooster_relaxed_cpufreq_level;
+static int touchbooster_dvfs_locked;
+static struct mutex touchbooster_dvfs_lock;
+
 #define ISC_DL_MODE	1
 
 /* 5.55" OCTA LCD */
@@ -659,6 +677,178 @@ static void reset_gesture_progress(int gesture_no)
 }
 #endif
 
+////////////////// TOUCHBOOSTER
+
+static void touchbooster_off (struct work_struct *work)
+{
+	mutex_lock(&touchbooster_dvfs_lock);
+	
+	zzmoove_touchbooster_mincores(0);
+	exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
+	touchbooster_dvfs_locked = 0;
+	dev_unlock(bus_dev, sec_touchscreen);
+	bus_dvfs_lock_status = false;
+	//pr_info("[TSP/touchbooster] boost off!\n");
+	
+	mutex_unlock(&touchbooster_dvfs_lock);
+}
+
+static void touchbooster_relax (struct work_struct *work)
+{
+	mutex_lock(&touchbooster_dvfs_lock);
+	
+	if (sttg_touchbooster_relax_freq) {
+		// reset the cpu lock for a lower level.
+		
+		
+		if (prev_touchbooster_relaxed_freq != sttg_touchbooster_relax_freq) {
+			touchbooster_relaxed_cpufreq_level = -1;
+		}
+		
+		if (touchbooster_relaxed_cpufreq_level < 0) {
+			
+			prev_touchbooster_relaxed_freq = sttg_touchbooster_relax_freq;
+			
+			exynos_cpufreq_get_level(sttg_touchbooster_relax_freq, &touchbooster_relaxed_cpufreq_level);
+			pr_info("[TSP/touchbooster] got level %d for freq: %d\n", touchbooster_relaxed_cpufreq_level, sttg_touchbooster_relax_freq);
+		}
+		
+		exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
+		exynos_cpufreq_lock(DVFS_LOCK_ID_TSP, touchbooster_relaxed_cpufreq_level);
+		
+		//pr_info("[TSP/touchbooster] relaxed to %d mhz [L%d]\n",
+		//		sttg_touchbooster_relax_freq, touchbooster_relaxed_cpufreq_level);
+		
+		// reset the bus lock to a lower level.
+		//dev_lock(bus_dev, sec_touchscreen, 176176);
+	}
+	
+	if (sttg_touchbooster_relax_mincores) {
+		if (sttg_touchbooster_relax_mincores == 1) {
+			zzmoove_touchbooster_mincores(0);
+		} else {
+			zzmoove_touchbooster_mincores(sttg_touchbooster_relax_mincores);
+		}
+	}
+	
+	dev_unlock(bus_dev, sec_touchscreen);
+	bus_dvfs_lock_status = false;
+	
+	//pr_info("[TSP/touchbooster] boost relaxed!\n");
+	
+	mutex_unlock(&touchbooster_dvfs_lock);
+}
+
+void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_override)
+{
+	unsigned int maxfreq = 0;
+	unsigned int minfreq = 0;
+	
+	mutex_lock(&touchbooster_dvfs_lock);
+	
+    if (touchbooster_freq_override == 0) {
+        // no override is set, proceed normally.
+        
+        if (sttg_touchbooster_freq == 0) {
+            pr_info("[TSP/touchbooster] boost_freq max autodetect\n");
+            // use the highest frequency we can.
+            maxfreq = exynos_cpufreq_get_maxfreq();
+            touchbooster_actual_freq = maxfreq;
+        } else {
+            // use whatever frequency has been set.
+            touchbooster_actual_freq = sttg_touchbooster_freq;
+        }
+        
+    } else {
+        // use the override frequency instead.
+        touchbooster_actual_freq = touchbooster_freq_override;
+    }
+    
+    // if this has changed, we need to refresh the level.
+    if (prev_touchbooster_actual_freq != touchbooster_actual_freq) {
+        touchbooster_cpufreq_level = -1;
+        pr_info("[TSP/touchbooster] boost_freq max autodetect level refresh\n");
+    }
+	
+	if (touchbooster_cpufreq_level < 0) {
+		
+		if (maxfreq == 0) {
+			// check to see if we already have this value.
+			// we don't, so get it.
+			maxfreq = exynos_cpufreq_get_maxfreq();
+		}
+		minfreq = exynos_cpufreq_get_minfreq();
+		
+		if (maxfreq < 1) {
+			// something went wrong. just set a safe value.
+			maxfreq = 1000000;
+		}
+		
+		if (minfreq < 1) {
+			// something went wrong. just set a safe value.
+			minfreq = 200000;
+		}
+		
+		if (touchbooster_actual_freq < minfreq) {
+			touchbooster_actual_freq = minfreq;
+			pr_info("[TSP/touchbooster] boost_freq too low. set to: %d\n", minfreq);
+		} else if (touchbooster_actual_freq > maxfreq) {
+			touchbooster_actual_freq = maxfreq;
+			pr_info("[TSP/touchbooster] boost_freq too high. set to: %d\n", maxfreq);
+		}
+		
+		prev_touchbooster_actual_freq = touchbooster_actual_freq;
+		
+		exynos_cpufreq_get_level(touchbooster_actual_freq, &touchbooster_cpufreq_level);
+		pr_info("[TSP/touchbooster] got level %d for freq: %d\n", touchbooster_cpufreq_level, touchbooster_actual_freq);
+	}
+	
+	if (touchbooster_mode == 0) {
+		// this means the last finger has pulled away.
+		// cancel checks, and schedule off_work.
+		
+		cancel_delayed_work_sync(&work_touchbooster_relax);
+		schedule_delayed_work(&work_touchbooster_off, msecs_to_jiffies(sttg_touchbooster_duration));
+		
+	} else if (touchbooster_mode == 1) {
+		// this means a finger is down.
+		// set the cpu lock,
+		// set the bus lock.
+		
+		if (!touchbooster_dvfs_locked) {
+			
+			// get the cpu lock.
+			exynos_cpufreq_lock(DVFS_LOCK_ID_TSP, touchbooster_cpufreq_level);
+			
+			if (sttg_touchbooster_mincores) {
+				zzmoove_touchbooster_mincores(sttg_touchbooster_mincores);
+			}
+			
+			// schedule work.
+			schedule_delayed_work(&work_touchbooster_relax, msecs_to_jiffies(sttg_touchbooster_relax_delay));
+			
+			touchbooster_dvfs_locked = 1;
+			
+			if (!bus_dvfs_lock_status) {
+				dev_lock(bus_dev, sec_touchscreen, 440220);
+				bus_dvfs_lock_status = true;
+			}
+			
+			//pr_info("[TSP/touchbooster] boost on! - MODE 1 - boosted to %d mhz [L%d] for %d msecs\n",
+			//		touchbooster_actual_freq, touchbooster_cpufreq_level, sttg_touchbooster_duration);
+		}
+		
+	} else if (touchbooster_mode == 2) {
+		cancel_delayed_work_sync(&work_touchbooster_relax);
+		cancel_delayed_work_sync(&work_touchbooster_off);
+		schedule_work(&work_touchbooster_off.work);
+	}
+	
+	mutex_unlock(&touchbooster_dvfs_lock);
+}
+
+//////////////////////// TOUCHBOOSTER
+
 #if GESTURE_BOOSTER
 static void gesturebooster_dvfs_lock_off(struct work_struct *work)
 {
@@ -978,6 +1168,7 @@ static void release_all_fingers(struct mms_ts_info *info)
 	}
 	
 	input_sync(info->input_dev);
+	touchbooster_dvfs_lock_on(2, 0);
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, 2);
 	pr_info("[TSP] dvfs_lock free.\n ");
@@ -1221,9 +1412,9 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 	}
 
 	if (buf[0] == 0x0E) { /* NOISE MODE */
-		dev_dbg(&client->dev, "[TSP] noise mode enter!!\n");
-		info->noise_mode = 1;
-		mms_set_noise_mode(info);
+		//dev_dbg(&client->dev, "[TSP] noise mode enter!!\n");
+		//info->noise_mode = 1;
+		//mms_set_noise_mode(info);
 		goto out;
 	}
 
@@ -1516,19 +1707,19 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 				time_last_pressed = get_time_ms();
 				
 				if (delta_between_press > sttg_typingbooster_taptimeoutms) {
-					pr_info("[tsp/typingbooster] tapcounter: reset\n");
+					//pr_info("[tsp/typingbooster] tapcounter: reset\n");
 					ctr_typingbooster = 0;
 					delta_between_press = 0;
 				}
 				
 				if (delta_between_press < sttg_typingbooster_maxmsbetweentaps) {
 					ctr_typingbooster++;
-					pr_info("[tsp/typingbooster] tapcounter: %d\n", ctr_typingbooster);
+					//pr_info("[tsp/typingbooster] tapcounter: %d\n", ctr_typingbooster);
 				}
 				
 				if (ctr_typingbooster >= sttg_typingbooster_mintaps) {
 					flg_ctr_typingbooster_cycles = sttg_typingbooster_cycles;
-					pr_info("[tsp/typingbooster] triggered! cycle counter reset to %d\n", sttg_typingbooster_cycles);
+					//pr_info("[tsp/typingbooster] triggered! cycle counter reset to %d\n", sttg_typingbooster_cycles);
 					ctr_typingbooster--;
 				}
 			}
@@ -2242,6 +2433,10 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
 #if TOUCH_BOOSTER
 	set_dvfs_lock(info, !!touch_is_pressed);
 #endif
+	
+	if (sttg_touchbooster_enabled && flg_screen_on) {
+		touchbooster_dvfs_lock_on(!!touch_is_pressed, sttg_touchbooster_freq);
+	}
 
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	if((!!touch_is_pressed) && flg_enable_lcdfreq_touchboost){
@@ -5038,7 +5233,7 @@ static ssize_t typingbooster_mincores_store(struct device *dev, struct device_at
 	
 	if (data == 0) {
 		sttg_typingbooster_mincores = 0;
-		pr_info("[tsp/typingbooster] typingbooster_mincores has been disabled\n", data);
+		pr_info("[tsp/typingbooster] typingbooster_mincores has been disabled\n");
 	} else if (data > 0 && data <= 4) {
 		sttg_typingbooster_mincores = data;
 		pr_info("[tsp/typingbooster] typingbooster_mincores is enabled and has been set to: %d\n", data);
@@ -5067,7 +5262,7 @@ static ssize_t typingbooster_upthreshold_store(struct device *dev, struct device
 	
 	if (data == 0) {
 		sttg_typingbooster_upthreshold = 0;
-		pr_info("[tsp/typingbooster] typingbooster_upthreshold has been disabled\n", data);
+		pr_info("[tsp/typingbooster] typingbooster_upthreshold has been disabled\n");
 	} else if (data < 11) {
 		sttg_typingbooster_upthreshold = 11;
 		pr_info("[tsp/typingbooster] typingbooster_upthreshold is enabled and has been set to: %d\n", data);
@@ -5154,6 +5349,167 @@ static ssize_t typingbooster_maxmsbetweentaps_store(struct device *dev, struct d
 		pr_info("[tsp/typingbooster] typingbooster_maxmsbetweentaps has been set to: %d\n", data);
 	} else {
 		return -EINVAL;
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_enabled_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_enabled);
+}
+
+static ssize_t touchbooster_enabled_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data == 1) {
+		sttg_touchbooster_enabled = true;
+		pr_info("[tsp] sttg_touchbooster_enabled has been set\n");
+	} else {
+		sttg_touchbooster_enabled = false;
+		pr_info("[tsp] sttg_touchbooster_enabled has been unset\n");
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_freq_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_freq);
+}
+
+static ssize_t touchbooster_freq_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data >= 0) {
+		sttg_touchbooster_freq = data;
+		pr_info("[tsp] sttg_touchbooster_freq has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_duration_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_duration);
+}
+
+static ssize_t touchbooster_duration_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret) {
+		if (data == 0) {
+			data = 1;
+		}
+		sttg_touchbooster_duration = data;
+		pr_info("[tsp] sttg_touchbooster_duration has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_relax_delay_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_relax_delay);
+}
+
+static ssize_t touchbooster_relax_delay_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret) {
+		if (data == 0) {
+			data = 1;
+		}
+		sttg_touchbooster_relax_delay = data;
+		pr_info("[tsp] sttg_touchbooster_relax_delay has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_relax_freq_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_relax_freq);
+}
+
+static ssize_t touchbooster_relax_freq_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data >= 0) {
+		sttg_touchbooster_relax_freq = data;
+		pr_info("[tsp] sttg_touchbooster_relax_freq has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_mincores_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_mincores);
+}
+
+static ssize_t touchbooster_mincores_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret) {
+		if (data < 0)
+			data = 0;
+		
+		if (data > 4)
+			data = 4;
+		
+		sttg_touchbooster_mincores = data;
+		pr_info("[tsp] sttg_touchbooster_mincores has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_relax_mincores_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_relax_mincores);
+}
+
+static ssize_t touchbooster_relax_mincores_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret) {
+		if (data < 0)
+			data = 0;
+		
+		if (data > 4)
+			data = 4;
+		
+		sttg_touchbooster_relax_mincores = data;
+		pr_info("[tsp] sttg_touchbooster_relax_mincores has been set to: %d\n", data);
 	}
 	
 	return size;
@@ -5729,6 +6085,13 @@ static DEVICE_ATTR(typingbooster_upthreshold, S_IRUGO | S_IWUSR, typingbooster_u
 static DEVICE_ATTR(typingbooster_cycles, S_IRUGO | S_IWUSR, typingbooster_cycles_show, typingbooster_cycles_store);
 static DEVICE_ATTR(typingbooster_maxmsbetweentaps, S_IRUGO | S_IWUSR, typingbooster_maxmsbetweentaps_show, typingbooster_maxmsbetweentaps_store);
 static DEVICE_ATTR(typingbooster_mintaps, S_IRUGO | S_IWUSR, typingbooster_mintaps_show, typingbooster_mintaps_store);
+static DEVICE_ATTR(touchbooster_enabled, S_IRUGO | S_IWUSR, touchbooster_enabled_show, touchbooster_enabled_store);
+static DEVICE_ATTR(touchbooster_freq, S_IRUGO | S_IWUSR, touchbooster_freq_show, touchbooster_freq_store);
+static DEVICE_ATTR(touchbooster_duration, S_IRUGO | S_IWUSR, touchbooster_duration_show, touchbooster_duration_store);
+static DEVICE_ATTR(touchbooster_relax_delay, S_IRUGO | S_IWUSR, touchbooster_relax_delay_show, touchbooster_relax_delay_store);
+static DEVICE_ATTR(touchbooster_relax_freq, S_IRUGO | S_IWUSR, touchbooster_relax_freq_show, touchbooster_relax_freq_store);
+static DEVICE_ATTR(touchbooster_mincores, S_IRUGO | S_IWUSR, touchbooster_mincores_show, touchbooster_mincores_store);
+static DEVICE_ATTR(touchbooster_relax_mincores, S_IRUGO | S_IWUSR, touchbooster_relax_mincores_show, touchbooster_relax_mincores_store);
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 static DEVICE_ATTR(enable_lcdfreq_touchboost, S_IRUGO | S_IWUSR,
 				   enable_lcdfreq_touchboost_show, enable_lcdfreq_touchboost_store);
@@ -5752,6 +6115,13 @@ static struct attribute *sec_touch_factory_attributes[] = {
 	&dev_attr_typingbooster_cycles.attr,
 	&dev_attr_typingbooster_maxmsbetweentaps.attr,
 	&dev_attr_typingbooster_mintaps.attr,
+	&dev_attr_touchbooster_enabled.attr,
+	&dev_attr_touchbooster_freq.attr,
+	&dev_attr_touchbooster_duration.attr,
+	&dev_attr_touchbooster_relax_delay.attr,
+	&dev_attr_touchbooster_relax_freq.attr,
+	&dev_attr_touchbooster_mincores.attr,
+	&dev_attr_touchbooster_relax_mincores.attr,
 #ifdef CONFIG_CPU_FREQ_LCD_FREQ_DFS
 	&dev_attr_enable_lcdfreq_touchboost.attr,
 #endif
@@ -5880,6 +6250,12 @@ static void mms_ts_early_suspend(struct early_suspend *h)
     // unlock the cpu just in case.
     exynos_cpufreq_lock_free(DVFS_LOCK_ID_GESTURE_BOOSTER);
 	gesturebooster_dvfs_locked = 0;
+	
+	cancel_delayed_work_sync(&work_touchbooster_relax);
+	exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
+	touchbooster_dvfs_locked = 0;
+	
+	zzmoove_touchbooster_mincores(0);
     
     flg_ignore_cpuidle = false;
     
@@ -6255,6 +6631,12 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	bus_dev = dev_get("exynos-busfreq");
 	bus_dvfs_lock_status = false;
 //#endif
+	
+	mutex_init(&touchbooster_dvfs_lock);
+	touchbooster_cpufreq_level = -1;
+	touchbooster_dvfs_locked = 0;
+	INIT_DELAYED_WORK(&work_touchbooster_off, touchbooster_off);
+	INIT_DELAYED_WORK(&work_touchbooster_relax, touchbooster_relax);
 	
 #if GESTURE_BOOSTER
 	mutex_init(&gesturebooster_dvfs_lock);
