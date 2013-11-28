@@ -618,6 +618,7 @@ static struct dbs_tuners {
 	unsigned int hotplug_lock;					// ff: the number of cores we require to be online
 	unsigned int hotplug_min_limit;					// ff: min number of cores we require to be online
 	unsigned int hotplug_min_limit_saved;					// ff: min number of cores we require to be online
+	unsigned int hotplug_min_limit_touchbooster;	// ff:
     unsigned int multicore_engage_freq;         // ff: frequency below which we run on only one core
     unsigned int fastdown_freq;                 // ff: frequency beyond which we apply a different up_threshold
     unsigned int fastdown_up_threshold;         // ff: up_threshold when fastdown_freq exceeded
@@ -709,6 +710,7 @@ static struct dbs_tuners {
 			.hotplug_lock = DEF_HOTPLUG_LOCK,                                 // ff: the number of cores we require to be online
 			.hotplug_min_limit = DEF_HOTPLUG_MIN_LIMIT,                                 // ff: min number of cores we require to be online
 			.hotplug_min_limit_saved = DEF_HOTPLUG_MIN_LIMIT,                                 // ff: min number of cores we require to be online
+			.hotplug_min_limit_touchbooster = 0,
             .multicore_engage_freq = DEF_MULTICORE_ENGAGE_FREQ,                 // ff: frequency below which we run on only one core
             .fastdown_freq = DEF_FASTDOWN_FREQ,               // ff: frequency beyond which we apply a different up_threshold
             .fastdown_up_threshold = DEF_FASTDOWN_UP_THRESHOLD, // ff: up_threshold when fastdown_freq exceeded
@@ -2056,7 +2058,7 @@ static ssize_t store_add_cores_first_freq(struct kobject *a, struct attribute *b
 	if (input > policy->max)
 		input = policy->max;
 	
-	if (input < policy->min)
+	if (input < policy->min && input != 0)
 		input = policy->min;
 	
 	dbs_tuners_ins.add_cores_first_freq = input;
@@ -3231,7 +3233,8 @@ static void __cpuinit hotplug_offline_work_fn(struct work_struct *work)
                skip_hotplug_flag == 0									&&
                cur_load <= hotplug_thresholds[1][i-1]							&&
                (hotplug_thresholds_freq[1][i-1] == 0 || cur_freq <= hotplug_thresholds_freq[1][i-1]) &&
-			   (!dbs_tuners_ins.hotplug_min_limit || i >= dbs_tuners_ins.hotplug_min_limit)	)
+			   (!dbs_tuners_ins.hotplug_min_limit || i >= dbs_tuners_ins.hotplug_min_limit) &&
+			   (!dbs_tuners_ins.hotplug_min_limit_touchbooster || i >= dbs_tuners_ins.hotplug_min_limit_touchbooster) )
 			    cpu_down(i);
 	    }
 #ifdef ENABLE_LEGACY_MODE
@@ -3346,6 +3349,26 @@ static inline void dbs_timer_exit(struct cpu_dbs_info_s *dbs_info)
 	dbs_info->enable = 0;
 	cancel_delayed_work(&dbs_info->work); // ZZ: Use asyncronous mode to avoid freezes / reboots when leaving zzmoove
 }
+
+void zzmoove_touchbooster_mincores(unsigned int cores)
+{
+	unsigned int i;
+	
+	//pr_info("[zzmoove] zzmoove_mincores: called for %d cores\n", cores);
+	
+	dbs_tuners_ins.hotplug_min_limit_touchbooster = cores;
+	
+	if (num_online_cpus() < cores) {
+		for (i = 1; i < num_possible_cpus(); i++) {
+			if (!cpu_online(i) && i < cores && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
+				// this core is below the minimum, so bring it up.
+				cpu_up(i);
+				pr_info("[zzmoove] zzmoove_mincores: CPU%d forced up\n", i);
+			}
+		}
+	}
+}
+EXPORT_SYMBOL(zzmoove_touchbooster_mincores);
 
 static void powersave_early_suspend(struct early_suspend *handler)
 {
