@@ -56,6 +56,7 @@ static struct device_attribute charge_control_attrs[] = {
 	CHARGE_ATTR(sdp_input_curr),
 	CHARGE_ATTR(cdp_chrg_curr),
 	CHARGE_ATTR(cdp_input_curr),
+	CHARGE_ATTR(wpc_chrg_curr),
 	CHARGE_ATTR(batt_chrg_hard_volt),
 	CHARGE_ATTR(batt_chrg_soft_volt),
 	CHARGE_ATTR(ignore_unstable_power),
@@ -69,6 +70,7 @@ enum {
 	SDP_INPUT_CURR,
 	CDP_CHRG_CURR,
 	CDP_INPUT_CURR,
+	WPC_CHRG_CURR,
 
 	BATT_CHRG_HARD_VOLT,
 	BATT_CHRG_SOFT_VOLT,
@@ -129,6 +131,8 @@ static ssize_t show_charge_property(struct device *dev,
 			return sprintf(buf, "%d", info->pdata->chg_curr_cdp);
 		case CDP_INPUT_CURR:
 			return sprintf(buf, "%d", info->pdata->in_curr_cdp);
+		case WPC_CHRG_CURR:
+			return sprintf(buf, "%d", info->pdata->chg_curr_wpc);
 		case BATT_CHRG_HARD_VOLT:
 			return sprintf(buf, "%d", batt_chrg_volt);
 		case BATT_CHRG_SOFT_VOLT:
@@ -181,6 +185,10 @@ static ssize_t store_charge_property(struct device *dev,
 		case CDP_INPUT_CURR:
 			sanitize_min_max(val, MIN_SAFETY_CURR, MAX_SAFETY_CURR);
 			info->pdata->in_curr_cdp = val;
+			break;
+		case WPC_CHRG_CURR:
+			sanitize_min_max(val, MIN_SAFETY_CURR, MAX_SAFETY_CURR);
+			info->pdata->chg_curr_wpc = val;
 			break;
 		case BATT_CHRG_HARD_VOLT:
 			update_battery_charge_voltage(val);
