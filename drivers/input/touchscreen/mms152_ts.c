@@ -58,7 +58,7 @@
 #define MAX_GESTURE_STEPS 10
 
 #define GESTURE_BOOSTER				1		// enable the gesture booster.
-#define GESTURE_BOOSTER_FREQ		0		// frequency to boost to. 0 will autodetect policy max.
+#define GESTURE_BOOSTER_FREQ		1600000		// frequency to boost to.
 #define GESTURE_BOOSTER_DURATION	2500	// duration to hold boost (msecs).
 
 // Definitions
@@ -749,15 +749,17 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
     if (touchbooster_freq_override == 0) {
         // no override is set, proceed normally.
         
-        if (sttg_touchbooster_freq == 0) {
+		// March 3rd 2014 - removed reference to exynos_cpufreq_get_maxfreq to prevent possible exception
+		//   and disabled this IF statement, as it is now useless.
+        /*if (sttg_touchbooster_freq == 0) {
             pr_info("[TSP/touchbooster] boost_freq max autodetect\n");
             // use the highest frequency we can.
             maxfreq = exynos_cpufreq_get_maxfreq();
             touchbooster_actual_freq = maxfreq;
-        } else {
+        } else {*/
             // use whatever frequency has been set.
             touchbooster_actual_freq = sttg_touchbooster_freq;
-        }
+        /*}*/
         
     } else {
         // use the override frequency instead.
@@ -767,7 +769,7 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
     // if this has changed, we need to refresh the level.
     if (prev_touchbooster_actual_freq != touchbooster_actual_freq) {
         touchbooster_cpufreq_level = -1;
-        pr_info("[TSP/touchbooster] boost_freq max autodetect level refresh\n");
+        pr_info("[TSP/touchbooster] boost_freq changed, level refresh needed, doing so now\n");
     }
 	
 	if (touchbooster_cpufreq_level < 0) {
@@ -775,7 +777,9 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 		if (maxfreq == 0) {
 			// check to see if we already have this value.
 			// we don't, so get it.
-			maxfreq = exynos_cpufreq_get_maxfreq();
+			
+			// March 3rd 2014 - removed old reference to exynos_cpufreq_get_maxfreq to prevent possible exception
+			maxfreq = 1600000;
 		}
 		minfreq = exynos_cpufreq_get_minfreq();
 		
@@ -871,15 +875,17 @@ void gesturebooster_dvfs_lock_on(int gesturebooster_freq_override)
     if (gesturebooster_freq_override == 0) {
         // no override is set, proceed normally.
         
-        if (gesturebooster_freq == 0) {
+		// March 3rd 2014 - removed reference to exynos_cpufreq_get_maxfreq to prevent possible exception
+		//   and disabled this IF statement, as it is now useless.
+        /*if (gesturebooster_freq == 0) {
             pr_info("[TSP/gesturebooster] boost_freq max autodetect\n");
             // use the highest frequency we can.
             maxfreq = exynos_cpufreq_get_maxfreq();
             gesturebooster_actual_freq = maxfreq;
         } else {
-            // use whatever frequency has been set.
+            // use whatever frequency has been set.*/
             gesturebooster_actual_freq = gesturebooster_freq;
-        }
+        /*}*/
         
     } else {
         // use the override frequency instead.
@@ -889,7 +895,7 @@ void gesturebooster_dvfs_lock_on(int gesturebooster_freq_override)
     // if this has changed, we need to refresh the level.
     if (prev_gesturebooster_actual_freq != gesturebooster_actual_freq) {
         gesturebooster_cpufreq_level = -1;
-        pr_info("[TSP/gesturebooster] boost_freq max autodetect level refresh\n");
+        pr_info("[TSP/gesturebooster] boost_freq changed, level refresh needed, doing so now\n");
     }
 	
 	if (gesturebooster_cpufreq_level < 0) {
@@ -897,7 +903,9 @@ void gesturebooster_dvfs_lock_on(int gesturebooster_freq_override)
 		if (maxfreq == 0) {
 			// check to see if we already have this value.
 			// we don't, so get it.
-			maxfreq = exynos_cpufreq_get_maxfreq();
+			
+			// March 3rd 2014 - removed old reference to exynos_cpufreq_get_maxfreq to prevent possible exception
+			maxfreq = 1600000;
 		}
 		minfreq = exynos_cpufreq_get_minfreq();
 		
@@ -5935,7 +5943,8 @@ static ssize_t gesturebooster_freq_store(struct device *dev, struct device_attri
 		return -EINVAL;
 	}
 	
-	maxfreq = exynos_cpufreq_get_maxfreq();
+	// March 3rd 2014 - removed old reference to exynos_cpufreq_get_maxfreq to prevent possible exception
+	maxfreq = 1600000;
 	minfreq = exynos_cpufreq_get_minfreq();
 	
 	if (maxfreq < 1) {
@@ -6223,9 +6232,36 @@ static int mms_ts_resume(struct device *dev)
 }
 #endif
 
+#ifdef CONFIG_TOUCH_WAKE
+static struct mms_ts_info * touchwake_data;
+void touchscreen_disable(void)
+{
+	if (likely(touchwake_data != NULL))
+    mms_ts_suspend(&touchwake_data->client->dev);
+	
+    return;
+}
+EXPORT_SYMBOL(touchscreen_disable);
+
+void touchscreen_enable(void)
+{
+	if (likely(touchwake_data != NULL))
+    mms_ts_resume(&touchwake_data->client->dev);
+    
+    flg_touchwake_active = false;
+	
+    return;
+}
+EXPORT_SYMBOL(touchscreen_enable);
+#endif
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void mms_ts_early_suspend(struct early_suspend *h)
 {
+	
+	struct mms_ts_info *info;
+	info = container_of(h, struct mms_ts_info, early_suspend);
+	
     flg_screen_on = false;
     sttg_gestures_only = false;
     flg_touchwake_slide2wake = true;
@@ -6238,7 +6274,8 @@ static void mms_ts_early_suspend(struct early_suspend *h)
 	flg_ctr_typingbooster_cycles = 0;
 	swipe_x_start = 9999;
 	swipe_y_start = 9999;
-    pr_info("[TSP/touch] cleared variables on sleep\n");
+	release_all_fingers(info);
+	pr_info("[TSP/touch] -SUSPEND- cleared variables and fingers\n");
     
     cancel_delayed_work_sync(&touchwake_reset_longpressoff_work);
     cancel_delayed_work_sync(&touchwake_check_longpressoff_work);
@@ -6264,8 +6301,6 @@ static void mms_ts_early_suspend(struct early_suspend *h)
 #endif
     
 #ifndef CONFIG_TOUCH_WAKE
-	struct mms_ts_info *info;
-	info = container_of(h, struct mms_ts_info, early_suspend);
 	mms_ts_suspend(&info->client->dev);
 #endif
 }
@@ -6281,51 +6316,26 @@ static void mms_ts_late_resume(struct early_suspend *h)
 	swipe_x_start = 9999;
 	swipe_y_start = 9999;
     
-    pr_info("[TSP/touch] set variables on wake\n");
+    pr_info("[TSP/touch] -WAKE- initialized variables\n");
     
     if (sttg_longpressoff_alwayson) {
         // only set the longpressoff flag if the user has requested it always be on.
         
-        pr_info("[TSP/Touch] longpressoff always on.\n");
+        pr_info("[TSP/Touch] -WAKE- longpressoff always on\n");
         
         // set the flag.
         flg_touchwake_longpressoff = true;
-        
-        if (sttg_touchwake_longpressoff_timeout > 0) {
-            // if the timeout is set to 0, assume infinite mode, otherwise schedule delayed work to turn it off
-            pr_info("[TSP/Touch] longpressoff always on. turning off in: %i ms\n", sttg_touchwake_longpressoff_timeout);
-            schedule_delayed_work(&touchwake_reset_longpressoff_work, msecs_to_jiffies(sttg_touchwake_longpressoff_timeout));
-        }
     }
+	
+	touchscreen_enable();
+	pr_info("[TSP/touch] -WAKE- forced touchscreen enabled\n");
+	
 #ifndef CONFIG_TOUCH_WAKE
 	struct mms_ts_info *info;
 	info = container_of(h, struct mms_ts_info, early_suspend);
 	mms_ts_resume(&info->client->dev);
 #endif
 }
-#endif
-
-#ifdef CONFIG_TOUCH_WAKE
-static struct mms_ts_info * touchwake_data;
-void touchscreen_disable(void)
-{
-  if (likely(touchwake_data != NULL))
-    mms_ts_suspend(&touchwake_data->client->dev);
-
-    return;
-}
-EXPORT_SYMBOL(touchscreen_disable);
-
-void touchscreen_enable(void)
-{
-  if (likely(touchwake_data != NULL))
-    mms_ts_resume(&touchwake_data->client->dev);
-    
-    flg_touchwake_active = false;
-
-    return;
-}
-EXPORT_SYMBOL(touchscreen_enable);
 #endif
 
 static int __devinit mms_ts_probe(struct i2c_client *client,
