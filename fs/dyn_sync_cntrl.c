@@ -107,7 +107,7 @@ static struct kobject *dyn_fsync_kobj;
 static void dyn_fsync_force_flush(void)
 {
 	/* flush all outstanding buffers */
-	wakeup_flusher_threads(0, WB_REASON_SYNC);
+	wakeup_flusher_threads(0);
 	sync_filesystems(0);
 	sync_filesystems(1);
 }
