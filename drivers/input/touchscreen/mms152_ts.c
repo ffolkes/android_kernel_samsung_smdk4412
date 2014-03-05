@@ -325,6 +325,8 @@ static int prev_touchbooster_relaxed_freq;
 static int touchbooster_relaxed_cpufreq_level;
 static int touchbooster_dvfs_locked;
 static struct mutex touchbooster_dvfs_lock;
+static bool touchbooster_relaxed = false;
+static bool touchbooster_pending_off = false;
 
 #define ISC_DL_MODE	1
 
@@ -683,12 +685,15 @@ static void touchbooster_off (struct work_struct *work)
 {
 	mutex_lock(&touchbooster_dvfs_lock);
 	
+	cancel_delayed_work_sync(&work_touchbooster_relax);
 	zzmoove_touchbooster_mincores(0);
 	exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
 	touchbooster_dvfs_locked = 0;
 	dev_unlock(bus_dev, sec_touchscreen);
 	bus_dvfs_lock_status = false;
-	//pr_info("[TSP/touchbooster] boost off!\n");
+	touchbooster_relaxed = false;
+	touchbooster_pending_off = false;
+	pr_info("[TSP/touchbooster] boost off!\n");
 	
 	mutex_unlock(&touchbooster_dvfs_lock);
 }
@@ -696,6 +701,8 @@ static void touchbooster_off (struct work_struct *work)
 static void touchbooster_relax (struct work_struct *work)
 {
 	mutex_lock(&touchbooster_dvfs_lock);
+	
+	touchbooster_relaxed = true;
 	
 	if (sttg_touchbooster_relax_freq) {
 		// reset the cpu lock for a lower level.
@@ -734,7 +741,7 @@ static void touchbooster_relax (struct work_struct *work)
 	dev_unlock(bus_dev, sec_touchscreen);
 	bus_dvfs_lock_status = false;
 	
-	//pr_info("[TSP/touchbooster] boost relaxed!\n");
+	pr_info("[TSP/touchbooster] boost relaxed!\n");
 	
 	mutex_unlock(&touchbooster_dvfs_lock);
 }
@@ -809,9 +816,20 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 	
 	if (touchbooster_mode == 0) {
 		// this means the last finger has pulled away.
-		// cancel checks, and schedule off_work.
+		// schedule off_work.
 		
-		cancel_delayed_work_sync(&work_touchbooster_relax);
+		/*
+		// we want the freq to drop after the finger pulls away, so we shouldn't cancel the relax_work...BUT,
+		// we don't want to wait for it, so cancel it and then force it to be done now if it hasn't already.
+		
+		if (!touchbooster_relaxed) {
+			// this is in an IF block is to make sure we don't redundantly relax after a long press that has already relaxed.
+			cancel_delayed_work_sync(&work_touchbooster_relax);
+			schedule_delayed_work(&work_touchbooster_relax, 0);
+		}
+		*/
+		
+		touchbooster_pending_off = true;
 		schedule_delayed_work(&work_touchbooster_off, msecs_to_jiffies(sttg_touchbooster_duration));
 		
 	} else if (touchbooster_mode == 1) {
@@ -819,27 +837,74 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 		// set the cpu lock,
 		// set the bus lock.
 		
+		// but what if the finger goes up, off_work starts,
+		// then comes down again before the off_work gets executed?
+		// so let's cancel any off_work that's pending.
+		
+		if (touchbooster_pending_off) {
+			// if off is pending, that means off_work hasn't been performed yet.
+			// since a finger is now down, cancel that off_work and clear the lock
+			// if need be so that the primary lock gets applied again.
+			
+			cancel_delayed_work_sync(&work_touchbooster_relax);
+			cancel_delayed_work_sync(&work_touchbooster_off);
+			touchbooster_pending_off = false;
+			
+			// did we already relax? if so, we have to get the primary locks again.
+			/* // NOTE: this is redundant since we force a relax on finger up, so this will always be true. */
+			if (touchbooster_relaxed) {
+				touchbooster_dvfs_locked = false;
+			} else {
+				// since the primary lock is going to be skipped, we have to schedule relax_work now
+				// because it was cancelled above. we needed to reset it to this tap anyway, so it's fine.
+				schedule_delayed_work(&work_touchbooster_relax, msecs_to_jiffies(sttg_touchbooster_relax_delay));
+			}
+		}
+		
 		if (!touchbooster_dvfs_locked) {
 			
-			// get the cpu lock.
-			exynos_cpufreq_lock(DVFS_LOCK_ID_TSP, touchbooster_cpufreq_level);
+			if (touchbooster_relaxed && (sttg_touchbooster_relax_freq == 0 || sttg_touchbooster_relax_freq == sttg_touchbooster_freq)) {
+				// if the relaxed mode has been applied, don't apply
+				// the primary lock if the user isn't using a relaxed freq,
+				// or has the same freq set for primary and relaxed.
+				
+				pr_info("[TSP/touchbooster] no need to reapply primary freq lock\n");
+			
+			} else {
+				// touchbooster has not been in relaxed mode yet, or it has
+				// but the freq was changed so we have to kick it up again.
+				
+				if (touchbooster_relaxed) {
+					// if we've gotten here, we're locked to the relaxed freq and it must be
+					// unset before we can lock to the primary again.
+					exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
+				}
+				
+				// get the cpu lock.
+				exynos_cpufreq_lock(DVFS_LOCK_ID_TSP, touchbooster_cpufreq_level);
+				
+			}
 			
 			if (sttg_touchbooster_mincores) {
 				zzmoove_touchbooster_mincores(sttg_touchbooster_mincores);
 			}
 			
+			touchbooster_dvfs_locked = 1;
+			
+			// set this here instead of the above touchbooster_pending_off IF because we
+			// needed it for the cpu lock redundancy checks a few lines ago
+			touchbooster_relaxed = false;
+			
 			// schedule work.
 			schedule_delayed_work(&work_touchbooster_relax, msecs_to_jiffies(sttg_touchbooster_relax_delay));
-			
-			touchbooster_dvfs_locked = 1;
 			
 			if (!bus_dvfs_lock_status) {
 				dev_lock(bus_dev, sec_touchscreen, 440220);
 				bus_dvfs_lock_status = true;
 			}
 			
-			//pr_info("[TSP/touchbooster] boost on! - MODE 1 - boosted to %d mhz [L%d] for %d msecs\n",
-			//		touchbooster_actual_freq, touchbooster_cpufreq_level, sttg_touchbooster_duration);
+			pr_info("[TSP/touchbooster] boost on! - MODE 1 - boosted to %d mhz [L%d] for %d msecs\n",
+					touchbooster_actual_freq, touchbooster_cpufreq_level, sttg_touchbooster_duration);
 		}
 		
 	} else if (touchbooster_mode == 2) {
@@ -5326,7 +5391,7 @@ static ssize_t typingbooster_mintaps_store(struct device *dev, struct device_att
 		return -EINVAL;
 	}
 	
-	if (data > 2 && data <= 20) {
+	if (data > 0 && data <= 20) {
 		sttg_typingbooster_mintaps = data;
 		pr_info("[tsp/typingbooster] typingbooster_mintaps has been set to: %d\n", data);
 	} else {
