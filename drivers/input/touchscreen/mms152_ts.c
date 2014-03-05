@@ -266,6 +266,9 @@ struct timeval time_touchwake_longpressoff_start;
 static int touchwake_longpressoff_time_start_secs = -1;
 static spinlock_t touchwake_longpressoff_lock;
 
+static void touchwake_enable_longpressoff(struct work_struct * touchwake_enable_longpressoff_work);
+static DECLARE_DELAYED_WORK(touchwake_enable_longpressoff_work, touchwake_enable_longpressoff);
+
 static void touchwake_reset_longpressoff(struct work_struct * touchwake_reset_longpressoff_work);
 static DECLARE_DELAYED_WORK(touchwake_reset_longpressoff_work, touchwake_reset_longpressoff);
 
@@ -291,6 +294,7 @@ static unsigned int x_lo;
 static unsigned int x_hi;
 
 static bool sttg_longpressoff_alwayson = false;
+static unsigned int sttg_longpressoff_wakeguard_duration = 500; // LPO: how many ms to disable LPO after wake to prevent thumbing.
 bool flg_screen_on = true;
 
 static bool flg_swipe_in_progress = false;
@@ -310,6 +314,9 @@ unsigned int flg_ctr_typingbooster_cycles = 0;
 
 static bool sttg_touchbooster_enabled = true;
 static unsigned int sttg_touchbooster_freq = 1000000;
+static unsigned int sttg_touchbooster_buslock_mode = 1;				// default to mode 1, which means max buslock on primary only
+static unsigned int sttg_touchbooster_buslock_primary = 440220;		// default to 440220, which is the highest bus/mif frequency
+static unsigned int sttg_touchbooster_buslock_relaxed = 0;			// default to 0, which means drop buslock when relaxed
 static unsigned int sttg_touchbooster_duration = 100;
 static unsigned int sttg_touchbooster_relax_delay = 300;
 static unsigned int sttg_touchbooster_relax_freq = 600000;
@@ -627,10 +634,21 @@ static inline int64_t get_time_ms(void) {
 	return ms;
 }
 
+static void touchwake_enable_longpressoff(struct work_struct * touchwake_enable_longpressoff_work)
+{
+	// fool the logic into thinking LPO has been already detected, so if a finger is
+	// on the screen still it won't immediately trigger LPO once it's enabled.
+	touchwake_longpressoff_time_start_secs = 1;
+	
+    flg_touchwake_longpressoff = true;
+    pr_info("[TSP/touch] LPO - flg_touchwake_longpressoff (delayed) set\n");
+	return;
+}
+
 static void touchwake_reset_longpressoff(struct work_struct * touchwake_reset_longpressoff_work)
 {
     flg_touchwake_longpressoff = false;
-    pr_info("[TSP/touch] flg_touchwake_longpressoff unset\n");
+    pr_info("[TSP/touch] LPO - flg_touchwake_longpressoff unset\n");
 	return;
 }
 
@@ -686,14 +704,23 @@ static void touchbooster_off (struct work_struct *work)
 	mutex_lock(&touchbooster_dvfs_lock);
 	
 	cancel_delayed_work_sync(&work_touchbooster_relax);
+	
+	// turn off core lock.
 	zzmoove_touchbooster_mincores(0);
+	
+	// turn off CPU lock.
 	exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
 	touchbooster_dvfs_locked = 0;
+	
+	// turn off buslock.
 	dev_unlock(bus_dev, sec_touchscreen);
 	bus_dvfs_lock_status = false;
+	
+	// reset variables.
 	touchbooster_relaxed = false;
 	touchbooster_pending_off = false;
-	pr_info("[TSP/touchbooster] boost off!\n");
+	
+	pr_info("[TSP/touchbooster] ALL - boosts off!\n");
 	
 	mutex_unlock(&touchbooster_dvfs_lock);
 }
@@ -717,19 +744,17 @@ static void touchbooster_relax (struct work_struct *work)
 			prev_touchbooster_relaxed_freq = sttg_touchbooster_relax_freq;
 			
 			exynos_cpufreq_get_level(sttg_touchbooster_relax_freq, &touchbooster_relaxed_cpufreq_level);
-			pr_info("[TSP/touchbooster] got level %d for freq: %d\n", touchbooster_relaxed_cpufreq_level, sttg_touchbooster_relax_freq);
+			pr_info("[TSP/touchbooster] RELAXED - got level %d for freq: %d\n", touchbooster_relaxed_cpufreq_level, sttg_touchbooster_relax_freq);
 		}
 		
 		exynos_cpufreq_lock_free(DVFS_LOCK_ID_TSP);
 		exynos_cpufreq_lock(DVFS_LOCK_ID_TSP, touchbooster_relaxed_cpufreq_level);
-		
-		//pr_info("[TSP/touchbooster] relaxed to %d mhz [L%d]\n",
-		//		sttg_touchbooster_relax_freq, touchbooster_relaxed_cpufreq_level);
-		
-		// reset the bus lock to a lower level.
-		//dev_lock(bus_dev, sec_touchscreen, 176176);
+
+		pr_info("[TSP/touchbooster] RELAXED - boost adjusted to %d mhz [L%d]\n",
+				sttg_touchbooster_relax_freq, touchbooster_relaxed_cpufreq_level);
 	}
 	
+	// check to see if we need to modify the core count because we're relaxed now.
 	if (sttg_touchbooster_relax_mincores) {
 		if (sttg_touchbooster_relax_mincores == 1) {
 			zzmoove_touchbooster_mincores(0);
@@ -738,10 +763,31 @@ static void touchbooster_relax (struct work_struct *work)
 		}
 	}
 	
-	dev_unlock(bus_dev, sec_touchscreen);
-	bus_dvfs_lock_status = false;
+	// check to see if we should turn the buslock off or need to adjust it.
+	if (sttg_touchbooster_buslock_relaxed && sttg_touchbooster_buslock_mode == 2) {
+		// first, make sure sttg_touchbooster_buslock_relaxed isn't set to 0 (disabled).
+		// otherwise, this is mode 2, which means we should keep the lock on while relaxed.
+		// but do we need to adjust the buslock frequencies?
+		
+		// check to see if we need to adjust the buslock because we're relaxed now.
+		if (sttg_touchbooster_buslock_relaxed != sttg_touchbooster_buslock_primary) {
+			//dev_unlock(bus_dev, sec_touchscreen);
+			dev_lock(bus_dev, sec_touchscreen, sttg_touchbooster_buslock_relaxed);
+			pr_info("[TSP/touchbooster] RELAXED - buslock adjusted to %i MHz\n", sttg_touchbooster_buslock_relaxed);
+		}
+		
+	} else {
+		// if sttg_touchbooster_buslock_relaxed was set to 0, we should disable it regardless of mode.
+		// otherwise, modes other than 2 mean we should turn the buslock off now, if it was on.
+		
+		if (bus_dvfs_lock_status) {
+			dev_unlock(bus_dev, sec_touchscreen);
+			bus_dvfs_lock_status = false;
+			pr_info("[TSP/touchbooster] RELAXED - buslock off!\n");
+		}
+	}
 	
-	pr_info("[TSP/touchbooster] boost relaxed!\n");
+	pr_info("[TSP/touchbooster] RELAXED - boost relaxed!\n");
 	
 	mutex_unlock(&touchbooster_dvfs_lock);
 }
@@ -776,7 +822,7 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
     // if this has changed, we need to refresh the level.
     if (prev_touchbooster_actual_freq != touchbooster_actual_freq) {
         touchbooster_cpufreq_level = -1;
-        pr_info("[TSP/touchbooster] boost_freq changed, level refresh needed, doing so now\n");
+        pr_info("[TSP/touchbooster] PRIMARY - boost_freq changed, level refresh needed, doing so now\n");
     }
 	
 	if (touchbooster_cpufreq_level < 0) {
@@ -802,16 +848,16 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 		
 		if (touchbooster_actual_freq < minfreq) {
 			touchbooster_actual_freq = minfreq;
-			pr_info("[TSP/touchbooster] boost_freq too low. set to: %d\n", minfreq);
+			pr_info("[TSP/touchbooster] PRIMARY - boost_freq too low. set to: %d\n", minfreq);
 		} else if (touchbooster_actual_freq > maxfreq) {
 			touchbooster_actual_freq = maxfreq;
-			pr_info("[TSP/touchbooster] boost_freq too high. set to: %d\n", maxfreq);
+			pr_info("[TSP/touchbooster] PRIMARY - boost_freq too high. set to: %d\n", maxfreq);
 		}
 		
 		prev_touchbooster_actual_freq = touchbooster_actual_freq;
 		
 		exynos_cpufreq_get_level(touchbooster_actual_freq, &touchbooster_cpufreq_level);
-		pr_info("[TSP/touchbooster] got level %d for freq: %d\n", touchbooster_cpufreq_level, touchbooster_actual_freq);
+		pr_info("[TSP/touchbooster] PRIMARY - got level %d for freq: %d\n", touchbooster_cpufreq_level, touchbooster_actual_freq);
 	}
 	
 	if (touchbooster_mode == 0) {
@@ -868,7 +914,7 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 				// the primary lock if the user isn't using a relaxed freq,
 				// or has the same freq set for primary and relaxed.
 				
-				pr_info("[TSP/touchbooster] no need to reapply primary freq lock\n");
+				pr_info("[TSP/touchbooster] PRIMARY - no need to reapply primary freq lock\n");
 			
 			} else {
 				// touchbooster has not been in relaxed mode yet, or it has
@@ -898,12 +944,13 @@ void touchbooster_dvfs_lock_on(int touchbooster_mode, int touchbooster_freq_over
 			// schedule work.
 			schedule_delayed_work(&work_touchbooster_relax, msecs_to_jiffies(sttg_touchbooster_relax_delay));
 			
-			if (!bus_dvfs_lock_status) {
-				dev_lock(bus_dev, sec_touchscreen, 440220);
+			if (!bus_dvfs_lock_status && sttg_touchbooster_buslock_mode > 0) {
+				dev_lock(bus_dev, sec_touchscreen, sttg_touchbooster_buslock_primary);
 				bus_dvfs_lock_status = true;
+				pr_info("[TSP/touchbooster] PRIMARY - buslock on! - MODE %i @ %i MHz\n", sttg_touchbooster_buslock_mode, sttg_touchbooster_buslock_primary);
 			}
 			
-			pr_info("[TSP/touchbooster] boost on! - MODE 1 - boosted to %d mhz [L%d] for %d msecs\n",
+			pr_info("[TSP/touchbooster] PRIMARY - boost on! - boosted to %d mhz [L%d] for %d msecs\n",
 					touchbooster_actual_freq, touchbooster_cpufreq_level, sttg_touchbooster_duration);
 		}
 		
@@ -1931,7 +1978,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
         }
         
         // we are out of the touchwake IF block now, the code below runs on every update.
-        if (((sttg_longpressoff_alwayson && flg_screen_on) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && touchwake_longpressoff_time_start_secs == -1 && id == 0 && y > 320 && tmp[6] >= sttg_touchwake_longpressoff_min_pressure) {
+        if (((sttg_longpressoff_alwayson && flg_screen_on && flg_touchwake_longpressoff) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && touchwake_longpressoff_time_start_secs == -1 && id == 0 && y > 320 && tmp[6] >= sttg_touchwake_longpressoff_min_pressure) {
             // finger is down and longpressoff is starting.
             
             // we need a fairly unique identifier to check against later, otherwise
@@ -1943,10 +1990,6 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
             touchwake_longpressoff_time_start_secs = 1;
             pr_info("[TSP/touch]: longpressoff started, blocking press and scheduling check in %i ms...\n", sttg_touchwake_longpressoff_duration);
             schedule_delayed_work(&touchwake_check_longpressoff_work, msecs_to_jiffies(sttg_touchwake_longpressoff_duration));
-            
-            // in case we got here from sttg_longpressoff_alwayson, the longpressoff flag might not be set,
-            // so set it again just to be sure.
-            flg_touchwake_longpressoff = true;
             
             swipe_x_start = x;
             swipe_y_start = y;
@@ -1973,7 +2016,7 @@ static irqreturn_t mms_ts_interrupt(int irq, void *dev_id)
             // stop reporting this finger to prevent accidental input.
             return IRQ_HANDLED;
             
-        } else if (swipe_x_start < 9999 && ((sttg_longpressoff_alwayson && flg_screen_on) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && id == 0) {
+        } else if (swipe_x_start < 9999 && ((sttg_longpressoff_alwayson && flg_screen_on && flg_touchwake_longpressoff) || (touchwake_enabled && !flg_touchwake_active && flg_touchwake_longpressoff)) && id == 0) {
             
             pr_info("[TSP/touch]: longpressoff BROKEN. x-drift: %3d, y-drift: %4d, pressure (width): %i, pressure (touch): %i\n", abs(x - swipe_x_start), abs(y - swipe_y_start), tmp[4], tmp[6]);
             
@@ -5279,10 +5322,30 @@ static ssize_t longpressoff_alwayson_store(struct device *dev, struct device_att
 	
 	if(ret && data == 1) {
 		sttg_longpressoff_alwayson = true;
-		pr_info("TOUCHWAKE longpressoff_alwayson has been set\n");
+		pr_info("[TSP/longpressoff] STORE - longpressoff_alwayson has been set\n");
 	} else {
 		sttg_longpressoff_alwayson = false;
-		pr_info("TOUCHWAKE longpressoff_alwayson has been unset\n");
+		pr_info("[TSP/longpressoff] STORE - longpressoff_alwayson has been unset\n");
+	}
+	
+	return size;
+}
+
+static ssize_t longpressoff_wakeguard_duration_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_longpressoff_wakeguard_duration);
+}
+
+static ssize_t longpressoff_wakeguard_duration_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	if(ret && data >= 0 && data < 10000) {
+		sttg_longpressoff_wakeguard_duration = data;
+		pr_info("[TSP/longpressoff] STORE - sttg_longpressoff_wakeguard_duration has been set to %i ms\n", sttg_longpressoff_wakeguard_duration);
 	}
 	
 	return size;
@@ -5465,6 +5528,126 @@ static ssize_t touchbooster_freq_store(struct device *dev, struct device_attribu
 	if(ret && data >= 0) {
 		sttg_touchbooster_freq = data;
 		pr_info("[tsp] sttg_touchbooster_freq has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_buslock_mode_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_buslock_mode);
+}
+
+static ssize_t touchbooster_buslock_mode_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	/*
+	 Mode 0 - No lock
+	 Mode 1 - Lock bus on primary boost only
+	 Mode 2 - Lock bus on primary and relaxed boosts
+	 */
+	
+	if(ret && data >= 0 && data < 3) {
+		sttg_touchbooster_buslock_mode = data;
+		pr_info("[tsp] sttg_touchbooster_buslock_mode has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_buslock_primary_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_buslock_primary);
+}
+
+static ssize_t touchbooster_buslock_primary_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	/*
+	 0 - No lock
+	 1 - 110/110 MHz
+	 2 - 147/147 MHz
+	 3 - 176/176 MHz
+	 4 - 293/176 MHz
+	 5 - 293/220 MHz
+	 6 - 440/220 MHz
+	 */
+	
+	if(ret) {
+		
+		if (data == 0) {
+			data = 0;
+		} else if (data == 1) {
+			data = 110110;
+		} else if (data == 2) {
+			data = 147147;
+		} else if (data == 3) {
+			data = 176176;
+		} else if (data == 4) {
+			data = 293176;
+		} else if (data == 5) {
+			data = 293220;
+		} else if (data == 6) {
+			data = 440220;
+		}
+		
+		sttg_touchbooster_buslock_primary = data;
+		pr_info("[tsp] sttg_touchbooster_buslock_primary has been set to: %d\n", data);
+	}
+	
+	return size;
+}
+
+static ssize_t touchbooster_buslock_relaxed_show(struct device *dev, struct device_attribute *attr, char *buf) {
+	
+	return sprintf(buf, "%u\n", sttg_touchbooster_buslock_relaxed);
+}
+
+static ssize_t touchbooster_buslock_relaxed_store(struct device *dev, struct device_attribute *attr, char *buf, size_t size) {
+	
+	unsigned int ret;
+	unsigned int data;
+	
+	ret = sscanf(buf, "%u\n", &data);
+	
+	/*
+	 0 - No lock
+	 1 - 110/110 MHz
+	 2 - 147/147 MHz
+	 3 - 176/176 MHz
+	 4 - 293/176 MHz
+	 5 - 293/220 MHz
+	 6 - 440/220 MHz
+	 */
+	
+	if(ret) {
+		
+		if (data == 0) {
+			data = 0;
+		} else if (data == 1) {
+			data = 110110;
+		} else if (data == 2) {
+			data = 147147;
+		} else if (data == 3) {
+			data = 176176;
+		} else if (data == 4) {
+			data = 293176;
+		} else if (data == 5) {
+			data = 293220;
+		} else if (data == 6) {
+			data = 440220;
+		}
+		
+		sttg_touchbooster_buslock_relaxed = data;
+		pr_info("[tsp] sttg_touchbooster_buslock_relaxed has been set to: %d\n", data);
 	}
 	
 	return size;
@@ -6154,6 +6337,7 @@ static DEVICE_ATTR(cmd, S_IWUSR | S_IWGRP, NULL, store_cmd);
 static DEVICE_ATTR(cmd_status, S_IRUGO, show_cmd_status, NULL);
 static DEVICE_ATTR(cmd_result, S_IRUGO, show_cmd_result, NULL);
 static DEVICE_ATTR(longpressoff_alwayson, S_IRUGO | S_IWUSR, longpressoff_alwayson_show, longpressoff_alwayson_store);
+static DEVICE_ATTR(longpressoff_wakeguard_duration, S_IRUGO | S_IWUSR, longpressoff_wakeguard_duration_show, longpressoff_wakeguard_duration_store);
 static DEVICE_ATTR(typingbooster_mincores, S_IRUGO | S_IWUSR, typingbooster_mincores_show, typingbooster_mincores_store);
 static DEVICE_ATTR(typingbooster_upthreshold, S_IRUGO | S_IWUSR, typingbooster_upthreshold_show, typingbooster_upthreshold_store);
 static DEVICE_ATTR(typingbooster_cycles, S_IRUGO | S_IWUSR, typingbooster_cycles_show, typingbooster_cycles_store);
@@ -6161,6 +6345,9 @@ static DEVICE_ATTR(typingbooster_maxmsbetweentaps, S_IRUGO | S_IWUSR, typingboos
 static DEVICE_ATTR(typingbooster_mintaps, S_IRUGO | S_IWUSR, typingbooster_mintaps_show, typingbooster_mintaps_store);
 static DEVICE_ATTR(touchbooster_enabled, S_IRUGO | S_IWUSR, touchbooster_enabled_show, touchbooster_enabled_store);
 static DEVICE_ATTR(touchbooster_freq, S_IRUGO | S_IWUSR, touchbooster_freq_show, touchbooster_freq_store);
+static DEVICE_ATTR(touchbooster_buslock_mode, S_IRUGO | S_IWUSR, touchbooster_buslock_mode_show, touchbooster_buslock_mode_store);
+static DEVICE_ATTR(touchbooster_buslock_primary, S_IRUGO | S_IWUSR, touchbooster_buslock_primary_show, touchbooster_buslock_primary_store);
+static DEVICE_ATTR(touchbooster_buslock_relaxed, S_IRUGO | S_IWUSR, touchbooster_buslock_relaxed_show, touchbooster_buslock_relaxed_store);
 static DEVICE_ATTR(touchbooster_duration, S_IRUGO | S_IWUSR, touchbooster_duration_show, touchbooster_duration_store);
 static DEVICE_ATTR(touchbooster_relax_delay, S_IRUGO | S_IWUSR, touchbooster_relax_delay_show, touchbooster_relax_delay_store);
 static DEVICE_ATTR(touchbooster_relax_freq, S_IRUGO | S_IWUSR, touchbooster_relax_freq_show, touchbooster_relax_freq_store);
@@ -6184,6 +6371,7 @@ static struct attribute *sec_touch_factory_attributes[] = {
 	&dev_attr_cmd_status.attr,
 	&dev_attr_cmd_result.attr,
     &dev_attr_longpressoff_alwayson.attr,
+	&dev_attr_longpressoff_wakeguard_duration.attr,
 	&dev_attr_typingbooster_mincores.attr,
 	&dev_attr_typingbooster_upthreshold.attr,
 	&dev_attr_typingbooster_cycles.attr,
@@ -6191,6 +6379,9 @@ static struct attribute *sec_touch_factory_attributes[] = {
 	&dev_attr_typingbooster_mintaps.attr,
 	&dev_attr_touchbooster_enabled.attr,
 	&dev_attr_touchbooster_freq.attr,
+	&dev_attr_touchbooster_buslock_mode.attr,
+	&dev_attr_touchbooster_buslock_primary.attr,
+	&dev_attr_touchbooster_buslock_relaxed.attr,
 	&dev_attr_touchbooster_duration.attr,
 	&dev_attr_touchbooster_relax_delay.attr,
 	&dev_attr_touchbooster_relax_freq.attr,
@@ -6386,10 +6577,19 @@ static void mms_ts_late_resume(struct early_suspend *h)
     if (sttg_longpressoff_alwayson) {
         // only set the longpressoff flag if the user has requested it always be on.
         
-        pr_info("[TSP/Touch] -WAKE- longpressoff always on\n");
+		// set LPO off, so we can schedule work to turn it back on
+		// in a second. literally. we're doing this so no one thumbs
+		// the screen while turning it on, which would activate LPO.
+		flg_touchwake_longpressoff = false;
+		
+		// fool the logic into thinking LPO has been already detected, so if a finger is
+		// on the screen still it won't immediately trigger LPO once it's enabled.
+		touchwake_longpressoff_time_start_secs = 1;
+		
+        pr_info("[TSP/Touch] -WAKE- longpressoff always on. disabling for %i ms to prevent thumbing...\n", sttg_longpressoff_wakeguard_duration);
         
-        // set the flag.
-        flg_touchwake_longpressoff = true;
+        // schedule work to set the flag.
+        schedule_delayed_work(&touchwake_enable_longpressoff_work, msecs_to_jiffies(sttg_longpressoff_wakeguard_duration));
     }
 	
 	touchscreen_enable();
@@ -6719,7 +6919,6 @@ static int __devinit mms_ts_probe(struct i2c_client *client,
 	gesturebooster_cpufreq_level = -1;
 	gesturebooster_dvfs_locked = 0;
 #endif
-    
     
     max_configured_gesture = 1;
     
