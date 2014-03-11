@@ -57,7 +57,7 @@ unsigned int g_cpufreq_lock_id;
 unsigned int g_cpufreq_lock_val[DVFS_LOCK_ID_END];
 unsigned int g_cpufreq_lock_level;
 
-unsigned int cpufreq_pm_lock_idx = 14;
+unsigned int cpufreq_pm_lock_idx = 15;
 unsigned int cpufreq_pm_lock_freq = 800000;
 
 int exynos_verify_speed(struct cpufreq_policy *policy)
@@ -908,8 +908,8 @@ static int __init exynos_cpufreq_init(void)
 	g_cpufreq_lock_level = exynos_info->min_support_idx;
 	g_cpufreq_limit_level = exynos_info->max_support_idx;
 	
-	// set default safe pm_lock values (800MHz, L14)
-	cpufreq_pm_lock_idx = 14;
+	// set default safe pm_lock values (800MHz, L15)
+	cpufreq_pm_lock_idx = 15;
 	cpufreq_pm_lock_freq = 800000;
 
 	if (cpufreq_register_driver(&exynos_driver)) {
