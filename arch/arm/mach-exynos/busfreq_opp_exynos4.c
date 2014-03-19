@@ -235,6 +235,18 @@ void exynos_busfreq_lock_free(unsigned int nId)
 {
 }
 
+static ssize_t show_curr_freq_only(struct device *device,
+							   struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev = to_platform_device(bus_ctrl.dev);
+	struct busfreq_data *data = (struct busfreq_data *)platform_get_drvdata(pdev);
+	int len = 0;
+	
+	len = sprintf(buf, "%lu\n", opp_get_freq(data->curr_opp));
+	
+	return len;
+}
+
 static ssize_t show_level_lock(struct device *device,
 		struct device_attribute *attr, char *buf)
 {
@@ -583,6 +595,7 @@ static ssize_t store_int_volt_table(struct device *device,
 }
 
 static DEVICE_ATTR(curr_freq, S_IRUGO | S_IWUGO, show_level_lock, store_level_lock);
+static DEVICE_ATTR(curr_freq_only, S_IRUGO, show_curr_freq_only, NULL);
 static DEVICE_ATTR(lock_list, S_IRUGO, show_locklist, NULL);
 static DEVICE_ATTR(time_in_state, S_IRUGO, show_time_in_state, NULL);
 static DEVICE_ATTR(idle_threshold, S_IRUGO | S_IWUGO, show_idle_threshold, store_idle_threshold);
@@ -596,6 +609,7 @@ static DEVICE_ATTR(mif_volt_table, S_IRUGO | S_IWUGO, show_mif_volt_table, store
 static DEVICE_ATTR(int_volt_table, S_IRUGO | S_IWUGO, show_int_volt_table, store_int_volt_table);
 
 static struct attribute *busfreq_attributes[] = {
+	&dev_attr_curr_freq_only.attr,
 	&dev_attr_curr_freq.attr,
 	&dev_attr_lock_list.attr,
 	&dev_attr_time_in_state.attr,
