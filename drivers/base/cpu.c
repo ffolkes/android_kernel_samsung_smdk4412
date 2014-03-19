@@ -14,6 +14,9 @@
 
 #include "base.h"
 
+unsigned int flg_ctr_cpuboost = 0;
+unsigned int flg_ctr_cpuboost_mid = 0;
+
 static struct sysdev_class_attribute *cpu_sysdev_class_attrs[];
 
 struct sysdev_class cpu_sysdev_class = {
@@ -174,6 +177,23 @@ static ssize_t print_cpus_kernel_max(struct sysdev_class *class,
 }
 static SYSDEV_CLASS_ATTR(kernel_max, 0444, print_cpus_kernel_max, NULL);
 
+static ssize_t ctr_cpuboost_store(struct sysdev_class *class,
+							   struct sysdev_class_attribute *attr,
+							   const char *buf,
+							   size_t count)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		flg_ctr_cpuboost = data;
+		pr_info("[TW/ww] flg_ctr_cpuboost has been set to %d\n", flg_ctr_cpuboost);
+	}
+	
+	return count;
+}
+
+static SYSDEV_CLASS_ATTR(ctr_cpuboost, S_IWUSR, NULL, ctr_cpuboost_store);
+
 /* arch-optional setting to enable display of offline cpus >= nr_cpu_ids */
 unsigned int total_cpus;
 
@@ -270,5 +290,6 @@ static struct sysdev_class_attribute *cpu_sysdev_class_attrs[] = {
 	&cpu_attrs[2].attr,
 	&attr_kernel_max,
 	&attr_offline,
+	&attr_ctr_cpuboost,
 	NULL
 };

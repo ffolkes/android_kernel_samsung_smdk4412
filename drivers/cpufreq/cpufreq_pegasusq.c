@@ -1644,10 +1644,22 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	policy = this_dbs_info->cur_policy;
 	
-	if (flg_ctr_incoming_call > 0) {
-		pr_info("[pegasusq] Incoming Call! Boosting to: %d MHz %d more times\n", policy->max, flg_ctr_incoming_call);
+	if (flg_ctr_cpuboost > 0) {
+		
+		pr_info("[pegasusq] Userspace Boost Call! Boosting to: %d MHz %d more times\n", policy->max, flg_ctr_cpuboost);
 		__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
-		flg_ctr_incoming_call--;
+		
+		flg_ctr_cpuboost--;
+		flg_ctr_cpuboost_mid--;
+		return;
+	}
+	
+	if (flg_ctr_cpuboost_mid > 0) {
+		
+		pr_info("[zzmoove] Manual Mid-Boost Call! Boosting to: %d MHz %d more times\n", 800000, flg_ctr_cpuboost_mid);
+		__cpufreq_driver_target(policy, 800000, CPUFREQ_RELATION_H);
+		
+		flg_ctr_cpuboost_mid--;
 		return;
 	}
 	
