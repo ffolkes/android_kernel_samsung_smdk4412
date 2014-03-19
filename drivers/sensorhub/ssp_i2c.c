@@ -13,12 +13,16 @@
  *
  */
 #include "ssp.h"
+#include <linux/touch_wake.h>
 
 #define LIMIT_DELAY_CNT		200
 
 int waiting_wakeup_mcu(struct ssp_data *data)
 {
 	int iDelaycnt = 0;
+	
+	if (sttg_touchwake_persistent)
+		return SUCCESS;
 
 	while (!data->check_mcu_busy() && (iDelaycnt++ < LIMIT_DELAY_CNT)
 		&& (data->bSspShutdown == false))
@@ -100,6 +104,9 @@ int ssp_sleep_mode(struct ssp_data *data)
 	char chRxBuf = 0;
 	char chTxBuf = MSG2SSP_AP_STATUS_SLEEP;
 	int iRet = 0, iRetries = DEFAULT_RETRIES;
+	
+	if (sttg_touchwake_persistent)
+		return SUCCESS;
 
 	if (waiting_wakeup_mcu(data) < 0)
 		return ERROR;
@@ -138,6 +145,9 @@ int ssp_resume_mode(struct ssp_data *data)
 	char chRxBuf = 0;
 	char chTxBuf = MSG2SSP_AP_STATUS_WAKEUP;
 	int iRet = 0, iRetries = DEFAULT_RETRIES;
+	
+	if (sttg_touchwake_persistent)
+		return SUCCESS;
 
 	if (waiting_wakeup_mcu(data) < 0)
 		return ERROR;
