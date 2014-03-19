@@ -26,7 +26,6 @@
 #include <asm/unaligned.h>
 #include <mach/usb_bridge.h>
 #include <linux/mdm_hsic_pm.h>
-#include <mach/cpufreq.h>
 
 #ifdef CONFIG_MDM_HSIC_PM
 #include <linux/mdm_hsic_pm.h>
@@ -37,8 +36,6 @@ static const char const *ctrl_bridge_names[] = {
 	"dun_ctrl_hsic0",
 	"rmnet_ctrl_hsic0"
 };
-
-unsigned int flg_ctr_incoming_call = 0;
 
 /* polling interval for Interrupt ep */
 #define HS_INTERVAL		7
@@ -193,8 +190,6 @@ static void notification_available_cb(struct urb *urb)
 	unsigned int			ctrl_bits;
 	unsigned char			*data;
 	unsigned int		iface_num;
-	
-	//pr_info("[MCB] starting. urb_status:%d\n", urb->status);
 
 	/* if this intf is already disconnected, this urb free-ed before
 	 * calling from qh_completions. just return and do nothing */
@@ -262,8 +257,6 @@ static void notification_available_cb(struct urb *urb)
 		pr_info("%s: set lpa handling to false\n", __func__);
 		lpa_handling = false;
 #endif
-		flg_ctr_incoming_call = 40;
-		pr_info("[MCB] boosted me!\n");
 		break;
 	default:
 		dev_err(&udev->dev, "%s: unknown notification %d received:"
