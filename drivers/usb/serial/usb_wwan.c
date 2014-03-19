@@ -217,7 +217,7 @@ int usb_wwan_write(struct tty_struct *tty, struct usb_serial_port *port,
 	portdata = usb_get_serial_port_data(port);
 	intfdata = port->serial->private;
 
-	dbg("%s: write (%d chars)", __func__, count);
+	//dbg("%s: write (%d chars)", __func__, count);
 
 #ifdef CONFIG_MDM_HSIC_PM
 	if (port->serial->dev->actconfig->desc.bNumInterfaces == 9)
@@ -328,9 +328,9 @@ handle_rx:
 				 */
 				urb->status = -EINPROGRESS;
 				urb->actual_length = 0;
-				if (udev->actconfig->desc.bNumInterfaces == 9)
-					pr_info("%s: read urb received : %d\n",
-						__func__, rx_len);
+				//if (udev->actconfig->desc.bNumInterfaces == 9)
+					//pr_info("%s: read urb received : %d\n",
+						//__func__, rx_len);
 #endif
 				tty_insert_flip_string(tty, data, rx_len);
 				tty_flip_buffer_push(tty);
