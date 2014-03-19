@@ -9,11 +9,9 @@ MOD_NAME = j4fs
 
 ifneq ($(KERNELRELEASE), )
 
-EXTRA_CFLAGS +=  -I$(PRJROOT)/modules/include -I$(KDIR)/drivers/tfsr/Inc -I$(KDIR)/include -I$(KDIR)/include/linux -I$(KDIR)/include/asm -D__KERNEL
+#EXTRA_CFLAGS +=  -I$(PRJROOT)/modules/include -I$(KDIR)/drivers/tfsr/Inc -I$(KDIR)/include -I$(KDIR)/include/linux -I$(KDIR)/include/asm -D__KERNEL
 
-obj-m := $(MOD_NAME).o
-
-$(MOD_NAME)-y := j4fs_kernel.o llid_kernel.o fsd_common.o
+obj-y += j4fs_kernel.o llid_kernel.o fsd_common.o
 
 else
 
