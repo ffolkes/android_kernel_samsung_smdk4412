@@ -11,6 +11,7 @@ enum MODE {
 #endif
 	MOVIE,
 	NIGHTMODE,
+	GRAYMODE,
 	MODE_MAX,
 };
 

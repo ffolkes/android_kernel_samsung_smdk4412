@@ -34,6 +34,42 @@ static unsigned short tune_nightmode_ui[] = {
 	END_SEQ, 0x0000,
 };
 
+static unsigned short tune_graymode_ui[] = {
+	0x0000, 0x0000,	/*BANK 0*/
+	0x0008, 0x00a0,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
+	0x0030, 0x0000,	/*FA cs1 de8 hdr2 fa1*/
+	
+	0x00e1, 0x56b3,	/*SCR RrCr (each can be thought of as "TARGETCOLORsubpixelbrightness") (alternate: 0x4cb3)*/
+	0x00e2, 0x56b3,	/*SCR RgCg (e.g. Rg = greenpixelgain in the color Red, Cg = greenpixelgain in the color Cyan */
+	0x00e3, 0x56b3,	/*SCR RbCb*/
+	
+	0x00e4, 0x5669,	/*SCR GrMr (alternate: 0x9669)*/
+	0x00e5, 0x5669,	/*SCR GgMg*/
+	0x00e6, 0x5669,	/*SCR GbMb*/
+	
+	0x00e7, 0x56e2,	/*SCR BrYr (alternate: 0x1d2e)*/
+	0x00e8, 0x56e2,	/*SCR BgYg*/
+	0x00e9, 0x56e2,	/*SCR BbYb*/
+	
+	0x00ea, 0x00ff,	/*SCR KrWr (alternate: 0x00ff)*/
+	0x00eb, 0x00ff,	/*SCR KgWg*/
+	0x00ec, 0x00ff,	/*SCR KbWb*/
+	
+	0x0000, 0x0001,	/*BANK 1*/
+	0x001f, 0x0080,	/*CC chsel strength*/
+	0x0020, 0x0000,	/*CC lut r   0*/
+	0x0021, 0x1090,	/*CC lut r  16 144*/
+	0x0022, 0x20a0,	/*CC lut r  32 160*/
+	0x0023, 0x30b0,	/*CC lut r  48 176*/
+	0x0024, 0x40c0,	/*CC lut r  64 192*/
+	0x0025, 0x50d0,	/*CC lut r  80 208*/
+	0x0026, 0x60e0,	/*CC lut r  96 224*/
+	0x0027, 0x70f0,	/*CC lut r 112 240*/
+	0x0028, 0x80ff,	/*CC lut r 128 255*/
+	0x00ff, 0x0000,	/*Mask Release*/
+	END_SEQ, 0x0000,
+};
+
 static unsigned short tune_dynamic_gallery[] = {
 	0x0000, 0x0000,	/*BANK 0*/
 	0x0008, 0x008c,	/*Dither8 UC4 ABC2 CP1 | CC8 MCM4 SCR2 SCC1 | CS8 DE4 DNR2 HDR1*/
@@ -789,6 +825,15 @@ struct mdnie_tunning_info tunning_table[CABC_MAX][MODE_MAX][SCENARIO_MAX] = {
 			{"NIGHTMODE_UI",	(unsigned short *)&tune_nightmode_ui},
 			{"NIGHTMODE_GALLERY",   (unsigned short *)&tune_nightmode_ui},
 			{"NIGHTMODE_VT",	(unsigned short *)&tune_nightmode_ui},
+		}, {
+			{"GRAYMODE_UI",	(unsigned short *)&tune_graymode_ui},
+			{"GRAYMODE_VIDEO",	(unsigned short *)&tune_graymode_ui},
+			{"GRAYMODE_VIDEO",	(unsigned short *)&tune_graymode_ui},
+			{"GRAYMODE_VIDEO",	(unsigned short *)&tune_graymode_ui},
+			{"CAMERA",		NULL},
+			{"GRAYMODE_UI",	(unsigned short *)&tune_graymode_ui},
+			{"GRAYMODE_GALLERY",   (unsigned short *)&tune_graymode_ui},
+			{"GRAYMODE_VT",	(unsigned short *)&tune_graymode_ui},
 		},
 	}
 };

@@ -1036,6 +1036,42 @@ void mdnie_toggle_nightmode(void)
 	set_mdnie_value(g_mdnie, 0);
 }
 
+void mdnie_toggle_graymode(void)
+{
+	mutex_lock(&g_mdnie->lock);
+    
+    if (prev_mdnie_mode == -1) {
+        // sequence_hook disables mdnie modes, so save previous sequence_hook
+        // and then disable it.
+        prev_sequence_hook = sequence_hook;
+        sequence_hook = false;
+        scheduled_refresh();
+        
+        // save previous mode.
+        prev_mdnie_mode = g_mdnie->mode;
+        g_mdnie->mode = GRAYMODE;
+    } else {
+        
+        if (!sequence_hook) {
+            // sequence_hook should still be false. but if someone started with it off, toggled this, then
+            // enabled the seequence_hook via sysfs, then this would get out of sync and
+            // we'd end up "overwriting" the user's change.
+            
+            // restore previous sequence_hook.
+            sequence_hook = prev_sequence_hook;
+            scheduled_refresh();
+        }
+        
+        // restore previous mode.
+        g_mdnie->mode = prev_mdnie_mode;
+        prev_mdnie_mode = -1;
+    }
+    
+	mutex_unlock(&g_mdnie->lock);
+    
+	set_mdnie_value(g_mdnie, 0);
+}
+
 static int mdnie_probe(struct platform_device *pdev)
 {
 #if defined(CONFIG_FB_MDNIE_PWM)
