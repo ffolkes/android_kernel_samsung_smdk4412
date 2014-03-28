@@ -25,6 +25,8 @@
 #define FLASH_SWITCH_REMOVED_REVISION	0x05
 #endif
 
+static bool flg_rearled_on = false;
+
 struct max77693_led_data {
 	struct led_classdev led;
 	struct max77693_dev *max77693;
@@ -243,6 +245,34 @@ static int max77693_led_setup(struct max77693_led_data *led_data)
 	return ret;
 }
 
+void toggleRearLED(unsigned int level)
+{
+	struct led_classdev *led_cdev = dev_get_drvdata(flash_dev);
+	
+	if (flg_rearled_on) {
+		level = 0;
+	}
+	
+	if (level > led_cdev->max_brightness)
+		level = led_cdev->max_brightness;
+	
+	led_cdev->brightness = level;
+	
+	if (!(led_cdev->flags & LED_SUSPENDED))
+		led_cdev->brightness_set(led_cdev, level);
+	
+	if (level > 0) {
+		flg_rearled_on = true;
+	} else {
+		flg_rearled_on = false;
+	}
+	
+	pr_info("[REARLED] called internally, state: %u\n", level);
+	
+	return;
+}
+EXPORT_SYMBOL(toggleRearLED);
+
 static ssize_t max77693_flash(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
@@ -264,6 +294,14 @@ static ssize_t max77693_flash(struct device *dev,
 		if (!(led_cdev->flags & LED_SUSPENDED))
 			led_cdev->brightness_set(led_cdev, state);
 	}
+	
+	if (state > 0) {
+		flg_rearled_on = true;
+	} else {
+		flg_rearled_on = false;
+	}
+	
+	pr_info("[REARLED] called from sysfs, state: %lu\n", state);
 
 	return ret;
 }
