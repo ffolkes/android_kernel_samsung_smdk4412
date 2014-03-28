@@ -220,8 +220,8 @@ int usb_wwan_write(struct tty_struct *tty, struct usb_serial_port *port,
 	//dbg("%s: write (%d chars)", __func__, count);
 
 #ifdef CONFIG_MDM_HSIC_PM
-	if (port->serial->dev->actconfig->desc.bNumInterfaces == 9)
-		pr_info("%s: write (%d chars)", __func__, count);
+	//if (port->serial->dev->actconfig->desc.bNumInterfaces == 9)
+	//	pr_info("%s: write (%d chars)", __func__, count);
 #endif
 
 	i = 0;
