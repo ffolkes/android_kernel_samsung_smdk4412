@@ -31,6 +31,7 @@
 #include <linux/touch_wake.h>
 #endif
 
+extern unsigned int flg_ctr_cpuboost;
 
 extern struct class *sec_class;
 
@@ -518,7 +519,22 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	}
 #endif
 	
+	if (sttg_kw_mode > 0
+		&& (sttg_ka_mode || sttg_kw_mode == 1 || sttg_kw_mode > 3)) {
+		// if knockwake is enabled, reset it if a touchkey was pressed.
+		
+		pr_info("[keys/kw] resetting knockwake\n");
+		ignoreKnocks(sttg_kw_tsp_event_suspensions);
+	}
+	
 	if (state && button->code == KEY_POWER && !flg_screen_on) {
+		if (flg_ww_prox_on) {
+			pr_info("[keys] prox: disabling\n");
+			ww_disable_prox();
+		} else {
+			pr_info("[keys] prox: leaving alone\n");
+		}
+		flg_ctr_cpuboost = 25;
         gesturebooster_dvfs_lock_on(0);
         bus_dvfs_lock_on(0);
         pr_info("[keys] boosters on\n");
@@ -646,6 +662,8 @@ static irqreturn_t gpio_keys_isr(int irq, void *dev_id)
 	struct irq_desc *desc = irq_to_desc(irq);
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0)
 		^ button->active_low;
+	
+	printk(KERN_DEBUG"[keys] got: %d\n", button->code);
     
     if (touchwake_enabled && flg_touchwake_active && sttg_touchwake_persistent && sttg_touchwake_ignorepowerkey && button->code == KEY_POWER) {
         printk(KERN_DEBUG"[keys/touchwake] ignoring power key press\n");
@@ -654,6 +672,11 @@ static irqreturn_t gpio_keys_isr(int irq, void *dev_id)
 	
 	if (sttg_keys_ignorehomekeywake && button->code == HOME_KEY_VAL && !flg_screen_on) {
 		printk(KERN_DEBUG"[keys] ignoring home key press\n");
+        return IRQ_HANDLED;
+	}
+	
+	if (flg_epen_worryfree_mode && button->code == HOME_KEY_VAL) {
+		printk(KERN_DEBUG"[keys] ignoring home key press because of sttg_epen_worryfree_mode\n");
         return IRQ_HANDLED;
 	}
 
