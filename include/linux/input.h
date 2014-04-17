@@ -267,7 +267,7 @@ struct input_keymap_entry {
 #define KEY_KP3			81
 #define KEY_KP0			82
 #define KEY_KPDOT		83
-
+#define KEY_ANDROIDSEARCH	84
 #define KEY_ZENKAKUHANKAKU	85
 #define KEY_102ND		86
 #define KEY_F11			87
