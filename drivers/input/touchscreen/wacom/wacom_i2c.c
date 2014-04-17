@@ -33,9 +33,15 @@
 #define WACOM_UMS_UPDATE
 #define WACOM_FW_PATH "/sdcard/firmware/wacom_firm.bin"
 
+extern bool flg_tsp_touching;
+extern int flg_ctr_tsp_touching;
+extern bool flg_epen_pressed;
+
 unsigned char screen_rotate;
 unsigned char user_hand = 1;
 static bool epen_reset_result;
+
+bool flg_epen_hovering = false;
 
 static bool pen_insert_state;
 static bool firmware_updating_state;
@@ -51,6 +57,21 @@ int sttg_offset_override_x = 0;
 int sttg_offset_override_y = 0;
 bool sttg_offset_override_enabled = false;
 unsigned int sttg_touchkey_block_length = 1500;
+bool sttg_epen_worryfree_mode = false;
+bool flg_epen_worryfree_mode = false;
+
+unsigned int sttg_epen_hover_side_hotspot_height = (WACOM_MAX_COORD_X - 1000);
+unsigned int sttg_epen_hover_side_left_keycode = KEY_MENU;
+bool sttg_epen_hover_side_left_keydelay = false;
+unsigned int sttg_epen_hover_side_center_keycode = KEY_HOME;
+bool sttg_epen_hover_side_center_keydelay = false;
+unsigned int sttg_epen_hover_side_right_keycode = KEY_BACK;
+bool sttg_epen_hover_side_right_keydelay = false;
+
+unsigned int sttg_epen_padding_top = 100;
+unsigned int sttg_epen_padding_right = (WACOM_MAX_COORD_Y - 100);
+unsigned int sttg_epen_padding_bottom = (WACOM_MAX_COORD_X - 100);
+unsigned int sttg_epen_padding_left = 100;
 
 static void wacom_i2c_enable_irq(struct wacom_i2c *wac_i2c, bool enable)
 {
@@ -377,6 +398,8 @@ static void update_fw_p4(struct wacom_i2c *wac_i2c)
 static irqreturn_t wacom_interrupt(int irq, void *dev_id)
 {
 	struct wacom_i2c *wac_i2c = dev_id;
+	
+	//printk(KERN_DEBUG "[E-PEN] touching: %d, touching ctr: %i\n", flg_tsp_touching, flg_ctr_tsp_touching);
 	wacom_i2c_coord(wac_i2c);
 	return IRQ_HANDLED;
 }
@@ -393,13 +416,25 @@ static irqreturn_t wacom_interrupt_pdct(int irq, void *dev_id)
 
 	printk(KERN_DEBUG "[E-PEN] pdct %d(%d)\n",
 		wac_i2c->pen_pdct, wac_i2c->pen_prox);
+	
+	if (!wac_i2c->pen_pdct) {
+		flg_epen_hovering = true;
+	} else {
+		flg_epen_hovering = false;
+	}
 
 	if (wac_i2c->pen_pdct == PDCT_NOSIGNAL) {
+		//printk(KERN_DEBUG "[E-PEN] NOSIGNAL\n");
 		/* If rdy is 1, pen is still working*/
-		if (wac_i2c->pen_prox == 0)
+		if (wac_i2c->pen_prox == 0){
+			printk(KERN_DEBUG "[E-PEN] NOSIGNAL FORCING RELEASE\n");
 			forced_release(wac_i2c);
-	} else if (wac_i2c->pen_prox == 0)
+		}
+		
+	} else if (wac_i2c->pen_prox == 0) {
+		//printk(KERN_DEBUG "[E-PEN] NOSIGNAL2\n");
 		forced_hover(wac_i2c);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -476,6 +511,28 @@ static void pen_insert_work(struct work_struct *work)
 	// make sure the epen activity lock is reset.
 	cancel_delayed_work(&wac_i2c->activitylockout_work);
 	epen_is_active = false;
+	
+	if (flg_epen_worryfree_mode) {
+		printk(KERN_DEBUG "[E-PEN] DEBUG flg_epen_worryfree_mode was ON\n");
+	} else {
+		printk(KERN_DEBUG "[E-PEN] DEBUG flg_epen_worryfree_mode was OFF\n");
+	}
+	
+	if (sttg_epen_worryfree_mode) {
+		printk(KERN_DEBUG "[E-PEN] DEBUG sttg_epen_worryfree_mode was ON\n");
+	} else {
+		printk(KERN_DEBUG "[E-PEN] DEBUG sttg_epen_worryfree_mode was OFF\n");
+	}
+	
+	if (wac_i2c->pen_insert) {
+		printk(KERN_DEBUG "[E-PEN] sttg_epen_worryfree_mode OFF\n");
+		flg_epen_worryfree_mode = false;
+	} else {
+		if (sttg_epen_worryfree_mode) {
+			printk(KERN_DEBUG "[E-PEN] sttg_epen_worryfree_mode ON\n");
+			flg_epen_worryfree_mode = true;
+		}
+	}
 
 #ifdef BATTERY_SAVING_MODE
 	if (wac_i2c->pen_insert) {
@@ -1078,7 +1135,7 @@ static ssize_t epen_side_button_mode_store(struct device *dev,
 	
 	sscanf(buf, "%u", &val);
 	
-	if (val == 0 || val == 1)
+	if (val == 0 || val == 1 || val == 2)
 		sttg_side_button_mode = val;
 	
 	return count;
@@ -1213,6 +1270,264 @@ static ssize_t epen_touchkey_block_length_store(struct device *dev,
 	
 	if (val >= 0 && val <= 60000)
 		sttg_touchkey_block_length = val;
+	
+	return count;
+}
+
+static ssize_t epen_worryfree_mode_show(struct device *dev,
+										struct device_attribute *attr,
+										char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_worryfree_mode);
+}
+
+static ssize_t epen_worryfree_mode_store(struct device *dev,
+										 struct device_attribute *attr, const char *buf,
+										 size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	
+	if (val == 0) {
+		// off.
+		
+		sttg_epen_worryfree_mode = val;
+		flg_epen_worryfree_mode = val;
+		
+	} else if (val == 1) {
+		// on.
+		
+		sttg_epen_worryfree_mode = val;
+		
+		if (!pen_insert_state) {
+			// pen NOT inserted.
+			flg_epen_worryfree_mode = val;
+		}
+	}
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_hotspot_height_show(struct device *dev,
+												   struct device_attribute *attr,
+												   char *buf)
+{
+	return sprintf(buf, "%d\n", (WACOM_MAX_COORD_X - sttg_epen_hover_side_hotspot_height));
+}
+
+static ssize_t epen_hover_side_hotspot_height_store(struct device *dev,
+													struct device_attribute *attr, const char *buf,
+													size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_hotspot_height = (WACOM_MAX_COORD_X - val);
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_left_keycode_show(struct device *dev,
+												 struct device_attribute *attr,
+												 char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_left_keycode);
+}
+
+static ssize_t epen_hover_side_left_keycode_store(struct device *dev,
+												  struct device_attribute *attr, const char *buf,
+												  size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_left_keycode = val;
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_left_keydelay_show(struct device *dev,
+												  struct device_attribute *attr,
+												  char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_left_keydelay);
+}
+
+static ssize_t epen_hover_side_left_keydelay_store(struct device *dev,
+												   struct device_attribute *attr, const char *buf,
+												   size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_left_keydelay = val;
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_center_keycode_show(struct device *dev,
+												   struct device_attribute *attr,
+												   char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_center_keycode);
+}
+
+static ssize_t epen_hover_side_center_keycode_store(struct device *dev,
+													struct device_attribute *attr, const char *buf,
+													size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_center_keycode = val;
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_center_keydelay_show(struct device *dev,
+													struct device_attribute *attr,
+													char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_center_keydelay);
+}
+
+static ssize_t epen_hover_side_center_keydelay_store(struct device *dev,
+													 struct device_attribute *attr, const char *buf,
+													 size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_center_keydelay = val;
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_right_keycode_show(struct device *dev,
+												  struct device_attribute *attr,
+												  char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_right_keycode);
+}
+
+static ssize_t epen_hover_side_right_keycode_store(struct device *dev,
+												   struct device_attribute *attr, const char *buf,
+												   size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_right_keycode = val;
+	
+	return count;
+}
+
+static ssize_t epen_hover_side_right_keydelay_show(struct device *dev,
+												   struct device_attribute *attr,
+												   char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_hover_side_right_keydelay);
+}
+
+static ssize_t epen_hover_side_right_keydelay_store(struct device *dev,
+													struct device_attribute *attr, const char *buf,
+													size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_hover_side_right_keydelay = val;
+	
+	return count;
+}
+
+// padding
+//////////////////////
+
+static ssize_t epen_padding_top_show(struct device *dev,
+									 struct device_attribute *attr,
+									 char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_padding_top);
+}
+
+static ssize_t epen_padding_top_store(struct device *dev,
+									  struct device_attribute *attr, const char *buf,
+									  size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_padding_top = val;
+	
+	return count;
+}
+
+static ssize_t epen_padding_right_show(struct device *dev,
+									   struct device_attribute *attr,
+									   char *buf)
+{
+	return sprintf(buf, "%d\n", (WACOM_MAX_COORD_Y - sttg_epen_padding_right));
+}
+
+static ssize_t epen_padding_right_store(struct device *dev,
+										struct device_attribute *attr, const char *buf,
+										size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_padding_right = (WACOM_MAX_COORD_Y - val);
+	
+	return count;
+}
+
+static ssize_t epen_padding_bottom_show(struct device *dev,
+										struct device_attribute *attr,
+										char *buf)
+{
+	return sprintf(buf, "%d\n", (WACOM_MAX_COORD_X - sttg_epen_padding_bottom));
+}
+
+static ssize_t epen_padding_bottom_store(struct device *dev,
+										 struct device_attribute *attr, const char *buf,
+										 size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_padding_bottom = (WACOM_MAX_COORD_X - val);
+	
+	return count;
+}
+
+static ssize_t epen_padding_left_show(struct device *dev,
+									  struct device_attribute *attr,
+									  char *buf)
+{
+	return sprintf(buf, "%d\n", sttg_epen_padding_left);
+}
+
+static ssize_t epen_padding_left_store(struct device *dev,
+									   struct device_attribute *attr, const char *buf,
+									   size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%d", &val);
+	
+	sttg_epen_padding_left = val;
 	
 	return count;
 }
@@ -1482,6 +1797,18 @@ static DEVICE_ATTR(epen_offset_override_x, S_IRUGO | S_IWUSR, epen_offset_overri
 static DEVICE_ATTR(epen_offset_override_y, S_IRUGO | S_IWUSR, epen_offset_override_y_show, epen_offset_override_y_store);
 static DEVICE_ATTR(epen_offset_override_enable, S_IRUGO | S_IWUSR, epen_offset_override_enable_show, epen_offset_override_enable_store);
 static DEVICE_ATTR(epen_touchkey_block_length, S_IRUGO | S_IWUSR, epen_touchkey_block_length_show, epen_touchkey_block_length_store);
+static DEVICE_ATTR(epen_hover_side_hotspot_height, S_IRUGO | S_IWUSR, epen_hover_side_hotspot_height_show, epen_hover_side_hotspot_height_store);
+static DEVICE_ATTR(epen_hover_side_left_keycode, S_IRUGO | S_IWUSR, epen_hover_side_left_keycode_show, epen_hover_side_left_keycode_store);
+static DEVICE_ATTR(epen_hover_side_left_keydelay, S_IRUGO | S_IWUSR, epen_hover_side_left_keydelay_show, epen_hover_side_left_keydelay_store);
+static DEVICE_ATTR(epen_hover_side_center_keycode, S_IRUGO | S_IWUSR, epen_hover_side_center_keycode_show, epen_hover_side_center_keycode_store);
+static DEVICE_ATTR(epen_hover_side_center_keydelay, S_IRUGO | S_IWUSR, epen_hover_side_center_keydelay_show, epen_hover_side_center_keydelay_store);
+static DEVICE_ATTR(epen_hover_side_right_keycode, S_IRUGO | S_IWUSR, epen_hover_side_right_keycode_show, epen_hover_side_right_keycode_store);
+static DEVICE_ATTR(epen_hover_side_right_keydelay, S_IRUGO | S_IWUSR, epen_hover_side_right_keydelay_show, epen_hover_side_right_keydelay_store);
+static DEVICE_ATTR(epen_padding_top, S_IRUGO | S_IWUSR, epen_padding_top_show, epen_padding_top_store);
+static DEVICE_ATTR(epen_padding_right, S_IRUGO | S_IWUSR, epen_padding_right_show, epen_padding_right_store);
+static DEVICE_ATTR(epen_padding_bottom, S_IRUGO | S_IWUSR, epen_padding_bottom_show, epen_padding_bottom_store);
+static DEVICE_ATTR(epen_padding_left, S_IRUGO | S_IWUSR, epen_padding_left_show, epen_padding_left_store);
+static DEVICE_ATTR(epen_worryfree_mode, S_IRUGO | S_IWUSR, epen_worryfree_mode_show, epen_worryfree_mode_store);
 static DEVICE_ATTR(epen_pen_inserted,
 				   S_IRUSR | S_IRGRP, epen_pen_inserted_show, NULL);
 /* For SMD Test */
@@ -1550,6 +1877,18 @@ static struct attribute *epen_attributes[] = {
 	&dev_attr_epen_offset_override_y.attr,
 	&dev_attr_epen_offset_override_enable.attr,
 	&dev_attr_epen_touchkey_block_length.attr,
+	&dev_attr_epen_hover_side_hotspot_height.attr,
+	&dev_attr_epen_hover_side_left_keycode.attr,
+	&dev_attr_epen_hover_side_left_keydelay.attr,
+	&dev_attr_epen_hover_side_center_keycode.attr,
+	&dev_attr_epen_hover_side_center_keydelay.attr,
+	&dev_attr_epen_hover_side_right_keycode.attr,
+	&dev_attr_epen_hover_side_right_keydelay.attr,
+	&dev_attr_epen_worryfree_mode.attr,
+	&dev_attr_epen_padding_top.attr,
+	&dev_attr_epen_padding_right.attr,
+	&dev_attr_epen_padding_bottom.attr,
+	&dev_attr_epen_padding_left.attr,
 	NULL,
 };
 

@@ -33,6 +33,11 @@
 #define CONFIG_SAMSUNG_KERNEL_DEBUG_USER
 #endif
 
+extern int flg_ctr_tsp_touching;
+extern void press_button(int keycode, bool delayed, bool force, bool elastic);
+
+bool flg_epen_pressed = false;
+
 bool epen_is_active = false;
 int epen_cpufreq_level;
 
@@ -123,6 +128,7 @@ void epen_activity_lockout_free(struct work_struct *work)
 {	
 	//printk("[E-PEN] free activity lock\n");
 	epen_is_active = false;
+	flg_epen_pressed = false;
 }
 
 static void epen_activity_lockout(struct wacom_i2c *wac_i2c, bool on)
@@ -139,24 +145,27 @@ static void epen_activity_lockout(struct wacom_i2c *wac_i2c, bool on)
 
 void forced_release(struct wacom_i2c *wac_i2c)
 {
+	if (!flg_ctr_tsp_touching) {
 #if defined(CONFIG_SAMSUNG_KERNEL_DEBUG_USER)
-	printk(KERN_DEBUG "[E-PEN] %s\n", __func__);
+		printk(KERN_DEBUG "[E-PEN] %s\n", __func__);
 #endif
-	input_report_abs(wac_i2c->input_dev, ABS_X, wac_i2c->last_x);
-	input_report_abs(wac_i2c->input_dev, ABS_Y, wac_i2c->last_y);
-	input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, 0);
-	input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
-	input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
+		input_report_abs(wac_i2c->input_dev, ABS_X, wac_i2c->last_x);
+		input_report_abs(wac_i2c->input_dev, ABS_Y, wac_i2c->last_y);
+		input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, 0);
+		input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
+		input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
 #if defined(WACOM_IRQ_WORK_AROUND) || defined(WACOM_PDCT_WORK_AROUND)
-	input_report_key(wac_i2c->input_dev, BTN_TOOL_RUBBER, 0);
-	input_report_key(wac_i2c->input_dev, BTN_TOOL_PEN, 0);
-	input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 0);
+		input_report_key(wac_i2c->input_dev, BTN_TOOL_RUBBER, 0);
+		input_report_key(wac_i2c->input_dev, BTN_TOOL_PEN, 0);
+		input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 0);
 #else
-	input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
+		input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
 #endif
-	input_sync(wac_i2c->input_dev);
-	//printk("[E-PEN] input_sync (forced_release)\n");
+		input_sync(wac_i2c->input_dev);
+		//printk("[E-PEN] input_sync (forced_release)\n");
+	}
 
+	flg_epen_pressed = false;
 	wac_i2c->last_x = 0;
 	wac_i2c->last_y = 0;
 	wac_i2c->pen_prox = 0;
@@ -182,9 +191,11 @@ void forced_hover(struct wacom_i2c *wac_i2c)
 #if defined(CONFIG_SAMSUNG_KERNEL_DEBUG_USER)
 	printk(KERN_DEBUG "[E-PEN] %s\n", __func__);
 #endif
-	input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 1);
-	input_sync(wac_i2c->input_dev);
-	//printk("[E-PEN] input_sync (forced_hover workaround)\n");
+	if (!flg_ctr_tsp_touching) {
+		input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 1);
+		input_sync(wac_i2c->input_dev);
+		//printk("[E-PEN] input_sync (forced_hover workaround)\n");
+	}
 
 #ifdef CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK
 	set_dvfs_lock(wac_i2c, true);
@@ -974,7 +985,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			y = y + tilt_offsetY[user_hand][screen_rotate];
 		}
 #endif
-		if (wacom_i2c_coord_range(&x, &y)) {
+		if (wacom_i2c_coord_range(&x, &y) && !flg_ctr_tsp_touching) {
 			// the hover state is constantly reported.
 		
 			// activate the touchkey lockout, if enabled.
@@ -1010,7 +1021,15 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			
 			// apply min pressure setting.
 			if (sttg_side_button_mode != 2 && pressure > sttg_min_pressure) {
-				input_report_key(wac_i2c->input_dev, BTN_TOUCH, prox);
+				if (y < sttg_epen_padding_top
+					|| x > sttg_epen_padding_right
+					|| y > sttg_epen_padding_bottom
+					|| x < sttg_epen_padding_left) {
+					printk(KERN_DEBUG "[E-PEN] SKIPPING x: %d (%d][%d), y: %d (%d][%d)\n", x, sttg_epen_padding_left, sttg_epen_padding_right, y, sttg_epen_padding_top, sttg_epen_padding_bottom);
+					input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
+				} else {
+					input_report_key(wac_i2c->input_dev, BTN_TOUCH, prox);
+				}
 			} else if (sttg_side_button_mode != 2) {
 				input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
 			}
@@ -1035,10 +1054,21 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 				       "[E-PEN] is pressed(%d,%d,%d)(%d)\n",
 				       x, y, pressure, wac_i2c->tool);
 #else
-				printk(KERN_DEBUG "[E-PEN] pressed\n");
+				printk(KERN_DEBUG
+				       "[E-PEN] is pressed(%d,%d,%d)(%d)\n",
+				       x, y, pressure, wac_i2c->tool);
 #endif
+				if (stylus && prox) {
+					printk(KERN_DEBUG
+						   "[E-PEN] both!\n");
+				}
+				
+				flg_epen_pressed = true;
 
 			} else if (!prox && wac_i2c->pen_pressed) {
+				
+				flg_epen_pressed = false;
+				
 #ifdef CONFIG_SEC_TOUCHSCREEN_DVFS_LOCK
 				set_dvfs_lock(wac_i2c, false);
 #endif
@@ -1047,28 +1077,46 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 				       "[E-PEN] is released(%d,%d,%d)(%d)\n",
 				       x, y, pressure, wac_i2c->tool);
 #else
-				printk(KERN_DEBUG "[E-PEN] released\n");
+				printk(KERN_DEBUG
+				       "[E-PEN] is released(%d,%d,%d)(%d)\n",
+				       x, y, pressure, wac_i2c->tool);
 #endif
 			}
 
 			wac_i2c->pen_pressed = prox;
 
-			if (stylus && !wac_i2c->side_pressed)
+			if (stylus && !wac_i2c->side_pressed) {
 				printk(KERN_DEBUG "[E-PEN] side on\n");
-			else if (!stylus && wac_i2c->side_pressed)
+				if (y >= sttg_epen_hover_side_hotspot_height) {
+					
+					printk(KERN_DEBUG "[E-PEN] side on - height ok. x: %d, y: %d (%d)\n", x, y, sttg_epen_hover_side_hotspot_height);
+					
+					if (x >= 150 && x <= 2600) {
+						printk(KERN_DEBUG "[E-PEN] PRESSING LEFT KEY!\n");
+						press_button(sttg_epen_hover_side_left_keycode, sttg_epen_hover_side_left_keydelay, true, false);
+					} else if (x > 2600 && x < 4300) {
+						printk(KERN_DEBUG "[E-PEN] PRESSING MIDDLE KEY!\n");
+						press_button(sttg_epen_hover_side_center_keycode, sttg_epen_hover_side_center_keydelay, true, false);
+					} else if (x >= 4300 && x <= 6700) {
+						printk(KERN_DEBUG "[E-PEN] PRESSING RIGHT KEY!\n");
+						press_button(sttg_epen_hover_side_right_keycode, sttg_epen_hover_side_right_keydelay, true, false);
+					}
+				}
+			} else if (!stylus && wac_i2c->side_pressed) {
 				printk(KERN_DEBUG "[E-PEN] side off\n");
+			}
 
 			wac_i2c->side_pressed = stylus;
 		}
 #if defined(CONFIG_SAMSUNG_KERNEL_DEBUG_USER)
-		else
-			printk(KERN_DEBUG "[E-PEN] raw data x=%d, y=%d\n",
-			x, y);
+		//else
+		//	printk(KERN_DEBUG "[E-PEN] raw data x=%d, y=%d\n",
+		//	x, y);
 #endif
 	} else {
 
 #ifdef WACOM_IRQ_WORK_AROUND
-		if (!gpio_get_value(wac_i2c->wac_pdata->gpio_pendct)) {
+		if (!gpio_get_value(wac_i2c->wac_pdata->gpio_pendct) && !flg_ctr_tsp_touching) {
 			x = ((u16) data[1] << 8) + (u16) data[2];
 			y = ((u16) data[3] << 8) + (u16) data[4];
 
@@ -1106,19 +1154,20 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			   ABS_X, x); */
 			/* input_report_abs(wac->input_dev,
 			   ABS_Y, y); */
-
-			input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, 0);
-			input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
-			input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
+			if (!flg_ctr_tsp_touching) {
+				input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, 0);
+				input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
+				input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
 #if defined(WACOM_PDCT_WORK_AROUND)
-			input_report_key(wac_i2c->input_dev,
-				BTN_TOOL_RUBBER, 0);
-			input_report_key(wac_i2c->input_dev, BTN_TOOL_PEN, 0);
-			input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 0);
+				input_report_key(wac_i2c->input_dev,
+								 BTN_TOOL_RUBBER, 0);
+				input_report_key(wac_i2c->input_dev, BTN_TOOL_PEN, 0);
+				input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 0);
 #else
-			input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
+				input_report_key(wac_i2c->input_dev, wac_i2c->tool, 0);
 #endif
-			input_sync(wac_i2c->input_dev);
+				input_sync(wac_i2c->input_dev);
+			}
 			//printk("[E-PEN] input_sync (more work around)\n");
 			
 			epen_activity_lockout(wac_i2c, false);

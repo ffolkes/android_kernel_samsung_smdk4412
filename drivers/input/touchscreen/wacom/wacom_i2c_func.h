@@ -49,6 +49,19 @@ extern int sttg_offset_override_y;
 extern bool sttg_offset_override_enabled;
 extern unsigned int sttg_touchkey_block_length;
 
+extern unsigned int sttg_epen_hover_side_hotspot_height;
+extern unsigned int sttg_epen_hover_side_left_keycode;
+extern bool sttg_epen_hover_side_left_keydelay;
+extern unsigned int sttg_epen_hover_side_center_keycode;
+extern bool sttg_epen_hover_side_center_keydelay;
+extern unsigned int sttg_epen_hover_side_right_keycode;
+extern bool sttg_epen_hover_side_right_keydelay;
+
+extern unsigned int sttg_epen_padding_top;
+extern unsigned int sttg_epen_padding_right;
+extern unsigned int sttg_epen_padding_bottom;
+extern unsigned int sttg_epen_padding_left;
+
 #define WACOM_I2C_STOP		0x30
 #define WACOM_I2C_START		0x31
 #define WACOM_I2C_GRID_CHECK	0xC9
