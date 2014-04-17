@@ -295,10 +295,10 @@ void mali_regulator_set_voltage(int min_uV, int max_uV)
 		_mali_osk_lock_signal(mali_dvfs_lock, _MALI_OSK_LOCKMODE_RW);
 		return;
 	}
-	MALI_PRINT(("= regulator_set_voltage: %d, %d \n",min_uV, max_uV));
+	//MALI_PRINT(("= regulator_set_voltage: %d, %d \n",min_uV, max_uV));
 	regulator_set_voltage(g3d_regulator, min_uV, max_uV);
 	mali_gpu_vol = regulator_get_voltage(g3d_regulator);
-	MALI_DEBUG_PRINT(1, ("Mali voltage: %d\n", mali_gpu_vol));
+	//MALI_DEBUG_PRINT(1, ("Mali voltage: %d\n", mali_gpu_vol));
 	_mali_osk_lock_signal(mali_dvfs_lock, _MALI_OSK_LOCKMODE_RW);
 }
 #endif
@@ -504,7 +504,7 @@ void mali_clk_set_rate(unsigned int clk, unsigned int mhz)
 
 	rate = mali_clk_get_rate();
 
-	MALI_PRINT(("Mali frequency %d\n", rate / mhz));
+	//MALI_PRINT(("Mali frequency %d\n", rate / mhz));
 	GPU_MHZ = mhz;
 	mali_gpu_clk = (int)(rate / mhz);
 
@@ -1492,10 +1492,10 @@ EXPORT_SYMBOL(get_mali_step_lock);
 
 void set_mali_step_lock(unsigned int level) {
 	
-	level--;
+	//level--;
 	
-	if (level > 0 && level < 5) {
-		mali_step_lock = level;
+	if (level >= 1 && level <= 5) {
+		mali_step_lock = level - 1;
 	} else {
 		mali_step_lock = -1;
 	}
