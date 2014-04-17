@@ -56,6 +56,9 @@ bool flg_touchkey_pressed = false;
 bool flg_touchkey_was_pressed = false;
 bool flg_cypress_suspended = false;
 
+extern bool epen_is_active;
+extern int touch_is_pressed;
+
 // Yank555.lu : Add cleartext status settings for h/w key LED lightup on touchscreen touch
 #define TOUCHKEY_LED_DISABLED	0
 #define TOUCHKEY_LED_ENABLED	1
@@ -83,6 +86,8 @@ bool flg_cypress_suspended = false;
 #define CONFIG_TARGET_LOCALE_NAATT
 #endif
 
+// ff - galaxy note 2 (L00) uses TK_USE_2KEY_TYPE_M0
+
 static int touchkey_keycode[] = { 0,
 #if defined(TK_USE_4KEY_TYPE_ATT)
 	KEY_MENU, KEY_ENTER, KEY_BACK, KEY_END,
@@ -91,11 +96,11 @@ static int touchkey_keycode[] = { 0,
 	KEY_SEARCH, KEY_BACK, KEY_HOMEPAGE, KEY_MENU,
 
 #elif defined(TK_USE_2KEY_TYPE_M0)
-	KEY_BACK, KEY_MENU,
+	KEY_BACK, KEY_MENU, KEY_FIND, KEY_SEARCH, KEY_FINANCE, KEY_F16, KEY_F17, KEY_CAMERA, KEY_RIGHTBRACE, KEY_ANDROIDSEARCH, KEY_HOME, KEY_POWER,
+	KEY_F19, KEY_F20, KEY_F21, KEY_F22, KEY_F23, KEY_F24, KEY_F7, KEY_ZENKAKUHANKAKU, KEY_KATAKANAHIRAGANA,
 
 #else
 	KEY_MENU, KEY_BACK,
-
 #endif
 };
 static const int touchkey_count = sizeof(touchkey_keycode) / sizeof(int);
@@ -104,9 +109,10 @@ struct touchkey_i2c *tkey_i2c_local;
 struct timer_list touch_led_timer;
 int touch_led_timeout = 3; // timeout for the touchkey backlight in secs
 int touch_led_disabled = 0; // 1= force disable the touchkey backlight
-int touch_led_on_screen_touch	= TOUCHKEY_LED_ENABLED;	// Yank555.lu : Light up h/w key on touchscreen touch by default
+int touch_led_on_screen_touch	= TOUCHKEY_LED_DISABLED;	// Yank555.lu : Light up h/w key on touchscreen touch by default
 int touchkey_pressed		= TOUCHKEY_HW_TIMEDOUT;	// Yank555.lu : Consider h/w keys as not pressed on start
 int touch_led_handling		= TOUCHKEY_LED_ROM;	// Yank555.lu : Consider h/w keys handled by ROM (newer CM)
+bool flg_touchkey_ignore = false;
 
 #if defined(TK_HAS_AUTOCAL)
 static u16 raw_data0;
@@ -123,8 +129,10 @@ static int touchkey_autocalibration(struct touchkey_i2c *tkey_i2c);
 #endif
 
 #ifdef CONFIG_TOUCH_WAKE
-static struct touchkey_i2c *touchwakedevdata;
+struct touchkey_i2c *touchwakedevdata;
 #endif
+
+struct input_dev *input_dev_tk;
 
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 unsigned int sttg_gesture_delay = 0;
@@ -738,6 +746,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		printk(KERN_DEBUG "[Touchkey] keycode_type err\n");
 		return IRQ_HANDLED;
 	}
+	
+	if (flg_touchkey_ignore || touch_is_pressed || epen_is_active || flg_epen_worryfree_mode) {
+		printk("[TouchKey] input skipped (flg_touchkey_ignore)\n");
+		return IRQ_HANDLED;
+	}
 
 	if (pressed) {
 		set_touchkey_debug('P');
@@ -787,6 +800,15 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 			}
 		}
 		// Yank555.lu : ROM is handling (newer CM) - nothing to do
+	}
+	
+	if (sttg_kw_mode > 0
+		&& (sttg_ka_mode || sttg_kw_mode == 1 || sttg_kw_mode > 3)
+		&& flg_screen_on) {
+		// if knockwake is enabled, reset it if a touchkey was pressed.
+		
+		pr_info("[Touchkey/kw] resetting knockwake\n");
+		ignoreKnocks(sttg_kw_tsp_event_suspensions);
 	}
     
     if (pressed) {
@@ -857,7 +879,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 #endif
 
 	if (get_tsp_status() && pressed) {
-		//printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
+		printk(KERN_DEBUG "[TouchKey] touchkey pressed but don't send event because touch is pressed.\n");
 	} else {
 		
 #ifdef CONFIG_TOUCH_WAKE
@@ -880,11 +902,11 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 				 touchkey_keycode[keycode_type], pressed);
 		input_sync(tkey_i2c->input_dev);
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
-		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
-		   touchkey_keycode[keycode_type], pressed);
+		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d type:%d\n",
+		   touchkey_keycode[keycode_type], pressed, keycode_type);
 #else
-		printk("[TouchKey] pressed:%d\n",
-			pressed);
+		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d type:%d\n",
+			   touchkey_keycode[keycode_type], pressed, keycode_type);
 #endif
 
 		#if defined(CONFIG_TARGET_LOCALE_KOR)
@@ -2884,6 +2906,8 @@ static int i2c_touchkey_probe(struct i2c_client *client,
 	touchwakedevdata = tkey_i2c;
 	register_touchwake_implementation(&cypress_touchwake);
 #endif
+	
+	input_dev_tk = input_dev;
 
 #if defined(TK_HAS_AUTOCAL)
 	touchkey_autocalibration(tkey_i2c);

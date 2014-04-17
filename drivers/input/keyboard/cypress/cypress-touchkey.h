@@ -22,8 +22,11 @@
 
 void touchscreen_state_report(int state);
 
+extern struct input_dev *input_dev_tk;
+
 bool tsp_check_touched_flag(unsigned int mode);
 extern bool ignore_gestures;
+extern bool flg_touchkey_ignore;
 
 void set_mali_asv(unsigned int level);
 unsigned int get_mali_asv(void);
