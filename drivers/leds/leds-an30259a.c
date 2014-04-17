@@ -25,6 +25,7 @@
 #include <linux/leds-an30259a.h>
 #include <linux/workqueue.h>
 #include <linux/wakelock.h>
+#include <linux/touch_wake.h>
 
 /* AN30259A register map */
 #define AN30259A_REG_SRESET		0x00
@@ -91,6 +92,16 @@
 #define LED_B_SCALE		139
 
 int flg_system_noti = 0;
+extern int flg_ctr_cpuboost;
+static bool flg_ww_skip_pattern = false;
+
+struct wake_lock wavewake_wake_lock;
+
+unsigned int led_r_brightness_orig_last = 0;
+unsigned int led_g_brightness_orig_last = 0;
+unsigned int led_b_brightness_orig_last = 0;
+
+struct timeval time_ledwenton;
 
 u8 led_lowpower_mode = 0x0;
 
@@ -180,8 +191,8 @@ static struct leds_control {
 	.fade_dt3 = 2,
 	.fade_dt4 = 3,
 	.addend_red = 0,
-	.addend_green = -110,
-	.addend_blue = -100,
+	.addend_green = 0,
+	.addend_blue = 0,
 	.white_red = 0,
 	.white_green = 65,
 	.white_blue = 80,
@@ -196,6 +207,83 @@ struct device *led_dev;
 /*path : /sys/class/leds/led_g/brightness*/
 /*path : /sys/class/leds/led_b/brightness*/
 #endif
+
+bool flg_ww_prox_on = false;
+
+static void ww_disable_prox_work(struct work_struct * work_ww_disable_prox);
+static DECLARE_DELAYED_WORK(work_ww_disable_prox, ww_disable_prox_work);
+
+static void ww_disable_prox_work(struct work_struct * ww_disable_prox_work)
+{
+	if (sttg_ww_linger > 0 || flg_screen_on) {
+		//flg_ww_prox_on = false;
+		pr_info("[LED/ssp/ww] disable prox\n");
+		//disableSensor(32, 0);
+		//disableSensor(5, 0);
+		forceDisableSensor(5);
+		//pr_info("[SSP/ww] disable prox other way\n");
+		//enableSensor(0);
+		flg_ww_trigger_noti = false;
+		ctr_ww_prox_hits = sttg_ww_mode;
+	} else {
+		pr_info("[LED/ssp/ww] not disabling because always on, will turn off at screen-on instead\n");
+	}
+	
+	// let the wakelock fall out early. even if we're in indefinite mode, we don't need the lock anymore.
+	wake_unlock(&wavewake_wake_lock);
+	pr_info("[LED/ww] unlocked wavewake_wake_lock\n");
+	
+	return;
+}
+
+void ww_disable_prox(void)
+{
+	cancel_delayed_work_sync(&work_ww_disable_prox);
+	//flg_ww_prox_on = false;
+	pr_info("[LED/ssp/ww] FORCE ww_disable_prox\n");
+	//disableSensor(32, 0);
+	//disableSensor(5, 0);
+	forceDisableSensor(5);
+	//pr_info("[SSP/ww] disable prox other way\n");
+	//enableSensor(0);
+	flg_ww_trigger_noti = false;
+	ctr_ww_prox_hits = sttg_ww_mode;
+	wake_unlock(&wavewake_wake_lock);
+	pr_info("[LED/ww] unlocked wavewake_wake_lock\n");
+	
+	return;
+}
+EXPORT_SYMBOL(ww_disable_prox);
+
+void ww_set_disable_prox(unsigned int delay)
+{
+	unsigned int tmp_delay = 0;
+	
+	cancel_delayed_work_sync(&work_ww_disable_prox);
+	
+	if (delay == 0) {
+		tmp_delay = 0;
+	} else if (delay == 1) {
+		tmp_delay = sttg_ww_linger;
+	} else {
+		tmp_delay = delay;
+	}
+	
+	schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(tmp_delay));
+	return;
+}
+EXPORT_SYMBOL(ww_set_disable_prox);
+
+void leds_reset_last(void)
+{
+	pr_info("[LED/ww] resetting last leds\n");
+	led_r_brightness_orig_last = 999;
+	led_g_brightness_orig_last = 999;
+	led_b_brightness_orig_last = 999;
+	
+	return;
+}
+EXPORT_SYMBOL(leds_reset_last);
 
 static void leds_on(enum an30259a_led_enum led, bool on, bool slopemode,
 					u8 ledcc);
@@ -455,6 +543,12 @@ static void an30259a_start_led_pattern(int mode)
 		printk(KERN_WARNING "leds_i2c_write_all failed\n");
 }
 
+void an30259a_ledsoff(void)
+{
+	an30259a_start_led_pattern(LED_OFF);
+}
+EXPORT_SYMBOL(an30259a_ledsoff);
+
 static void an30259a_set_led_blink(enum an30259a_led_enum led,
 					unsigned int delay_on_time,
 					unsigned int delay_off_time,
@@ -585,10 +679,16 @@ static ssize_t store_an30259a_led_pattern(struct device *dev,
 	unsigned int mode = 0;
 	unsigned int type = 0;
 	struct an30259a_data *data = dev_get_drvdata(dev);
+	//unsigned int time_since_suspend = 0;
+	//unsigned int time_since_ww_last_screenoff = 0;
 
 	retval = sscanf(buf, "%d %d", &mode, &type);
 	if (retval == 0) {
 		dev_err(&data->client->dev, "fail to get led_pattern mode.\n");
+		return count;
+	}
+	
+	if (flg_ww_skip_pattern) {
 		return count;
 	}
 
@@ -607,6 +707,9 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	unsigned int delay_on_time = 0;
 	unsigned int delay_off_time = 0;
 	struct an30259a_data *data = dev_get_drvdata(dev);
+	unsigned int time_since_suspend = 0;
+	unsigned int time_since_ww_last_screenoff = 0;
+	unsigned int tmp_flg_ctr_cpuboost = 0;
 	int led_r_brightness = 0;
 	int led_g_brightness = 0;
 	int led_b_brightness = 0;
@@ -624,6 +727,14 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		dev_err(&data->client->dev, "fail to get led_blink value.\n");
 		return count;
 	}
+	
+	if (flg_ctr_cpuboost < 3) {
+		// boost cpu for a few samples.
+		flg_ctr_cpuboost = 3;
+	}
+	
+	flg_ww_skip_pattern = false;
+	
 	/*Reset an30259a*/
 	an30259a_start_led_pattern(LED_OFF);
 
@@ -764,6 +875,126 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	} else {
 		flg_system_noti = 0;
 	}
+	
+	// rather than wrangle with that IF below this one,
+	// just do it here because i'm lazy.
+	if (flg_ww_trigger_noti) {
+		// if userspace has sent us something, trigger the IF below
+		// then reset the flag.
+		pr_info("[LED/ww] flg_ww_trigger_noti = true, forcing ww activation\n");
+		led_r_brightness_orig_last = 999;
+	}
+	
+	if (sttg_ww_mode > 0
+		&& (!sttg_ww_trigger_noti_only || flg_ww_trigger_noti)
+		&& led_r_brightness_orig + led_g_brightness_orig + led_b_brightness_orig > 0
+		&& (!sttg_ww_noredundancies
+			|| (sttg_ww_noredundancies &&
+				(led_r_brightness_orig != led_r_brightness_orig_last
+				 || led_g_brightness_orig != led_g_brightness_orig_last
+				 || led_b_brightness_orig != led_b_brightness_orig_last)
+				)
+			)
+		)
+	{
+		
+		if (sttg_ww_noredundancies) {
+			pr_info("LED/ww] sttg_ww_noredundancies = true and leds were different\n");
+		}
+		
+		if (sttg_ww_linger > 0) {
+			// boost cpu. multiply by 5, since sampling rate is probably ~200ms.
+			tmp_flg_ctr_cpuboost = 5 * (sttg_ww_linger / 1000);
+		} else {
+			// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
+			tmp_flg_ctr_cpuboost = 50;
+		}
+	
+		do_gettimeofday(&time_ledwenton);
+		
+		time_since_suspend = (time_ledwenton.tv_sec - time_suspended.tv_sec) * MSEC_PER_SEC +
+		(time_ledwenton.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
+		
+		if (time_since_suspend > 3000) {
+			// hook for WaveWake
+			
+			if (sttg_ww_mode > 0 && !flg_ww_prox_on && !flg_screen_on && !flg_system_noti) {
+				
+				flg_ctr_cpuboost = tmp_flg_ctr_cpuboost;
+				
+				pr_info("[SSP/ww] locking wavewake_wake_lock\n");
+				wake_lock(&wavewake_wake_lock);
+				
+				//flg_ww_prox_on = true;
+				
+				// turn on prox
+				pr_info("[LED/ssp/ww] starting PROX\n");
+				forceEnableSensor(5);
+				//setProxDelay(66667000);
+				
+				cancel_delayed_work_sync(&work_ww_disable_prox);
+				schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
+				
+			} else if (sttg_ww_mode > 0 && flg_ww_prox_on && !flg_screen_on && !flg_system_noti && flg_ww_trigger_noti) {
+				// if this is a flg_ww_trigger_noti event, that means the prox was tripped several seconds ago
+				// so we need to reset the scheduled work, otherwise the user will only get a fraction of their duration.
+				
+				flg_ctr_cpuboost = tmp_flg_ctr_cpuboost;
+				
+				pr_info("[LED/ssp/ww] resetting work_ww_disable_prox to start from now\n");
+				cancel_delayed_work_sync(&work_ww_disable_prox);
+				schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
+				
+			} else {
+				
+				pr_info("[LED/ssp/ww] false or other stuff\n");
+			}
+			
+		} else {
+			if (sttg_ww_dismissled) {
+				// let's do some time differences
+				
+				// if the last time ww turned the screen off was a few ms ago,
+				// we can more or less safely assume this led call is for
+				// the led to turn back on because they didn't go past the lockscreen.
+				
+				//time_since_ww_last_screenon = (time_ledwenton.tv_sec - time_ww_last_screenon.tv_sec) * MSEC_PER_SEC +
+				//					(time_ledwenton.tv_usec - time_ww_last_screenon.tv_usec) / USEC_PER_MSEC;
+				
+				time_since_ww_last_screenoff = (time_ledwenton.tv_sec - time_ww_last_screenoff.tv_sec) * MSEC_PER_SEC +
+									(time_ledwenton.tv_usec - time_ww_last_screenoff.tv_usec) / USEC_PER_MSEC;
+				
+				if (time_since_ww_last_screenoff < 3000) {
+					pr_info("[LED/ssp/ww] muting led\n");
+					led_r_brightness = 0;
+					led_g_brightness = 0;
+					led_b_brightness = 0;
+					return count;
+				}
+			}
+		}
+	} else {
+		pr_info("[LED/ssp/ww] skipping ww hook\n");
+		
+		if (led_r_brightness_orig + led_g_brightness_orig + led_b_brightness_orig == 0) {
+			pr_info("[LED/ssp/ww] ignoring null led call (0/0/0/)\n");
+		} else {
+			if (sttg_ww_noredundancies) {
+				pr_info("[LED/ssp/ww] blocked the last event because no_redundancies on and leds unchanged\n");
+			}
+			
+			if (sttg_ww_lightflow && !flg_screen_on) {
+				pr_info("[LED/ssp/ww] lightflow mode enabled and screen off, so we're not going to light the led\n");
+				flg_ww_skip_pattern = true;
+				return count;
+			}
+		}
+	}
+	
+	flg_ww_trigger_noti = false;
+	led_r_brightness_orig_last = led_r_brightness_orig;
+	led_g_brightness_orig_last = led_g_brightness_orig;
+	led_b_brightness_orig_last = led_b_brightness_orig;
 
 	an30259a_set_led_blink(LED_R, delay_on_time,
 				delay_off_time, led_r_brightness, false);
@@ -774,7 +1005,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 
 	leds_i2c_write_all(data->client);
 
-	printk(KERN_DEBUG "led_blink is called, RED:%d, GREEN:%d, BLUE:%d. brightness:0x%X, powermode:%i, system_noti:%d",
+	printk(KERN_DEBUG "led_blink is called, RED:%d, GREEN:%d, BLUE:%d. brightness:0x%X, powermode:%i, system_noti:%d\n",
 		   led_r_brightness, led_g_brightness, led_b_brightness, led_brightness, led_lowpower_mode, flg_system_noti);
 
 	return count;
@@ -1227,6 +1458,8 @@ static int __devinit an30259a_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, data);
 	data->client = client;
 	b_client = client;
+	
+	wake_lock_init(&wavewake_wake_lock, WAKE_LOCK_SUSPEND, "wavewake");
 
 	mutex_init(&data->mutex);
 	/* initialize LED */
