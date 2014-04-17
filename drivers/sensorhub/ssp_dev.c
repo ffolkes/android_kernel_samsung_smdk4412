@@ -21,6 +21,8 @@
 unsigned int staysleeping = 0;
 unsigned int alreadyresumed = 1;
 
+struct timeval time_suspended;
+
 static void ssp_early_suspend(struct early_suspend *handler);
 static void ssp_late_resume(struct early_suspend *handler);
 
@@ -381,6 +383,8 @@ static void ssp_early_suspend(struct early_suspend *handler)
 	
 	struct ssp_data *data;
 	data = container_of(handler, struct ssp_data, early_suspend);
+	
+	do_gettimeofday(&time_suspended);
 
 	func_dbg();
 	disable_debug_timer(data);
