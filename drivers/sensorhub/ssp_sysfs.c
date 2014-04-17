@@ -13,6 +13,7 @@
  *
  */
 #include "ssp.h"
+#include <linux/touch_wake.h>
 
 /*************************************************************************/
 /* SSP data delay function                                              */
@@ -50,8 +51,28 @@ static void change_sensor_delay(struct ssp_data *data,
 	int64_t dTempDelay = data->adDelayBuf[iSensorType];
 
 	if (!(atomic_read(&data->aSensorEnable) & (1 << iSensorType))) {
+		pr_info("[SSPff]: sensor: %d, this sensor isn't enabled in %d\n", iSensorType, atomic_read(&data->aSensorEnable));
 		data->aiCheckStatus[iSensorType] = NO_SENSOR_STATE;
 		return;
+	}
+	
+	// filter changes.
+	if (iSensorType == GYROSCOPE_SENSOR && flg_kw_gyro_on) {
+		// gyro is having its rate changed. set it to our default.
+		
+		pr_info("[SSP]: GYRO DELAY READJUSTING! was going to be: %lld\n", dNewDelay);
+		
+		// set it back to what we want.
+		dNewDelay = sttg_kw_resolution;
+		
+		pr_info("[SSP]: GYRO DELAY READJUSTED! is now: %lld\n", dNewDelay);
+		
+		dNewDelay = (int64_t)sttg_kw_resolution;
+		
+		pr_info("[SSP]: GYRO DELAY READJUSTED2! is now: %lld\n", dNewDelay);
+		
+	} else if (iSensorType == GYROSCOPE_SENSOR) {
+		pr_info("[SSP]: GYRO DELAY CHANGED! now: %lld, was: %lld\n", dNewDelay, dTempDelay);
 	}
 
 	data->adDelayBuf[iSensorType] = dNewDelay;
@@ -170,6 +191,179 @@ static int ssp_remove_sensor(struct ssp_data *data,
 /* ssp Sysfs                                                             */
 /*************************************************************************/
 
+
+void forceDisableSensor(unsigned int sensorId)
+{
+	
+	//return;
+	unsigned int uSensorsEnabled = 0;
+	
+	// 1. get sensorenable number.
+	// 2. see if this sensor's bit is disabled.
+	// 3. if not, disable the sensor and the bit.
+	
+	// check the sensor's bit. 5 = prox.
+	if ((atomic_read(&prox_device->aSensorEnable) & (1 << sensorId))) {
+		// IF sensor is enabled, disable it.
+		
+		pr_info("[SSP/disablesensor]: sensor was enabled, now disabling...\n");
+		
+		if (sensorId == GYROSCOPE_SENSOR && !flg_kw_gyro_on) {
+			// don't turn the prox sensor off unless we think we turned it on.
+			pr_info("[SSP/disablesensor]: calling for gyro off but flg_kw_gyro_on was not set, probably shouldn't disable\n");
+			//return;
+		}
+		
+		if (sensorId == PROXIMITY_SENSOR && !flg_ww_prox_on) {
+			// don't turn the prox sensor off unless we think we turned it on.
+			pr_info("[SSP/disablesensor]: calling for prox off but flg_ww_prox_on/flg_tw_prox_on was not set, probably shouldn't disable\n");
+			//return;
+		}
+		
+		/*if (sensorId == PROXIMITY_SENSOR && !flg_tw_prox_on) {
+			// don't turn the prox sensor off unless we think we turned it on.
+			pr_info("[SSP/disablesensor]: calling for prox off but flg_ww_prox_on/flg_tw_prox_on was not set, probably shouldn't disable\n");
+			//return;
+		}*/
+		
+		// get enabled sensors.
+		uSensorsEnabled = atomic_read(&prox_device->aSensorEnable);
+		
+		pr_info("[SSP/disablesensor]: aSensorEnable was %d\n", atomic_read(&prox_device->aSensorEnable));
+		
+		// set this sensor's bit to 0.
+		uSensorsEnabled &= ~(1 << sensorId);
+		
+		// remove sensor.
+		ssp_remove_sensor(prox_device, sensorId, uSensorsEnabled);
+		
+		// save it.
+		atomic_set(&prox_device->aSensorEnable, uSensorsEnabled);
+		
+		if (sensorId == GYROSCOPE_SENSOR) {
+			flg_kw_gyro_on = false;
+			pr_info("[SSP/disablesensor]: KW_GYRO OFF!\n");
+		}
+		
+		if (sensorId == PROXIMITY_SENSOR) {
+			flg_ww_prox_on = false;
+			pr_info("[SSP/disablesensor]: WW_PROX OFF!\n");
+		}
+		
+		pr_info("[SSP/disablesensor]: disabled %d, aSensorEnable now: %d\n", sensorId, uSensorsEnabled);
+		
+	} else {
+		pr_info("[SSP/disablesensor]: sensor was disabled already. ignoring.\n");
+	}
+	
+	/*u8 uBuf[2];
+	int64_t dSensorDelay = prox_device->adDelayBuf[sensorId];
+	
+	pr_info("[SSP]: force disable\n");
+	
+	uBuf[1] = (u8)get_msdelay(dSensorDelay);
+	uBuf[0] = (u8)get_delay_cmd(uBuf[1]);
+	
+	send_instruction(prox_device, REMOVE_SENSOR, sensorId, uBuf, 2);*/
+	
+}
+EXPORT_SYMBOL(forceDisableSensor);
+
+void forceEnableSensor(unsigned int sensorId)
+{
+	
+	//return;
+	unsigned int uSensorsEnabled = 0;
+	u8 uBuf[2];
+	int64_t dSensorDelay = prox_device->adDelayBuf[sensorId];
+	
+	// 1. get sensorenable number.
+	// 2. see if this sensor's bit is enabled.
+	// 3. if not, enable the sensor and the bit.
+	
+	// check the sensor's bit. 5 = prox.
+	if (!(atomic_read(&prox_device->aSensorEnable) & (1 << sensorId))) {
+		// IF sensor is disabled, enable it.
+		
+		pr_info("[SSP/enablesensor]: sensor (%d) was disabled, enabling...\n", sensorId);
+		
+		pr_info("[SSP/enablesensor]: checking aicheckstatus. set to: %d, looking for %d. add is: %d\n",
+				prox_device->aiCheckStatus[sensorId], INITIALIZATION_STATE, ADD_SENSOR_STATE);
+		
+		if (prox_device->aiCheckStatus[sensorId] == INITIALIZATION_STATE) {
+			
+			if (sensorId == ACCELEROMETER_SENSOR) {
+				pr_info("[SSP/enablesensor]: sensor (%d) ACCEL\n", sensorId);
+				accel_open_calibration(prox_device);
+			} else if (sensorId == GYROSCOPE_SENSOR) {
+				pr_info("[SSP/enablesensor]: sensor (%d) GYRO\n", sensorId);
+				gyro_open_calibration(prox_device);
+			} else if (sensorId == PRESSURE_SENSOR) {
+				pr_info("[SSP/enablesensor]: sensor (%d) PRES\n", sensorId);
+				pressure_open_calibration(prox_device);
+			} else if (sensorId == PROXIMITY_SENSOR) {
+				pr_info("[SSP/enablesensor]: sensor (%d) PROX\n", sensorId);
+				proximity_open_lcd_ldi(prox_device);
+				proximity_open_calibration(prox_device);
+			}
+		}
+		
+		prox_device->aiCheckStatus[sensorId] = ADD_SENSOR_STATE;
+		
+		// get enabled sensors.
+		uSensorsEnabled = atomic_read(&prox_device->aSensorEnable);
+		
+		pr_info("[SSP/enablesensor]: enabled was %d\n", atomic_read(&prox_device->aSensorEnable));
+		
+		// set this sensor's bit to 1.
+		uSensorsEnabled |= 1 << sensorId;
+		
+		// save it.
+		atomic_set(&prox_device->aSensorEnable, uSensorsEnabled);
+		
+		pr_info("[SSP/enablesensor]: enabled is %d and should be %d\n", atomic_read(&prox_device->aSensorEnable), uSensorsEnabled);
+		
+		if (sensorId == 1) {
+			
+			pr_info("[SSP/enablesensor]: changing delay\n");
+			flg_kw_gyro_on = true;
+			//gyro_open_calibration(prox_device);
+			change_sensor_delay(prox_device, GYROSCOPE_SENSOR, sttg_kw_resolution);
+			pr_info("[SSP/enablesensor]: KW_GYRO ON!\n");
+			
+		} else if (sensorId == 5) {
+			
+			pr_info("[SSP/enablesensor]: changing delay\n");
+			change_sensor_delay(prox_device, PROXIMITY_SENSOR, 66667000);
+			flg_ww_prox_on = true;
+			pr_info("[SSP/enablesensor]: WW_PROX ON!\n");
+		}
+		
+	} else {
+		pr_info("[SSP/enablesensor]: sensor was enabled already, ignoring.\n");
+	}
+	
+	/*u8 uBuf[2];
+	int64_t dSensorDelay = prox_device->adDelayBuf[sensorId];
+	
+	pr_info("[SSP]: force enable\n");
+	
+	uBuf[1] = (u8)get_msdelay(dSensorDelay);
+	uBuf[0] = (u8)get_delay_cmd(uBuf[1]);
+	
+	send_instruction(prox_device, ADD_SENSOR, sensorId, uBuf, 2);
+	proximity_open_lcd_ldi(prox_device);
+	proximity_open_calibration(prox_device);*/
+	
+}
+EXPORT_SYMBOL(forceEnableSensor);
+
+void forceChangeDelay(unsigned int sensorId, int64_t newDelay)
+{
+	change_sensor_delay(prox_device, sensorId, newDelay);
+}
+EXPORT_SYMBOL(forceChangeDelay);
+
 static ssize_t show_sensors_enable(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -188,6 +382,8 @@ static ssize_t set_sensors_enable(struct device *dev,
 	unsigned int uNewEnable = 0, uChangedSensor = 0;
 	struct ssp_data *data = dev_get_drvdata(dev);
 	int iRet;
+	
+	prox_device = dev_get_drvdata(dev);
 
 	if (strict_strtoll(buf, 10, &dTemp) < 0)
 		return -1;
@@ -195,34 +391,81 @@ static ssize_t set_sensors_enable(struct device *dev,
 	uNewEnable = (unsigned int)dTemp;
 	ssp_dbg("[SSP]: %s - new_enable = %u, old_enable = %u\n", __func__,
 		 uNewEnable, atomic_read(&data->aSensorEnable));
+	
+	pr_info("[SSP]: flg_power_suspend: %d\n", flg_power_suspend);
+	
+	// filter changes.
+	if (sttg_kw_mode
+		&& !(uNewEnable & (1 << GYROSCOPE_SENSOR))
+		&& (!flg_screen_on || flg_power_suspend || sttg_ka_mode)) {
+		// 1 is being disabled, don't do it.
+		
+		// set this sensor's bit to 1.
+		uNewEnable |= 1 << GYROSCOPE_SENSOR;
+		
+		pr_info("[SSP]: REENABLED GYRO! uNewEnable: %u (%d)\n", uNewEnable, (uNewEnable & (1 << GYROSCOPE_SENSOR)));
+		
+	} else {
+		pr_info("[SSP]: DIDN'T REENABLE GYRO! (%d)\n", (uNewEnable & (1 << GYROSCOPE_SENSOR)));
+	}
+	
+	if (!(uNewEnable & (1 << PROXIMITY_SENSOR)) && flg_ww_prox_on) {
+		// 5 (prox) is being disabled, don't do it.
+		
+		pr_info("[SSP]: REENABLED PROX!\n");
+		
+		// set this sensor's bit to 1.
+		uNewEnable |= 1 << PROXIMITY_SENSOR;
+		
+	} else {
+		pr_info("[SSP]: DIDN'T REENABLE PROX!\n");
+	}
 
 	if (uNewEnable == atomic_read(&data->aSensorEnable))
-		return 0;
+		return size;
 
-	for (uChangedSensor = 0; uChangedSensor < SENSOR_MAX; uChangedSensor++)
-		if ((atomic_read(&data->aSensorEnable) & (1 << uChangedSensor))
-			!= (uNewEnable & (1 << uChangedSensor))) {
+	for (uChangedSensor = 0; uChangedSensor < SENSOR_MAX; uChangedSensor++) {
+		
+		//pr_info("[SSP]: checking %d going from %d to %d\n", uChangedSensor, atomic_read(&data->aSensorEnable), uNewEnable);
+		
+		if ((atomic_read(&data->aSensorEnable) & (1 << uChangedSensor)) != (uNewEnable & (1 << uChangedSensor))) {
+			
+			pr_info("[SSP]: FOUND A CHANGE! %d\n", uChangedSensor);
 
-		        if (!(uNewEnable & (1 << uChangedSensor)))
-                                ssp_remove_sensor(data, uChangedSensor,
-					uNewEnable); /* disable */
-			else { /* Change to ADD_SENSOR_STATE from KitKat */
-			      if (data->aiCheckStatus[uChangedSensor] == INITIALIZATION_STATE) {
-                                      if (uChangedSensor == ACCELEROMETER_SENSOR)
-                                               accel_open_calibration(data);
-                                      else if (uChangedSensor == GYROSCOPE_SENSOR)
-                                               gyro_open_calibration(data);
-                                      else if (uChangedSensor == PRESSURE_SENSOR)
-                                               pressure_open_calibration(data);
-                                      else if (uChangedSensor == PROXIMITY_SENSOR) {
-                                               proximity_open_lcd_ldi(data);
-                                               proximity_open_calibration(data);
-                                      }
-                             }
-                             data->aiCheckStatus[uChangedSensor] = ADD_SENSOR_STATE;
+			if (!(uNewEnable & (1 << uChangedSensor))) {
+				
+				//if ((uChangedSensor == 5 && flg_ww_prox_on) || (uChangedSensor == 1 && (!flg_screen_on || flg_power_suspend || sttg_ka_mode))) {
+				//	pr_info("[SSP]: ___________________ skipping 5 or 2...\n");
+				//} else {
+					ssp_dbg("[SSP]: %s - removing. changed=%u, new=%u\n", __func__, uChangedSensor, uNewEnable);
+					ssp_remove_sensor(data, uChangedSensor, uNewEnable); /* disable */
+					//break;
+				//}
+				
+			} else { /* Change to ADD_SENSOR_STATE from KitKat */
+				
+				pr_info("[SSP]: %d isn't being removed\n", uChangedSensor);
+				
+				if (data->aiCheckStatus[uChangedSensor] == INITIALIZATION_STATE) {
+					
+					if (uChangedSensor == ACCELEROMETER_SENSOR)
+						accel_open_calibration(data);
+					else if (uChangedSensor == GYROSCOPE_SENSOR)
+						gyro_open_calibration(data);
+					else if (uChangedSensor == PRESSURE_SENSOR)
+						pressure_open_calibration(data);
+					else if (uChangedSensor == PROXIMITY_SENSOR) {
+						proximity_open_lcd_ldi(data);
+						proximity_open_calibration(data);
+					}
+				}
+				
+				data->aiCheckStatus[uChangedSensor] = ADD_SENSOR_STATE;
 			}
+			
 			break;
 		}
+	}
 
 	atomic_set(&data->aSensorEnable, uNewEnable);
 
