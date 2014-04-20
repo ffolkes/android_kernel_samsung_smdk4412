@@ -555,6 +555,10 @@ static void gpio_keys_report_event(struct gpio_button_data *bdata)
 	// 4x moderately quick presses = negative toggle
 	// 3x superquick presses = nightmode (red) toggle
 	if (button->code == HOME_KEY_VAL && flg_screen_on) {
+		
+		// boost.
+		flg_ctr_cpuboost = 15;
+		
 		if (state) {
 			// process toggle on button down-state
 			
