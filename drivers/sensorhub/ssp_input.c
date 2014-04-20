@@ -18,7 +18,7 @@
 #include <linux/touch_wake.h>
 #endif
 
-extern void press_button(int keycode, bool delayed, bool force, bool elastic);
+extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
 extern unsigned int flg_ctr_cpuboost;
 
 static long ary_kw_gyro_y_history[25] = { 50, 50, 50, 50, 50,
@@ -56,7 +56,7 @@ static void deferred_knock2_work(struct work_struct * work_deferred_knock2)
 			
 		ctr_knocks = 0;
 		
-		press_button(sttg_ka_knock2_keycode, sttg_ka_knock2_keydelay, true, false);
+		press_button(sttg_ka_knock2_keycode, sttg_ka_knock2_keydelay, true, false, false);
 
 	}
 	
@@ -327,7 +327,7 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 										ssp_dbg("[SSP/kw] KNOCK 4 - gyro y: %ld ------------------------ !!! FOUR 4 - PRESSING %d -----------\n",
 												lTemp[1], sttg_kw_knock3_keycode);
 										
-										press_button(sttg_kw_knock4_keycode, sttg_kw_knock4_keydelay, true, false);
+										press_button(sttg_kw_knock4_keycode, sttg_kw_knock4_keydelay, true, false, false);
 										
 									}
 									
@@ -371,7 +371,7 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 										ssp_dbg("[SSP/kw] KNOCK 3 - gyro y: %ld ------------------------ !!! THREE 3 - PRESSING %d -----------\n",
 												lTemp[1], sttg_ka_knock3_keycode);
 										
-										press_button(sttg_ka_knock3_keycode, sttg_ka_knock3_keydelay, true, false);
+										press_button(sttg_ka_knock3_keycode, sttg_ka_knock3_keydelay, true, false, false);
 										
 									} else if (!flg_screen_on || flg_kw_pressedpower) {
 										// knockwake.
@@ -389,7 +389,7 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 											ssp_dbg("[SSP/kw] KNOCK 3 - gyro y: %ld ------------------------ !!! THREE 3 - PRESSING %d -----------\n",
 													lTemp[1], sttg_kw_knock3_keycode);
 											
-											press_button(sttg_kw_knock3_keycode, sttg_kw_knock3_keydelay, true, false);
+											press_button(sttg_kw_knock3_keycode, sttg_kw_knock3_keydelay, true, false, false);
 											
 										} else if (sttg_kw_mode == 3) {
 											// only wake from 3 knocks, so wake.
@@ -397,14 +397,14 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 											flg_ctr_cpuboost = 25;
 											ctr_knocks = 0;
 											flg_kw_pressedpower = true;
-											press_button(KEY_POWER, false, true, false);
+											press_button(KEY_POWER, false, true, false, false);
 										
 										} else if (sttg_kw_mode == 4) {
 											// wake from 3 knocks, then action for 4th knock.
 											
 											flg_ctr_cpuboost = 25;
 											flg_kw_pressedpower = true;
-											press_button(KEY_POWER, false, true, false);
+											press_button(KEY_POWER, false, true, false, false);
 											
 										}
 									}
@@ -456,7 +456,7 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 										} else if (sttg_ka_knock2_keycode) {
 											// there won't be a 3rd knock, do work now.
 											
-											press_button(sttg_ka_knock2_keycode, sttg_ka_knock2_keydelay, true, false);
+											press_button(sttg_ka_knock2_keycode, sttg_ka_knock2_keydelay, true, false, false);
 											
 											// knockactive isn't using knock3, reset the knock counter.
 											ctr_knocks = 0;
@@ -474,14 +474,14 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 											flg_ctr_cpuboost = 25;
 											ctr_knocks = 0;
 											flg_kw_pressedpower = true;
-											press_button(KEY_POWER, false, true, false);
+											press_button(KEY_POWER, false, true, false, false);
 											
 										} else if (sttg_kw_mode == 1 || sttg_kw_mode == 5) {
 											// wake from 2 knocks, then action for 3rd or 4th knock.
 											
 											flg_ctr_cpuboost = 25;
 											flg_kw_pressedpower = true;
-											press_button(KEY_POWER, false, true, false);
+											press_button(KEY_POWER, false, true, false, false);
 											
 										} else if (sttg_kw_mode == 3) {
 											// modes 3 and 4 always need at least 2 knocks,
