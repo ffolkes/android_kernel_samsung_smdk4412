@@ -56,8 +56,14 @@ bool flg_touchkey_pressed = false;
 bool flg_touchkey_was_pressed = false;
 bool flg_cypress_suspended = false;
 
+static unsigned int tk_key_keycode = 0;
+static unsigned int sttg_tk_key1_key_code = 0;
+static unsigned int sttg_tk_key2_key_code = 0;
+
 extern bool epen_is_active;
 extern int touch_is_pressed;
+extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
+extern int flg_ctr_cpuboost;
 
 // Yank555.lu : Add cleartext status settings for h/w key LED lightup on touchscreen touch
 #define TOUCHKEY_LED_DISABLED	0
@@ -897,16 +903,57 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 
 #endif
+		flg_ctr_cpuboost = 20;
+		
+		tk_key_keycode = touchkey_keycode[keycode_type];
 
+		if (keycode_type == 1) {
+			
+			if (sttg_tk_key1_key_code) {
+				// custom keycode.
+				
+				tk_key_keycode = sttg_tk_key1_key_code;
+				pr_info("[TK/custom] SET - key1 set to: %d\n", tk_key_keycode);
+				
+				if (pressed && sttg_tk_key1_key_code >= 900 || sttg_tk_key1_key_code == KEY_POWER) {
+					// user wants to use a special keycode.
+					
+					press_button(sttg_tk_key1_key_code, false, true, false, false);
+					
+					// stop now, since we've already pressed a button.
+					return IRQ_HANDLED;
+				}
+			}
+		} else if (keycode_type == 2) {
+			
+			if (sttg_tk_key2_key_code) {
+				// custom keycode.
+				
+				tk_key_keycode = sttg_tk_key2_key_code;
+				pr_info("[TK/custom] SET - key2 set to: %d\n", tk_key_keycode);
+				
+				if (pressed && sttg_tk_key2_key_code >= 900 || sttg_tk_key2_key_code == KEY_POWER) {
+					// user wants to use a special keycode.
+					
+					press_button(sttg_tk_key2_key_code, false, true, false, false);
+					
+					// stop now, since we've already pressed a button.
+					return IRQ_HANDLED;
+				}
+			}
+		}
+		
 		input_report_key(tkey_i2c->input_dev,
-				 touchkey_keycode[keycode_type], pressed);
+				 tk_key_keycode, pressed);
+		
 		input_sync(tkey_i2c->input_dev);
+		
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d type:%d\n",
-		   touchkey_keycode[keycode_type], pressed, keycode_type);
+		   tk_key_keycode, pressed, keycode_type);
 #else
 		printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d type:%d\n",
-			   touchkey_keycode[keycode_type], pressed, keycode_type);
+			   tk_key_keycode, pressed, keycode_type);
 #endif
 
 		#if defined(CONFIG_TARGET_LOCALE_KOR)
@@ -1965,6 +2012,54 @@ static ssize_t set_touchkey_firm_status_show(struct device *dev,
 
 	return count;
 }
+	
+static ssize_t tk_key1_key_code_show(struct device *dev,
+									 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_key1_key_code);
+	return ret;
+}
+
+static ssize_t tk_key1_key_code_store(struct device *dev,
+									  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_key1_key_code = data;
+	pr_info("[TK/custom] STORE - sttg_tk_key1_key_code has been set to: %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t tk_key2_key_code_show(struct device *dev,
+									 struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_key2_key_code);
+	return ret;
+}
+
+static ssize_t tk_key2_key_code_store(struct device *dev,
+									  struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_key2_key_code = data;
+	pr_info("[TK/custom] STORE - sttg_tk_key2_key_code has been set to: %d\n", data);
+	
+	return size;
+}
 
 static ssize_t mali_asv_show(struct device *dev,
 									struct device_attribute *attr, char *buf)
@@ -2646,6 +2741,8 @@ static DEVICE_ATTR(autocal_stat, S_IRUGO | S_IWUSR | S_IWGRP,
 static DEVICE_ATTR(gesture_delay, S_IRUGO | S_IWUSR | S_IWGRP,
 					   gesture_delay_show, gesture_delay_store);
 #endif
+static DEVICE_ATTR(tk_key1_key_code, S_IRUGO | S_IWUSR | S_IWGRP, tk_key1_key_code_show, tk_key1_key_code_store);
+static DEVICE_ATTR(tk_key2_key_code, S_IRUGO | S_IWUSR | S_IWGRP, tk_key2_key_code_show, tk_key2_key_code_store);
 static DEVICE_ATTR(mali_asv, S_IRUGO | S_IWUSR | S_IWGRP,mali_asv_show, mali_asv_store);
 static DEVICE_ATTR(mali_cur_freq, S_IRUGO, mali_cur_freq_show, NULL);
 static DEVICE_ATTR(mali_step_lock, S_IRUGO | S_IWUSR | S_IWGRP, mali_step_lock_show, mali_step_lock_store);
@@ -2715,6 +2812,8 @@ static struct attribute *touchkey_attributes[] = {
 #ifdef CONFIG_TOUCHSCREEN_GESTURES
 	&dev_attr_gesture_delay.attr,
 #endif
+	&dev_attr_tk_key1_key_code.attr,
+	&dev_attr_tk_key2_key_code.attr,
 	&dev_attr_mali_asv.attr,
 	&dev_attr_mali_cur_freq.attr,
 	&dev_attr_mali_step_lock.attr,
