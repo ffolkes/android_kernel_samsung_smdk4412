@@ -756,7 +756,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		set_touchkey_debug('P');
 
 		// Yank555.lu : ROM is handling (newer CM)
-		if (touch_led_handling == TOUCHKEY_LED_ROM) {
+		if (touch_led_handling == TOUCHKEY_LED_ROM && !touch_led_disabled) {
 
 			// Yank555.lu : enable lights on h/w key pressed
 			touchkey_pressed = TOUCHKEY_HW_PRESSED;
