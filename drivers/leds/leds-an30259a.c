@@ -929,7 +929,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 				
 				// turn on prox
 				pr_info("[LED/ssp/ww] starting PROX\n");
-				forceEnableSensor(5);
+				forceEnableSensor(5, false);
 				//setProxDelay(66667000);
 				
 				cancel_delayed_work_sync(&work_ww_disable_prox);

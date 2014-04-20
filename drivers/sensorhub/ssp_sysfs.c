@@ -51,9 +51,14 @@ static void change_sensor_delay(struct ssp_data *data,
 	int64_t dTempDelay = data->adDelayBuf[iSensorType];
 
 	if (!(atomic_read(&data->aSensorEnable) & (1 << iSensorType))) {
-		pr_info("[SSPff]: sensor: %d, this sensor isn't enabled in %d\n", iSensorType, atomic_read(&data->aSensorEnable));
-		data->aiCheckStatus[iSensorType] = NO_SENSOR_STATE;
-		return;
+		//if (iSensorType == 5) {
+		//	pr_info("[SSPff]: sensor: %d, PROX isn't enabled in %d, trying to manually reactivatate...\n", iSensorType, atomic_read(&data->aSensorEnable));
+		//	forceEnableSensor(iSensorType, true);
+		//} else {
+			pr_info("[SSPff]: sensor: %d, this sensor isn't enabled in %d\n", iSensorType, atomic_read(&data->aSensorEnable));
+			data->aiCheckStatus[iSensorType] = NO_SENSOR_STATE;
+			return;
+		//}
 	}
 	
 	// filter changes.
@@ -269,7 +274,7 @@ void forceDisableSensor(unsigned int sensorId)
 }
 EXPORT_SYMBOL(forceDisableSensor);
 
-void forceEnableSensor(unsigned int sensorId)
+void forceEnableSensor(unsigned int sensorId, bool force)
 {
 	
 	//return;
@@ -325,18 +330,27 @@ void forceEnableSensor(unsigned int sensorId)
 		
 		if (sensorId == 1) {
 			
-			pr_info("[SSP/enablesensor]: changing delay\n");
-			flg_kw_gyro_on = true;
-			//gyro_open_calibration(prox_device);
+			if (!force) {
+				pr_info("[SSP/enablesensor]: flg_kw_gyro_on=true changing delay\n");
+				flg_kw_gyro_on = true;
+			} else {
+				pr_info("[SSP/enablesensor]: flg_kw_gyro_on=false changing delay\n");
+			}
+			
 			change_sensor_delay(prox_device, GYROSCOPE_SENSOR, sttg_kw_resolution);
-			pr_info("[SSP/enablesensor]: KW_GYRO ON!\n");
+			pr_info("[SSP/enablesensor]: GYRO ON!\n");
 			
 		} else if (sensorId == 5) {
 			
-			pr_info("[SSP/enablesensor]: changing delay\n");
+			if (!force) {
+				pr_info("[SSP/enablesensor]: flg_ww_prox_on= true changing delay\n");
+				flg_ww_prox_on = true;
+			} else {
+				pr_info("[SSP/enablesensor]: flg_ww_prox_on=false changing delay\n");
+			}
+			
 			change_sensor_delay(prox_device, PROXIMITY_SENSOR, 66667000);
-			flg_ww_prox_on = true;
-			pr_info("[SSP/enablesensor]: WW_PROX ON!\n");
+			pr_info("[SSP/enablesensor]: PROX ON!\n");
 		}
 		
 	} else {
@@ -357,6 +371,27 @@ void forceEnableSensor(unsigned int sensorId)
 	
 }
 EXPORT_SYMBOL(forceEnableSensor);
+
+bool sensorStatus(unsigned int sensorId)
+{
+	
+	unsigned int uSensorsEnabled = 0;
+	
+	// check the sensor's bit. 5 = prox.
+	if ((atomic_read(&prox_device->aSensorEnable) & (1 << sensorId))) {
+		// IF sensor is disabled, enable it.
+		
+		pr_info("[SSP/sensorStatus]: sensor (%d) is enabled\n", sensorId);
+		return true;
+		
+	} else {
+		
+		pr_info("[SSP/sensorStatus]: sensor (%d) is disabled\n");
+		return false;
+	}
+	
+}
+EXPORT_SYMBOL(sensorStatus);
 
 void forceChangeDelay(unsigned int sensorId, int64_t newDelay)
 {

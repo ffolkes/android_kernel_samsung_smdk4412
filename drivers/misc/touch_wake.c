@@ -214,6 +214,8 @@ static void touchwake_early_suspend(struct early_suspend * h)
 	ctr_knocks = 0;
 	ctr_kw_gyro_skip = 0;
 	
+	leds_reset_last();
+	
 	// don't turn the gyro off if we've gone back to sleep before it timed out.
 	cancel_delayed_work_sync(&work_knockwake_off);
 	
@@ -223,7 +225,7 @@ static void touchwake_early_suspend(struct early_suspend * h)
 		pr_info("[TW/ssp/kw] starting GYRO\n");
 		pr_info("[SSP/kw] locking knockwake_wake_lock\n");
 		wake_lock(&knockwake_wake_lock);
-		forceEnableSensor(1);
+		forceEnableSensor(1, false);
 	}
 	
 	//flg_ww_prox_on = false;
@@ -244,8 +246,6 @@ static void touchwake_early_suspend(struct early_suspend * h)
     flg_touchwake_pressed = false;
     flg_touchwake_active = true;
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
-	
-	leds_reset_last();
     
     if (sttg_touchwake_persistent) {
         // if we are in persistent mode, don't go beyond this if-statement.
@@ -260,7 +260,7 @@ static void touchwake_early_suspend(struct early_suspend * h)
             wake_lock(&touchwake_wake_lock);
         //}
 		
-		flg_ctr_cpuboost_mid = 15;
+		flg_ctr_cpuboost_mid = 10;
         
         if (timed_out && sttg_touchwake_swipe_only && sttg_touchwake_force_timedout_tapwake) {
             // the user might want to hold a persistent lock and use slide2wake, but still be able to
@@ -273,9 +273,15 @@ static void touchwake_early_suspend(struct early_suspend * h)
             //wake_lock(&touchwake_wake_lock); /* TODO: disabled until deepsleep wake works */
 			
 			if (sttg_tw_usewavewake) {
-				pr_info("[TW/ssp] immediately starting PROX\n");
-				forceEnableSensor(5);
-				flg_tw_prox_on = true;
+				if (!sensorStatus(5)) {
+					pr_info("[TW/ssp] immediately starting PROX\n");
+					forceEnableSensor(5, false);
+					flg_tw_prox_on = true;
+				} else {
+					// debug purposes.
+					
+					pr_info("[TW/ssp] PROX was already on! skipping.\n");
+				}
 			}
             
 			flg_ctr_cpuboost_mid = 25;
@@ -294,9 +300,15 @@ static void touchwake_early_suspend(struct early_suspend * h)
             pr_info("[TOUCHWAKE] Early suspend - enable touch delay\n");
 			
 			if (sttg_tw_usewavewake) {
-				pr_info("[TW/ssp] immediately starting PROX\n");
-				forceEnableSensor(5);
-				flg_tw_prox_on = true;
+				if (!sensorStatus(5)) {
+					pr_info("[TW/ssp] immediately starting PROX\n");
+					forceEnableSensor(5, false);
+					flg_tw_prox_on = true;
+				} else {
+					// debug purposes.
+					
+					pr_info("[TW/ssp] PROX was already on! skipping.\n");
+				}
 			}
 			
 			flg_ctr_cpuboost_mid = 50;
@@ -420,7 +432,7 @@ static void touchwake_late_resume(struct early_suspend * h)
 		pr_info("[TW/ssp/ka] stopping GYRO\n");
 		forceDisableSensor(1);
 		pr_info("[TW/ssp/ka] restarting GYRO because knockactive is active\n");
-		forceEnableSensor(1);
+		forceEnableSensor(1, false);
 	}
 
 	wake_unlock(&touchwake_wake_lock);
@@ -639,8 +651,16 @@ static ssize_t touchwake_enable_persistent_write(struct device * dev, struct dev
 	ret = sscanf(buf, "%u\n", &data);
 	
 	if(ret && data == 1) {
-		sttg_touchwake_persistent = true;
-		pr_info("TOUCHWAKE enable_persistent has been set\n");
+		if (!sttg_touchwake_persistent) {
+			sttg_touchwake_persistent = true;
+			flg_touchwake_active = true;
+			flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
+			wake_lock(&touchwake_wake_lock);
+			touchwake_enable_touch();
+			pr_info("TOUCHWAKE enable_persistent has been set\n");
+		} else {
+			pr_info("TOUCHWAKE enable_persistent was already set\n");
+		}
 	} else {
 		sttg_touchwake_persistent = false;
         wake_unlock(&touchwake_wake_lock);
@@ -1197,7 +1217,7 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 			pr_info("[SSP/ww] locking wavewake_wake_lock\n");
 			wake_lock(&wavewake_wake_lock);
 			pr_info("[TW/ssp/ww] immediately starting PROX\n");
-			forceEnableSensor(5);
+			forceEnableSensor(5, false);
 			//flg_ww_prox_on = true;
 			ww_set_disable_prox(1);
 		}
@@ -1236,7 +1256,7 @@ static ssize_t kw_mode_write(struct device * dev, struct device_attribute * attr
 				pr_info("[TW/ssp/kw] starting GYRO\n");
 				pr_info("[SSP/kw] locking knockwake_wake_lock\n");
 				wake_lock(&knockwake_wake_lock);
-				forceEnableSensor(1);
+				forceEnableSensor(1, false);
 			}
 		}
 	}
@@ -1802,14 +1822,14 @@ static ssize_t ka_mode_write(struct device * dev, struct device_attribute * attr
 				forceDisableSensor(1);
 				pr_info("[SSP/kw] locking knockwake_wake_lock\n");
 				wake_lock(&knockwake_wake_lock);
-				pr_info("[TW/ssp/ww] immediately starting GYRO\n");
-				forceEnableSensor(1);
+				pr_info("[TW/ssp/kw] immediately starting GYRO\n");
+				forceEnableSensor(1, false);
 			}
 		} else {
 			data = 0;
 			pr_info("[SSP/kw] unlocking knockwake_wake_lock\n");
 			wake_unlock(&knockwake_wake_lock);
-			pr_info("[TW/ssp/ww] immediately stopping GYRO\n");
+			pr_info("[TW/ssp/kw] immediately stopping GYRO\n");
 			forceDisableSensor(1);
 			kw_status_code = 999;
 		}
