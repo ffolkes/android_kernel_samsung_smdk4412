@@ -2571,7 +2571,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	
 	if (flg_ctr_cpuboost > 0) {
 		
-		//if (flg_debug)
+		if (flg_debug)
 			pr_info("[zzmoove] Manual Max-Boost Call! Boosting to: %d MHz %d more times\n", policy->max, flg_ctr_cpuboost);
 		
 		if (policy->cur < policy->max) {
@@ -2585,7 +2585,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	
 	if (flg_ctr_cpuboost_mid > 0) {
 		
-		//if (flg_debug)
+		if (flg_debug)
 			pr_info("[zzmoove] Manual Mid-Boost Call! Boosting to: %d MHz %d more times\n", 800000, flg_ctr_cpuboost_mid);
 		
 		if (policy->cur < 800000) {
