@@ -899,7 +899,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	{
 		
 		if (sttg_ww_noredundancies) {
-			pr_info("LED/ww] sttg_ww_noredundancies = true and leds were different\n");
+			pr_info("[LED/ww] sttg_ww_noredundancies = true and leds were different\n");
 		}
 		
 		if (sttg_ww_linger > 0) {
@@ -909,20 +909,35 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 			// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
 			tmp_flg_ctr_cpuboost = 50;
 		}
-	
-		do_gettimeofday(&time_ledwenton);
+		
+		if (!flg_ww_trigger_noti) {
+			// if this is being triggered by a manual noti, we can't have the
+			// led hook put its timestamp on this, because the manual hook already
+			// called for prox a few seconds ago, and if the user were to hover just as this code here
+			// is running, the logic in proximity_detected() would see this more recent timestamp
+			// and think no human could hover that fast so it must be in a pocket.
+			
+			pr_info("[LED/ww] getting new ledwenton time\n");
+			do_gettimeofday(&time_ledwenton);
+			
+		} else {
+			
+			pr_info("[LED/ww] not getting new ledwenton time\n");
+		}
 		
 		time_since_suspend = (time_ledwenton.tv_sec - time_suspended.tv_sec) * MSEC_PER_SEC +
-		(time_ledwenton.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
+							(time_ledwenton.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
 		
 		if (time_since_suspend > 3000) {
 			// hook for WaveWake
+			
+			pr_info("[LED/ww] it has been %d ms since suspended\n", time_since_suspend);
 			
 			if (sttg_ww_mode > 0 && !flg_ww_prox_on && !flg_screen_on && !flg_system_noti) {
 				
 				flg_ctr_cpuboost = tmp_flg_ctr_cpuboost;
 				
-				pr_info("[SSP/ww] locking wavewake_wake_lock\n");
+				pr_info("[LED/ww] locking wavewake_wake_lock\n");
 				wake_lock(&wavewake_wake_lock);
 				
 				//flg_ww_prox_on = true;
@@ -975,6 +990,10 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		}
 	} else {
 		pr_info("[LED/ssp/ww] skipping ww hook\n");
+		
+		if (sttg_ww_trigger_noti_only) {
+			pr_info("[LED/ssp/ww] skipped because manual noti only\n");
+		}
 		
 		if (led_r_brightness_orig + led_g_brightness_orig + led_b_brightness_orig == 0) {
 			pr_info("[LED/ssp/ww] ignoring null led call (0/0/0/)\n");

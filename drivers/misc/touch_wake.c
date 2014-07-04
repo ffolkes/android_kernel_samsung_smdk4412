@@ -1198,14 +1198,14 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 			flg_ctr_cpuboost = 5;
 		}
 		
-		flg_ww_trigger_noti = true;
-		pr_info("[TW/ww] userspace has set flg_ww_trigger_noti\n");
-		
 		if (sttg_ww_mode > 0 && !flg_screen_on && !flg_ww_prox_on) {
 			
+			flg_ww_trigger_noti = true;
+			pr_info("[TW/ww] userspace has set flg_ww_trigger_noti\n");
+			
 			if (sttg_ww_linger > 0) {
-				// boost cpu. multiply by 5, since sampling rate is probably ~200ms.
-				flg_ctr_cpuboost = 5 * (sttg_ww_linger / 1000);
+				// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcore 30 sec max.
+				flg_ctr_cpuboost = min((5 * (sttg_ww_linger / 1000)), 150);
 			} else {
 				// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
 				flg_ctr_cpuboost = 50;
@@ -2206,7 +2206,9 @@ void proximity_detected(void)
 	unsigned int time_since_ledwenton;
 	unsigned int time_since_manualtrigger;
 	
+	// remember to reset prox_near if exiting early, or else tsp will lock itself out because it thinks there is always something there.
 	prox_near = true;
+	
 #ifdef DEBUG_PRINT
 	pr_info("[TOUCHWAKE] Proximity enabled\n");
 #endif
@@ -2219,6 +2221,7 @@ void proximity_detected(void)
 	time_since_manualtrigger = (time_now.tv_sec - time_ww_last_manualtrigger.tv_sec) * MSEC_PER_SEC +
 							(time_now.tv_usec - time_ww_last_manualtrigger.tv_usec) / USEC_PER_MSEC;
 	
+	// do the touchwake waveoff check first.
 	if (flg_tw_prox_on) {
 		pr_info("[TW/SSP] ACTIVATED - pressing power!\n");
 		pr_info("[TW/SSP] PROX - DISABLE - touchwake is pressing power\n");
@@ -2228,7 +2231,9 @@ void proximity_detected(void)
 		press_power();
 	}
 	
-	if (sttg_ww_mode > 0 && time_since_ledwenton > 250 && time_since_manualtrigger > 250) {
+	if (sttg_ww_mode > 0 && time_since_ledwenton > 400 && time_since_manualtrigger > 400) {
+		
+		pr_info("[TW/SSP/ww] ww is enabled. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
 		
 		if (flg_ww_prox_on) {
 			
@@ -2285,18 +2290,20 @@ void proximity_detected(void)
 			pr_info("[TW/SSP/ww] flg_ww_prox_on: false\n");
 		}
 	} else {
-		// if we're getting a prox detected even this soon,
+		// if we're getting a prox detected event this soon,
 		// it's probably because there is something there, like a pocket.
 		// don't risk it by leaving it on, and turn WW off.
 		if (flg_ww_prox_on) {
 			//flg_ww_prox_on = false;
-			pr_info("[TW/SSP/ww] disable prox for this entire event because LED was called within 500ms\n");
+			pr_info("[TW/SSP/ww] disable prox for this entire event. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
 			forceDisableSensor(5);
 			wake_unlock(&wavewake_wake_lock);
 			pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+			prox_near = false;
 			ctr_ww_prox_hits = sttg_ww_mode;
 			// stop the cpu boost, we don't need it anymore.
 			flg_ctr_cpuboost = 0;
+			flg_ww_trigger_noti = false;
 		}
 	}
 	
