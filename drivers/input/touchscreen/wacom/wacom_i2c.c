@@ -36,6 +36,7 @@
 extern bool flg_tsp_touching;
 extern int flg_ctr_tsp_touching;
 extern bool flg_epen_pressed;
+extern unsigned int flg_ctr_cpuboost;
 
 unsigned char screen_rotate;
 unsigned char user_hand = 1;
@@ -72,6 +73,19 @@ unsigned int sttg_epen_padding_top = 100;
 unsigned int sttg_epen_padding_right = (WACOM_MAX_COORD_Y - 100);
 unsigned int sttg_epen_padding_bottom = (WACOM_MAX_COORD_X - 100);
 unsigned int sttg_epen_padding_left = 100;
+
+static unsigned int sttg_epen_out_key_code = 1833;
+static bool sttg_epen_out_key_delay = false;
+
+static unsigned int sttg_epen_out_screenoff_key_code = 0;
+static bool sttg_epen_out_screenoff_key_delay = false;
+static bool sttg_epen_out_screenoff_powerfirst = true;
+
+static bool sttg_epen_in_powerfirst = false;
+
+extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
+extern void press_power(void);
+extern bool flg_screen_on;
 
 static void wacom_i2c_enable_irq(struct wacom_i2c *wac_i2c, bool enable)
 {
@@ -525,12 +539,69 @@ static void pen_insert_work(struct work_struct *work)
 	}
 	
 	if (wac_i2c->pen_insert) {
+		
+		// epen inserted.
+		
 		printk(KERN_DEBUG "[E-PEN] sttg_epen_worryfree_mode OFF\n");
 		flg_epen_worryfree_mode = false;
+		
+		if (flg_screen_on && sttg_epen_in_powerfirst) {
+			// if the screen is on and the user wants to turn it off when inserted.
+			
+			pr_info("[E-PEN] TRIGGERED --[E-PEN INSERTED]--\n");
+			press_power();
+		}
+		
 	} else {
+		
+		// epen removed.
+		
+		flg_ctr_cpuboost = 20;
+		
 		if (sttg_epen_worryfree_mode) {
 			printk(KERN_DEBUG "[E-PEN] sttg_epen_worryfree_mode ON\n");
 			flg_epen_worryfree_mode = true;
+		}
+		
+		if (!flg_screen_on) {
+			// screen is off.
+			
+			if (sttg_epen_out_screenoff_powerfirst) {
+				// instead of using press_button()'s powerfirst mode,
+				// turn it on manually instead since the user might want
+				// to turn it on, but not input any action.
+				
+				press_power();
+			}
+			
+			// now, we need to do the action here too, since if we just turned
+			// the screen on, flg_screen_on will always be true now.
+			
+			if (sttg_epen_out_screenoff_key_code) {
+				
+				pr_info("[E-PEN] SCREEN-OFF TRIGGERED --[E-PEN REMOVED]--\n");
+				press_button(sttg_epen_out_screenoff_key_code,
+							 sttg_epen_out_screenoff_key_delay,
+							 true,
+							 false,
+							 false);
+			}
+			
+		} else {
+			// screen is on. we're using an ELSE so only one action is performed.
+		
+			if (sttg_epen_out_key_code) {
+				
+				if (flg_screen_on) {
+					
+					pr_info("[E-PEN] TRIGGERED --[E-PEN REMOVED]--\n");
+					press_button(sttg_epen_out_key_code,
+								 sttg_epen_out_key_delay,
+								 true,
+								 false,
+								 false);
+				}
+			}
 		}
 	}
 
@@ -1309,6 +1380,116 @@ static ssize_t epen_worryfree_mode_store(struct device *dev,
 	return count;
 }
 
+static ssize_t epen_out_key_code_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_out_key_code);
+}
+
+static ssize_t epen_out_key_code_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	sttg_epen_out_key_code = val;
+	pr_info("[E-PEN] STORE - epen_out_key_code has been set (%d)\n", sttg_epen_out_key_code);
+	return count;
+}
+
+static ssize_t epen_out_key_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_out_key_delay);
+}
+
+static ssize_t epen_out_key_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	if (val > 0) {
+		val = 1;
+	} else {
+		val = 0;
+	}
+	sttg_epen_out_key_delay = val;
+	pr_info("[E-PEN] STORE - epen_out_key_delay has been set (%d)\n", sttg_epen_out_key_delay);
+	return count;
+}
+
+static ssize_t epen_out_screenoff_key_code_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_out_screenoff_key_code);
+}
+
+static ssize_t epen_out_screenoff_key_code_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	sttg_epen_out_screenoff_key_code = val;
+	pr_info("[E-PEN] STORE - epen_out_screenoff_key_code has been set (%d)\n", sttg_epen_out_screenoff_key_code);
+	return count;
+}
+
+static ssize_t epen_out_screenoff_key_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_out_screenoff_key_delay);
+}
+
+static ssize_t epen_out_screenoff_key_delay_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	if (val > 0) {
+		val = 1;
+	} else {
+		val = 0;
+	}
+	sttg_epen_out_screenoff_key_delay = val;
+	pr_info("[E-PEN] STORE - epen_out_screenoff_key_delay has been set (%d)\n", sttg_epen_out_screenoff_key_delay);
+	return count;
+}
+
+static ssize_t epen_out_screenoff_powerfirst_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_out_screenoff_powerfirst);
+}
+
+static ssize_t epen_out_screenoff_powerfirst_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	if (val > 0) {
+		val = 1;
+	} else {
+		val = 0;
+	}
+	sttg_epen_out_screenoff_powerfirst = val;
+	pr_info("[E-PEN] STORE - epen_out_screenoff_powerfirst has been set (%d)\n", sttg_epen_out_screenoff_powerfirst);
+	return count;
+}
+
+static ssize_t epen_in_powerfirst_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", sttg_epen_in_powerfirst);
+}
+
+static ssize_t epen_in_powerfirst_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	int val;
+	
+	sscanf(buf, "%u", &val);
+	if (val > 0) {
+		val = 1;
+	} else {
+		val = 0;
+	}
+	sttg_epen_in_powerfirst = val;
+	pr_info("[E-PEN] STORE - epen_in_powerfirst has been set (%d)\n", sttg_epen_in_powerfirst);
+	return count;
+}
+
 static ssize_t epen_hover_side_hotspot_height_show(struct device *dev,
 												   struct device_attribute *attr,
 												   char *buf)
@@ -1786,6 +1967,12 @@ static DEVICE_ATTR(epen_rotation, S_IWUSR | S_IWGRP, NULL, epen_rotation_store);
 /* hand type */
 static DEVICE_ATTR(epen_hand, S_IRUGO | S_IWUSR, epen_hand_show, epen_hand_store);
 #endif
+static DEVICE_ATTR(epen_out_key_code, S_IRUGO | S_IWUSR, epen_out_key_code_show, epen_out_key_code_store);
+static DEVICE_ATTR(epen_out_key_delay, S_IRUGO | S_IWUSR, epen_out_key_delay_show, epen_out_key_delay_store);
+static DEVICE_ATTR(epen_out_screenoff_key_code, S_IRUGO | S_IWUSR, epen_out_screenoff_key_code_show, epen_out_screenoff_key_code_store);
+static DEVICE_ATTR(epen_out_screenoff_key_delay, S_IRUGO | S_IWUSR, epen_out_screenoff_key_delay_show, epen_out_screenoff_key_delay_store);
+static DEVICE_ATTR(epen_out_screenoff_powerfirst, S_IRUGO | S_IWUSR, epen_out_screenoff_powerfirst_show, epen_out_screenoff_powerfirst_store);
+static DEVICE_ATTR(epen_in_powerfirst, S_IRUGO | S_IWUSR, epen_in_powerfirst_show, epen_in_powerfirst_store);
 static DEVICE_ATTR(epen_boxfilter_threshold, S_IRUGO | S_IWUSR, epen_boxfilter_threshold_show, epen_boxfilter_threshold_store);
 static DEVICE_ATTR(epen_boxfilter_threshold_hover, S_IRUGO | S_IWUSR, epen_boxfilter_threshold_hover_show, epen_boxfilter_threshold_hover_store);
 static DEVICE_ATTR(epen_boost_freq, S_IRUGO | S_IWUSR, epen_boost_freq_show, epen_boost_freq_store);
@@ -1866,6 +2053,12 @@ static struct attribute *epen_attributes[] = {
 #ifdef BATTERY_SAVING_MODE
 	&dev_attr_epen_saving_mode.attr,
 #endif
+	&dev_attr_epen_out_screenoff_key_code.attr,
+	&dev_attr_epen_out_screenoff_key_delay.attr,
+	&dev_attr_epen_out_screenoff_powerfirst.attr,
+	&dev_attr_epen_out_key_code.attr,
+	&dev_attr_epen_out_key_delay.attr,
+	&dev_attr_epen_in_powerfirst.attr,
 	&dev_attr_epen_boxfilter_threshold.attr,
 	&dev_attr_epen_boxfilter_threshold_hover.attr,
 	&dev_attr_epen_boost_freq.attr,
