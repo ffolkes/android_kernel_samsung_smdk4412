@@ -45,6 +45,9 @@
 #include <linux/sched.h>
 #include <linux/pm_qos_params.h>
 
+//static int flg_intelliactive_ctr_cpuboost = 0;
+//static int flg_intelliactive_ctr_cpuboost_mid = 0;
+
 static int active_count;
 
 struct cpufreq_interactive_cpuinfo {
@@ -426,6 +429,54 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 	if (cpu_is_offline(data))
 		goto exit;
+	
+	// disable flg_ctr_cpuboost in favor of intelliactive's built in input event booster.
+	/*if (flg_ctr_cpuboost > 0) {
+		
+		pr_info("[intelliactive] Manual Max-Boost Call! Boosting to: %d MHz %d more times\n", pcpu->policy->max, flg_ctr_cpuboost);
+		
+		if (pcpu->policy->cur < pcpu->policy->max) {
+			pcpu->target_freq = pcpu->policy->max;
+			__cpufreq_driver_target(pcpu->policy, pcpu->policy->max, CPUFREQ_RELATION_H);
+		}
+		
+		flg_intelliactive_ctr_cpuboost++;
+		
+		// only decrement on every 10th iteration.
+		if (flg_intelliactive_ctr_cpuboost >= 10) {
+			
+			pr_info("[intelliactive] reset flg_intelliactive_ctr_cpuboost\n");
+			
+			flg_intelliactive_ctr_cpuboost = 0;
+			flg_ctr_cpuboost--;
+			flg_ctr_cpuboost_mid--;
+		}
+		
+		goto rearm;
+	}
+	
+	if (flg_ctr_cpuboost_mid > 0) {
+		
+		pr_info("[intelliactive] Manual Mid-Boost Call! Boosting to: %d MHz %d more times\n", 800000, flg_ctr_cpuboost_mid);
+		
+		if (pcpu->policy->cur < 800000) {
+			pcpu->target_freq = 800000;
+			__cpufreq_driver_target(pcpu->policy, 800000, CPUFREQ_RELATION_H);
+		}
+		
+		flg_intelliactive_ctr_cpuboost_mid++;
+		
+		// only decrement on every 10th iteration.
+		if (flg_intelliactive_ctr_cpuboost >= 10) {
+			
+			pr_info("[intelliactive] reset flg_intelliactive_ctr_cpuboost_mid\n");
+			
+			flg_intelliactive_ctr_cpuboost_mid = 0;
+			flg_ctr_cpuboost_mid--;
+		}
+		
+		goto rearm;
+	}*/
 
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	now = update_load(data);
