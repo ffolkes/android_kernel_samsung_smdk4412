@@ -72,6 +72,10 @@ struct cpufreq_interactive_cpuinfo {
 
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
+static unsigned int boost_on_tsp = 1;
+static unsigned int boost_on_gpio = 1;
+static unsigned int boost_on_tk = 1;
+
 /* realtime thread handles frequency scaling */
 static struct task_struct *speedchange_task;
 static cpumask_t speedchange_cpumask;
@@ -144,10 +148,10 @@ static bool io_is_busy = 1;
  * sync_freq
  */
 static unsigned int up_threshold_any_cpu_load = 95;
-static unsigned int sync_freq = 729600;
-static unsigned int up_threshold_any_cpu_freq = 960000;
+static unsigned int sync_freq = 800000;
+static unsigned int up_threshold_any_cpu_freq = 1200000;
 
-static int two_phase_freq_array[NR_CPUS] = {[0 ... NR_CPUS-1] = 1728000} ;
+static int two_phase_freq_array[NR_CPUS] = {[0 ... NR_CPUS-1] = 1400000} ;
 
 static int cpufreq_governor_intelliactive(struct cpufreq_policy *policy,
 		unsigned int event);
@@ -1296,6 +1300,78 @@ static struct global_attr up_threshold_any_cpu_freq_attr =
 		show_up_threshold_any_cpu_freq,
 				store_up_threshold_any_cpu_freq);
 
+static ssize_t show_boost_on_tsp(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", boost_on_tsp);
+}
+
+static ssize_t store_boost_on_tsp(struct kobject *kobj, struct attribute *attr, const char *buf,
+								 size_t count)
+{
+	int ret;
+	unsigned long val;
+	
+	ret = kstrtol(buf, 10, &val);
+	if (ret < 0)
+	return ret;
+	
+	boost_on_tsp = val;
+	return count;
+}
+
+static struct global_attr boost_on_tsp_attr =
+__ATTR(boost_on_tsp, 0644,
+	   show_boost_on_tsp,
+	   store_boost_on_tsp);
+
+static ssize_t show_boost_on_gpio(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", boost_on_gpio);
+}
+
+static ssize_t store_boost_on_gpio(struct kobject *kobj, struct attribute *attr, const char *buf,
+								  size_t count)
+{
+	int ret;
+	unsigned long val;
+	
+	ret = kstrtol(buf, 10, &val);
+	if (ret < 0)
+	return ret;
+	
+	boost_on_gpio = val;
+	return count;
+}
+
+static struct global_attr boost_on_gpio_attr =
+__ATTR(boost_on_gpio, 0644,
+	   show_boost_on_gpio,
+	   store_boost_on_gpio);
+
+static ssize_t show_boost_on_tk(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", boost_on_tk);
+}
+
+static ssize_t store_boost_on_tk(struct kobject *kobj, struct attribute *attr, const char *buf,
+								  size_t count)
+{
+	int ret;
+	unsigned long val;
+	
+	ret = kstrtol(buf, 10, &val);
+	if (ret < 0)
+	return ret;
+	
+	boost_on_tk = val;
+	return count;
+}
+
+static struct global_attr boost_on_tk_attr =
+__ATTR(boost_on_tk, 0644,
+	   show_boost_on_tk,
+	   store_boost_on_tk);
+
 static struct attribute *interactive_attributes[] = {
 	&target_loads_attr.attr,
 	&above_hispeed_delay_attr.attr,
@@ -1313,6 +1389,9 @@ static struct attribute *interactive_attributes[] = {
 	&up_threshold_any_cpu_load_attr.attr,
 	&up_threshold_any_cpu_freq_attr.attr,
 	&two_phase_freq_attr.attr,
+	&boost_on_tsp_attr.attr,
+	&boost_on_gpio_attr.attr,
+	&boost_on_tk_attr.attr,
 	NULL,
 };
 
@@ -1321,6 +1400,18 @@ static void interactive_input_event(struct input_handle *handle,
 		unsigned int code, int value)
 {
 	if (type == EV_SYN && code == SYN_REPORT) {
+		
+		if ((strstr(handle->dev->name, "touchscreen") && !boost_on_tsp)
+			|| (strstr(handle->dev->name, "gpio") && !boost_on_gpio)
+			|| (strstr(handle->dev->name, "touchkey") && !boost_on_tk)
+		) {
+			// we were told not to boost from this device, so just return.
+			pr_info("[intelliactive] did not boost for input event from: %s\n", handle->dev->name);
+			return;
+		}
+		
+		pr_info("[intelliactive] boosted because of input. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
+		
 		boostpulse_endtime = ktime_to_us(ktime_get()) +
 			boostpulse_duration_val;
 		cpufreq_interactive_boost();
@@ -1336,6 +1427,9 @@ static int input_dev_filter(const char *input_dev_name)
 	    strstr(input_dev_name, "gpio-keys") ||
 	    strstr(input_dev_name, "sec_touchkey") ||
 	    strstr(input_dev_name, "keypad")) {
+		
+		pr_info("[intelliactive] found input device: %s\n", input_dev_name);
+		
 		return 0;
 	} else {
 		return 1;
@@ -1439,7 +1533,8 @@ static int cpufreq_governor_intelliactive(struct cpufreq_policy *policy,
 		freq_table =
 			cpufreq_frequency_get_table(policy->cpu);
 		if (!hispeed_freq)
-			hispeed_freq = policy->max;
+			hispeed_freq = 1200000; // hardcode to 1200 MHz
+			//hispeed_freq = policy->max;
 
 		for_each_cpu(j, policy->cpus) {
 			pcpu = &per_cpu(cpuinfo, j);
