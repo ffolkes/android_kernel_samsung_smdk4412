@@ -245,29 +245,59 @@ static int max77693_led_setup(struct max77693_led_data *led_data)
 	return ret;
 }
 
+void controlRearLED(unsigned int level)
+{
+	struct led_classdev *led_cdev = dev_get_drvdata(flash_dev);
+	
+	if (level) {
+		// turn LED on.
+		
+		pr_info("[REARLED] called internally ON, level: %u\n", level);
+		
+		// max brightness check.
+		if (level > led_cdev->max_brightness)
+		level = led_cdev->max_brightness;
+		
+		led_cdev->brightness = level;
+		
+		if (!(led_cdev->flags & LED_SUSPENDED))
+		led_cdev->brightness_set(led_cdev, level);
+		
+		flg_rearled_on = true;
+		
+	} else {
+		// turn LED off.
+		
+		pr_info("[REARLED] called internally OFF, level: %u\n", level);
+		
+		led_cdev->brightness = level;
+		
+		if (!(led_cdev->flags & LED_SUSPENDED))
+		led_cdev->brightness_set(led_cdev, level);
+		
+		flg_rearled_on = false;
+	}
+	
+	pr_info("[REARLED] complete\n", level);
+	
+	return;
+}
+EXPORT_SYMBOL(controlRearLED);
+
 void toggleRearLED(unsigned int level)
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(flash_dev);
 	
 	if (flg_rearled_on) {
-		level = 0;
-	}
-	
-	if (level > led_cdev->max_brightness)
-		level = led_cdev->max_brightness;
-	
-	led_cdev->brightness = level;
-	
-	if (!(led_cdev->flags & LED_SUSPENDED))
-		led_cdev->brightness_set(led_cdev, level);
-	
-	if (level > 0) {
-		flg_rearled_on = true;
+		// if the LED is on, turn it off.
+		
+		controlRearLED(0);
+		
 	} else {
-		flg_rearled_on = false;
+		// if the LED is off, turn it on.
+		
+		controlRearLED(level);
 	}
-	
-	pr_info("[REARLED] called internally, state: %u\n", level);
 	
 	return;
 }
