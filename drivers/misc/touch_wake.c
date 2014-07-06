@@ -34,6 +34,24 @@ extern struct wake_lock wavewake_wake_lock;
 static struct wake_lock knockwake_wake_lock;
 extern unsigned int ctr_knocks;
 extern int ctr_kw_gyro_skip;
+extern void toggleRearLED(unsigned int level);
+extern void controlRearLED(unsigned int level);
+
+static struct timer_list timer_backblink;
+bool flg_bb_active = false;
+static int ctr_bb_rearblink = 0;
+static int ctr_bb_rearblinkon = 0;
+static int ctr_bb_rearblinkoff = 0;
+static int ctr_bb_blinkgroup = 0;
+
+unsigned int sttg_bb_mode = 1; // 0 = off, 1 = on
+unsigned int sttg_bb_dutycycle_on = 200; // duration in ms rear led is on
+unsigned int sttg_bb_dutycycle_off = 500; // duration in ms rear led is off
+unsigned int sttg_bb_limit = 3; // how many blinks
+bool sttg_bb_poweron_clearedobstacle = false; // turn power on when device picked up
+unsigned int sttg_bb_brightness = 1; // brightness step 1 to 15
+unsigned int sttg_bb_blinkgroup_size = 0; // how many flashes-on in each group
+unsigned int sttg_bb_blinkgroup_delay = 1000; // how long between each group
 
 bool flg_kw_gyro_on = false;
 bool flg_tw_prox_on = false;
@@ -369,6 +387,10 @@ static void touchwake_late_resume(struct early_suspend * h)
 	
 	touchwake_enable_touch();
 	
+	// turn off backblink, and led.
+	del_timer(&timer_backblink);
+	controlRearLED(0);
+	
 	if (flg_tw_prox_on) {
 		pr_info("[TW/SSP] PROX - DISABLE - screen is back on\n");
 		flg_tw_prox_on = false;
@@ -390,9 +412,10 @@ static void touchwake_late_resume(struct early_suspend * h)
 	
 	leds_reset_last();
 	
-	// stop the booster when the screen comes on.
+	
+	/*// stop the booster when the screen comes on.
 	// this is just piggybacked in touch_wake.c for my convenience.
-	flg_ctr_cpuboost = 0;
+	flg_ctr_cpuboost = 0;*/
 	
 	if ((sttg_kw_mode == 1 || sttg_kw_mode > 3) && flg_kw_pressedpower) {
 		// if we're expecting a more knocks, we can't turn the sensor off yet.
@@ -705,17 +728,6 @@ static ssize_t touchwake_ignore_tkeys_write(struct device * dev, struct device_a
 	unsigned int data;
 	
 	ret = sscanf(buf, "%u\n", &data);
-	
-	if (data == 100) {
-		pr_info("SSPFF turning off...%u\n", data);
-		//forceDisableSensor(5);
-		return size;
-	}
-	
-	if (data == 10) {
-		pr_info("SSPFF turning on...%u\n", data);
-		//forceEnableSensor(5);
-	}
 	
 	if(ret && data == 1) {
 		sttg_touchwake_ignoretkeys = true;
@@ -1051,6 +1063,161 @@ static ssize_t touchwake_longpressoff_xy_drift_tolerance_write(struct device * d
 	return size;
 }
 
+static ssize_t bb_mode_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_mode);
+}
+
+static ssize_t bb_mode_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		sttg_bb_mode = data;
+		pr_info("[TW/bb] sttg_bb_mode has been set to %d\n", sttg_bb_mode);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_dutycycle_on_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_dutycycle_on);
+}
+
+static ssize_t bb_dutycycle_on_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		sttg_bb_dutycycle_on = max((int) data, 1); // no faster than 50ms
+		sttg_bb_dutycycle_on = min((int) sttg_bb_dutycycle_on, 300000); // no longer than 5 minutes (300000 ms)
+		pr_info("[TW/bb] sttg_bb_dutycycle_on has been set to %d\n", sttg_bb_dutycycle_on);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_dutycycle_off_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_dutycycle_off);
+}
+
+static ssize_t bb_dutycycle_off_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		sttg_bb_dutycycle_off = max((int) data, 1); // no faster than 50ms
+		pr_info("[TW/bb] sttg_bb_dutycycle_off has been set to %d\n", sttg_bb_dutycycle_off);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_limit_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_limit);
+}
+
+static ssize_t bb_limit_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		sttg_bb_limit = max((int) data, 1); // no less than 1 blink
+		pr_info("[TW/bb] sttg_bb_limit has been set to %d\n", sttg_bb_limit);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_poweron_clearedobstacle_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_poweron_clearedobstacle);
+}
+
+static ssize_t bb_poweron_clearedobstacle_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data > 0) {
+			data = 1;
+		} else {
+			data = 0;
+		}
+		sttg_bb_poweron_clearedobstacle = data;
+		pr_info("[TW/bb] sttg_bb_poweron_clearedobstacle has been set to %d\n", sttg_bb_poweron_clearedobstacle);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_brightness_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_brightness);
+}
+
+static ssize_t bb_brightness_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data < 1) {
+			data = 1; // no dimmer than step 1.
+			
+		} else if (data > 15) {
+			data = 15; // no brighter than step 15.
+		}
+		sttg_bb_brightness = data;
+		pr_info("[TW/bb] sttg_bb_brightness has been set to %d\n", sttg_bb_brightness);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_blinkgroup_size_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_size);
+}
+
+static ssize_t bb_blinkgroup_size_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data != 0 && data < 2) {
+			data = 2; // it would be pointless to have a blinkgroup of 1.
+			
+		}
+		sttg_bb_blinkgroup_size = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_size has been set to %d\n", sttg_bb_blinkgroup_size);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_blinkgroup_delay_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_delay);
+}
+
+static ssize_t bb_blinkgroup_delay_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data < 1) {
+			data = 1; // no faster than 1 ms.
+		}
+		sttg_bb_blinkgroup_delay = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_delay has been set to %d\n", sttg_bb_blinkgroup_delay);
+	}
+	
+	return size;
+}
+
 static ssize_t ww_mode_read(struct device * dev, struct device_attribute * attr, char * buf)
 {
 	return sprintf(buf, "%u\n", sttg_ww_mode);
@@ -1190,36 +1357,56 @@ static ssize_t ww_trigger_noti_only_write(struct device * dev, struct device_att
 static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
 {
 	unsigned int data;
+	static struct timeval time_now;
+	static unsigned int time_since_manualtrigger;
 	
 	if(sscanf(buf, "%u\n", &data) == 1) {
 		
+		// leave this outside of the IF for global benefit.
 		if (flg_ctr_cpuboost < 5) {
 			// boost cpu for a few samples.
 			flg_ctr_cpuboost = 5;
 		}
 		
-		if (sttg_ww_mode > 0 && !flg_screen_on && !flg_ww_prox_on) {
+		// save current time.
+		do_gettimeofday(&time_now);
+		
+		// calculate the last time we did this.
+		// we don't want to trigger this too many times too quickly.
+		time_since_manualtrigger = (time_now.tv_sec - time_ww_last_manualtrigger.tv_sec) * MSEC_PER_SEC +
+									(time_now.tv_usec - time_ww_last_manualtrigger.tv_usec) / USEC_PER_MSEC;
+		
+		if ((sttg_ww_mode > 0 || sttg_bb_mode) && !flg_screen_on && !flg_ww_prox_on && time_since_manualtrigger > 3000) {
 			
 			flg_ww_trigger_noti = true;
-			pr_info("[TW/ww] userspace has set flg_ww_trigger_noti\n");
+			pr_info("[TW/ww/manual] userspace has set flg_ww_trigger_noti\n");
 			
 			if (sttg_ww_linger > 0) {
-				// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcore 30 sec max.
-				flg_ctr_cpuboost = min((5 * (sttg_ww_linger / 1000)), 150);
+				// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcoded 30 sec max.
+				flg_ctr_cpuboost_mid = min((int) (5 * (sttg_ww_linger / 1000)), 150);
 			} else {
 				// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
-				flg_ctr_cpuboost = 50;
+				flg_ctr_cpuboost_mid = 50; // ~10 seconds
 			}
 			
-			pr_info("[SSP/ww] saving manual trigger time\n");
+			pr_info("[TW/ww/manual] flg_ctr_cpuboost: %d\n", flg_ctr_cpuboost);
+			
+			pr_info("[TW/ww/manual] saving manual trigger time\n");
 			do_gettimeofday(&time_ww_last_manualtrigger);
 			
-			pr_info("[SSP/ww] locking wavewake_wake_lock\n");
+			pr_info("[TW/ww/manual] locking wavewake_wake_lock\n");
 			wake_lock(&wavewake_wake_lock);
-			pr_info("[TW/ssp/ww] immediately starting PROX\n");
+			pr_info("[TW/ww/manual] immediately starting PROX\n");
 			forceEnableSensor(5, false);
-			//flg_ww_prox_on = true;
-			ww_set_disable_prox(1);
+			
+			if (sttg_ww_mode) {
+				// if this is a ww event, schedule normal linger.
+				ww_set_disable_prox(1);
+				
+			} else if (sttg_bb_mode) {
+				// if this is a bb event, schedule just a blip.
+				ww_set_disable_prox(200);
+			}
 		}
 	}
 	
@@ -2052,6 +2239,14 @@ static DEVICE_ATTR(longpressoff_duration, S_IRUGO | S_IWUGO, touchwake_longpress
 static DEVICE_ATTR(longpressoff_timeout, S_IRUGO | S_IWUGO, touchwake_longpressoff_timeout_read, touchwake_longpressoff_timeout_write);
 static DEVICE_ATTR(longpressoff_min_pressure, S_IRUGO | S_IWUGO, touchwake_longpressoff_min_pressure_read, touchwake_longpressoff_min_pressure_write);
 static DEVICE_ATTR(longpressoff_xy_drift_tolerance, S_IRUGO | S_IWUGO, touchwake_longpressoff_xy_drift_tolerance_read, touchwake_longpressoff_xy_drift_tolerance_write);
+static DEVICE_ATTR(bb_mode, S_IRUGO | S_IWUGO, bb_mode_read, bb_mode_write);
+static DEVICE_ATTR(bb_dutycycle_on, S_IRUGO | S_IWUGO, bb_dutycycle_on_read, bb_dutycycle_on_write);
+static DEVICE_ATTR(bb_dutycycle_off, S_IRUGO | S_IWUGO, bb_dutycycle_off_read, bb_dutycycle_off_write);
+static DEVICE_ATTR(bb_limit, S_IRUGO | S_IWUGO, bb_limit_read, bb_limit_write);
+static DEVICE_ATTR(bb_poweron_clearedobstacle, S_IRUGO | S_IWUGO, bb_poweron_clearedobstacle_read, bb_poweron_clearedobstacle_write);
+static DEVICE_ATTR(bb_brightness, S_IRUGO | S_IWUGO, bb_brightness_read, bb_brightness_write);
+static DEVICE_ATTR(bb_blinkgroup_size, S_IRUGO | S_IWUGO, bb_blinkgroup_size_read, bb_blinkgroup_size_write);
+static DEVICE_ATTR(bb_blinkgroup_delay, S_IRUGO | S_IWUGO, bb_blinkgroup_delay_read, bb_blinkgroup_delay_write);
 static DEVICE_ATTR(ww_mode, S_IRUGO | S_IWUGO, ww_mode_read, ww_mode_write);
 static DEVICE_ATTR(ww_linger, S_IRUGO | S_IWUGO, ww_linger_read, ww_linger_write);
 static DEVICE_ATTR(ww_waveoff, S_IRUGO | S_IWUGO, ww_waveoff_read, ww_waveoff_write);
@@ -2133,6 +2328,14 @@ static struct attribute *touchwake_notification_attributes[] =
     &dev_attr_longpressoff_timeout.attr,
     &dev_attr_longpressoff_min_pressure.attr,
     &dev_attr_longpressoff_xy_drift_tolerance.attr,
+	&dev_attr_bb_mode.attr,
+	&dev_attr_bb_dutycycle_on.attr,
+	&dev_attr_bb_dutycycle_off.attr,
+	&dev_attr_bb_limit.attr,
+	&dev_attr_bb_poweron_clearedobstacle.attr,
+	&dev_attr_bb_brightness.attr,
+	&dev_attr_bb_blinkgroup_size.attr,
+	&dev_attr_bb_blinkgroup_delay.attr,
 	&dev_attr_ww_mode.attr,
 	&dev_attr_ww_linger.attr,
 	&dev_attr_ww_waveoff.attr,
@@ -2200,11 +2403,105 @@ static struct miscdevice touchwake_device =
 	.name = "touchwake",
 };
 
+static void timerhandler_backblink()
+{
+	static unsigned int tmp_sttg_bb_dutycycle;
+	
+	// increment total blink counter.
+	ctr_bb_rearblink++;
+	
+	// check to see if we will be turning it ON or OFF.
+	if (ctr_bb_rearblink % 2) {
+		// ctr_bb_rearblink is odd, led is about to be turned ON.
+		
+		// increment total blinks on, and update intended timer duration.
+		ctr_bb_rearblinkon++;
+		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_on;
+		
+		// increment blinks on. this variable gets reset when the group size threshold is met,
+		// then the code on the OFF cycle injects the group delay.
+		ctr_bb_blinkgroup++;
+		
+		// toggle rearled at brightness level 1.
+		toggleRearLED(sttg_bb_brightness);
+		
+		pr_info("[TW/backblinkhandler] toggled rear led ON. total blinks: %i, blinks on: %i, blinks off: %i\n",
+				ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff);
+		
+	} else {
+		// otherwise increment the rearblinkoff counter, led is about to be turned OFF.
+		
+		// increment total blinks off, and update intended timer duration.
+		ctr_bb_rearblinkoff++;
+		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_off;
+		
+		// things are different when turning OFF because on the last OFF command, we
+		// want to manually turn the led OFF instead of just toggling it.
+		
+		if (ctr_bb_rearblinkoff >= sttg_bb_limit) {
+			// we have blinked enough, turn off completely.
+			
+			pr_info("[TW/backblinkhandler] backblink limit reached, turned rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i, limit: %d\n",
+					ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff, sttg_bb_limit);
+			
+			controlRearLED(0);
+			
+			// disable all this. instead, let the scheduled work handle shutting off the prox.
+			/*pr_info("[TW/backblinkhandler] turning off prox\n");
+			forceDisableSensor(5);
+			wake_unlock(&wavewake_wake_lock);
+			pr_info("[TW/backblinkhandler/ww] unlocked wavewake_wake_lock\n");
+			prox_near = false;*/
+			
+			// exit before we recycle the timer.
+			return;
+			
+		} else {
+			// we still have at least another cycle to go, so toggle it off.
+			
+			// blink group gets calculated on the OFF cycle.
+			if (ctr_bb_blinkgroup >= sttg_bb_blinkgroup_size) {
+				// the user wants to divide the blinks into groups.
+				// if we are here, we have met the threshold to inject a delay.
+				
+				// the blinkgroup mechanism has its own counter.
+				// it increments on the rising side until the group size is met,
+				// then injects a delay of sttg_bb_blinkgroup_delay
+				// into the tmp_dutycycle used for mod_timer() on the falling side,
+				// then resets itself.
+				
+				// inject the blinkgroup delay.
+				tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_delay;
+				
+				pr_info("[TW/backblinkhandler] blinkgroup threshold reached. ctr_bb_blinkgroup: %d, sttg_bb_blinkgroup_size: %d, new delay: %d\n",
+						ctr_bb_blinkgroup, sttg_bb_blinkgroup_size, sttg_bb_blinkgroup_delay);
+				
+				// reset the counter.
+				ctr_bb_blinkgroup = 0;
+			}
+			
+			pr_info("[TW/backblinkhandler] toggled rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i\n",
+					ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff);
+			
+			// toggle rearled at brightness level 1.
+			toggleRearLED(sttg_bb_brightness);
+		}
+	}
+	
+	pr_info("[TW/backblinkhandler] recycling timer to start again in %d ms\n", tmp_sttg_bb_dutycycle);
+	
+	// recycle timer.
+	mod_timer(&timer_backblink,
+			  jiffies + msecs_to_jiffies(tmp_sttg_bb_dutycycle));
+}
+
 void proximity_detected(void)
 {
 	struct timeval time_now;
 	unsigned int time_since_ledwenton;
 	unsigned int time_since_manualtrigger;
+	unsigned int tmp_set_disable_prox = 0;
+	unsigned int tmp_blinkgroups = 0;
 	
 	// remember to reset prox_near if exiting early, or else tsp will lock itself out because it thinks there is always something there.
 	prox_near = true;
@@ -2229,81 +2526,156 @@ void proximity_detected(void)
 		prox_near = false;
 		forceDisableSensor(5);
 		press_power();
+		return;
 	}
 	
-	if (sttg_ww_mode > 0 && time_since_ledwenton > 400 && time_since_manualtrigger > 400) {
+	// we need to know if the sensor was already blocked when it came on,
+	// or did something move in the way.
+	if (time_since_ledwenton > 400 && time_since_manualtrigger > 400) {
+		// if the sensor hasn't said it is blocked by now, assume it's clear.
 		
-		pr_info("[TW/SSP/ww] ww is enabled. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
-		
-		if (flg_ww_prox_on) {
+		if (sttg_ww_mode > 0) {
 			
-			ctr_ww_prox_hits--;
-			pr_info("[TW/SSP/ww] CHECKING - flg_ww_prox_on and ctr is: %d\n", ctr_ww_prox_hits);
+			pr_info("[TW/SSP/ww] ww is enabled. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
 			
-			if (ctr_ww_prox_hits == 0 || (sttg_ww_waveoff && ctr_ww_prox_hits == -1)) {
-				// we want this to run if we hit the trigger (0)
-				// AND if waveoff is set and we've already hit the trigger (-1)
+			if (flg_ww_prox_on) {
 				
-				pr_info("[TW/SSP/ww] ACTIVATED!\n");
+				ctr_ww_prox_hits--;
+				pr_info("[TW/SSP/ww] CHECKING - flg_ww_prox_on and ctr is: %d\n", ctr_ww_prox_hits);
 				
-				do_gettimeofday(&time_ww_last_screenon);
-				
-				if (ctr_ww_prox_hits == -1) {
-					// only way we can be here is if sttg_ww_waveoff was true too.
+				if (ctr_ww_prox_hits == 0 || (sttg_ww_waveoff && ctr_ww_prox_hits == -1)) {
+					// we want this to run if we hit the trigger (0)
+					// AND if waveoff is set and we've already hit the trigger (-1)
 					
-					if (sttg_ww_dismissled == 2) {
-						pr_info("[TW/SSP/ww] LEDS - DISABLE (2)\n");
+					pr_info("[TW/SSP/ww] ACTIVATED!\n");
+					
+					do_gettimeofday(&time_ww_last_screenon);
+					
+					if (ctr_ww_prox_hits == -1) {
+						// only way we can be here is if sttg_ww_waveoff was true too.
+						
+						if (sttg_ww_dismissled == 2) {
+							pr_info("[TW/SSP/ww] LEDS - DISABLE (2)\n");
+							an30259a_ledsoff();
+						}
+						
+						do_gettimeofday(&time_ww_last_screenoff);
+						//flg_ww_prox_on = false;
+						pr_info("[TW/SSP/ww] PROX - DISABLE - waveoff is pressing power\n");
+						forceDisableSensor(5);
+						wake_unlock(&wavewake_wake_lock);
+						pr_info("[TW/SSP/ww] unlocked wavewake_wake_lock\n");
+						ctr_ww_prox_hits = sttg_ww_mode;
+						
+					} else if (!sttg_ww_waveoff) {
+						// waveoff isn't set, so this is our first and last run.
+						// turn off the prox now, since we won't be needing it.
+						
+						//flg_ww_prox_on = false;
+						pr_info("[TW/SSP/ww] PROX - DISABLE - no wave off so we're done\n");
+						forceDisableSensor(5);
+						wake_unlock(&wavewake_wake_lock);
+						pr_info("[TW/SSP/ww] unlocked wavewake_wake_lock\n");
+						ctr_ww_prox_hits = sttg_ww_mode;
+					}
+					
+					if (sttg_ww_dismissled == 1) {
+						pr_info("[TW/SSP/ww] LEDS - DISABLE (1)\n");
 						an30259a_ledsoff();
 					}
 					
-					do_gettimeofday(&time_ww_last_screenoff);
-					//flg_ww_prox_on = false;
-					pr_info("[TW/SSP/ww] PROX - DISABLE - waveoff is pressing power\n");
-					forceDisableSensor(5);
-					wake_unlock(&wavewake_wake_lock);
-					pr_info("[TW/SSP/ww] unlocked wavewake_wake_lock\n");
-					ctr_ww_prox_hits = sttg_ww_mode;
+					pr_info("[TW/SSP/ww] ACTIVATED - pressing power!\n");
+					press_power();
 					
-				} else if (!sttg_ww_waveoff) {
-					// waveoff isn't set, so this is our first and last run.
-					// turn off the prox now, since we won't be needing it.
-					
-					//flg_ww_prox_on = false;
-					pr_info("[TW/SSP/ww] PROX - DISABLE - no wave off so we're done\n");
-					forceDisableSensor(5);
-					wake_unlock(&wavewake_wake_lock);
-					pr_info("[TW/SSP/ww] unlocked wavewake_wake_lock\n");
-					ctr_ww_prox_hits = sttg_ww_mode;
 				}
+			} else {
 				
-				if (sttg_ww_dismissled == 1) {
-					pr_info("[TW/SSP/ww] LEDS - DISABLE (1)\n");
-					an30259a_ledsoff();
-				}
-				
-				pr_info("[TW/SSP/ww] ACTIVATED - pressing power!\n");
-				press_power();
-				
+				pr_info("[TW/SSP/ww] flg_ww_prox_on: false\n");
 			}
-		} else {
 			
-			pr_info("[TW/SSP/ww] flg_ww_prox_on: false\n");
 		}
+		
 	} else {
 		// if we're getting a prox detected event this soon,
-		// it's probably because there is something there, like a pocket.
-		// don't risk it by leaving it on, and turn WW off.
+		// it's probably because there is something there, like a pocket or a desk.
+		
+		// reset some stuff.
+		ctr_ww_prox_hits = sttg_ww_mode;
+		flg_ww_trigger_noti = false;
+		
 		if (flg_ww_prox_on) {
-			//flg_ww_prox_on = false;
-			pr_info("[TW/SSP/ww] disable prox for this entire event. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
-			forceDisableSensor(5);
-			wake_unlock(&wavewake_wake_lock);
-			pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
-			prox_near = false;
-			ctr_ww_prox_hits = sttg_ww_mode;
-			// stop the cpu boost, we don't need it anymore.
-			flg_ctr_cpuboost = 0;
-			flg_ww_trigger_noti = false;
+			// only mess with the prox sensor if we turned it on.
+			
+			if (sttg_bb_mode) {
+				// if backblink is enabled, this is our cue to do something.
+				// the led has been triggered and prox went on, and found something.
+				// let's assume the device is face-down on a desk.
+				
+				pr_info("[TW/ww/backblink] backblink activating\n");
+				
+				// reset some backblink stuff.
+				ctr_bb_rearblink = 0;
+				ctr_bb_rearblinkon = 0;
+				ctr_bb_rearblinkoff = 0;
+				ctr_bb_blinkgroup = 0;
+				
+				// start the blink timer.
+				flg_bb_active = true;
+				
+				mod_timer(&timer_backblink,
+						  jiffies + msecs_to_jiffies(300));
+				
+				// now the rear led is blinking. each blink will count up
+				// until the threshold is met, then it will stop on its own.
+				// on its last blink, it will turn the prox off.
+				
+				// however, the prox will turn itself off probably too soon,
+				// so reset it to match roughly (bb_dutyon + bb_dutyoff) * bb_limit.
+				// remember to subtract one bb_dutyoff, since the limit stops the instant
+				// the last bb_dutyoff starts.
+				
+				tmp_set_disable_prox = ((sttg_bb_dutycycle_on * sttg_bb_limit) + (sttg_bb_dutycycle_off * (sttg_bb_limit - 1)));
+				
+				pr_info("[TW/ww/backblink] backblink resetting set_disable_prox to %d ms\n", tmp_set_disable_prox);
+				
+				if (sttg_bb_blinkgroup_size && sttg_bb_limit > sttg_bb_blinkgroup_size) {
+					// there is a blinkgroup we need to factor in.
+					// make sure the limit is greater than the groupsize, otherwise there's no point.
+					
+					// for example
+					// total limit: 10
+					// blinkgroup delay: 500ms
+					// blinkgroup size: 2
+					// total limit / size = 10 / 2 = 5
+					// subract one group, since it will be clipped: 5 - 1 = 4
+					// 4 groups * delay = 4 * 500 = 2000ms extra needed
+					// don't forget: each blinkgroup delay replaces a normal delay, so subtract those. -= 5 groups * dutyoff
+					
+					// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
+					// add to the existing value as calculated already.
+					tmp_blinkgroups = ((sttg_bb_limit / sttg_bb_blinkgroup_size) - 1);
+					
+					// calculate new estimated backblink timeout.
+					tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_off));
+					
+					// for now let's ignore the drift.
+					/*// calculate drift. ~16ms a cycle.
+					tmp_set_disable_prox -= (sttg_bb_limit * 16);*/
+					
+					pr_info("[TW/ww/backblink] blinkgroup detected, recalculated set_disable_prox to %d ms\n", tmp_set_disable_prox);
+				}
+				
+				ww_set_disable_prox(tmp_set_disable_prox);
+				
+			} else {
+				// prox was blocked, and backblink is disabled, so assume it's in a pocket and turn prox off.
+				
+				pr_info("[TW/SSP/ww] disable prox for this entire event. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
+				forceDisableSensor(5);
+				wake_unlock(&wavewake_wake_lock);
+				pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+				prox_near = false;
+			}
 		}
 	}
 	
@@ -2316,6 +2688,35 @@ EXPORT_SYMBOL(proximity_detected);
 void proximity_off(void)
 {
 	prox_near = false;
+	
+	if (flg_bb_active) {
+		// if backblink is active, then now it looks like someone lifted the device.
+		// stop the blinking, and turn prox off.
+		
+		pr_info("[TW/ww/backblink] backblink is active. disabling timer, rear led, and prox now\n");
+		
+		// turn off backblink.
+		flg_bb_active = false;
+		del_timer(&timer_backblink);
+		
+		// turn off rear led.
+		controlRearLED(0);
+		
+		// todo: make prox off into a function.
+		pr_info("[TW/ssp/ww/backblink] prox cleared, disable backblink\n");
+		forceDisableSensor(5);
+		wake_unlock(&wavewake_wake_lock);
+		pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+		
+		if (!flg_screen_on && sttg_bb_poweron_clearedobstacle) {
+			// since the prox block has been cleared (presumably
+			// the user has picked the device up), the user
+			// has the option to turn the power on now.
+			
+			press_power();
+		}
+	}
+	
 #ifdef DEBUG_PRINT
 	pr_info("[TOUCHWAKE] Proximity disabled\n");
 #endif
@@ -2431,6 +2832,8 @@ static int __init touchwake_control_init(void)
 	wake_lock_init(&knockwake_wake_lock, WAKE_LOCK_SUSPEND, "knockwake_wake");
 
 	do_gettimeofday(&last_powerkeypress);
+	
+	setup_timer(&timer_backblink, timerhandler_backblink, 0);
 
 	return 0;
 }

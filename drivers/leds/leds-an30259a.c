@@ -93,6 +93,10 @@
 
 int flg_system_noti = 0;
 extern int flg_ctr_cpuboost;
+extern int flg_ctr_cpuboost_mid;
+extern unsigned int sttg_bb_mode;
+extern struct timeval time_ww_last_manualtrigger;
+extern bool prox_near;
 static bool flg_ww_skip_pattern = false;
 
 struct wake_lock wavewake_wake_lock;
@@ -225,6 +229,7 @@ static void ww_disable_prox_work(struct work_struct * ww_disable_prox_work)
 		//enableSensor(0);
 		flg_ww_trigger_noti = false;
 		ctr_ww_prox_hits = sttg_ww_mode;
+		prox_near = false;
 	} else {
 		pr_info("[LED/ssp/ww] not disabling because always on, will turn off at screen-on instead\n");
 	}
@@ -239,17 +244,12 @@ static void ww_disable_prox_work(struct work_struct * ww_disable_prox_work)
 void ww_disable_prox(void)
 {
 	cancel_delayed_work_sync(&work_ww_disable_prox);
-	//flg_ww_prox_on = false;
 	pr_info("[LED/ssp/ww] FORCE ww_disable_prox\n");
-	//disableSensor(32, 0);
-	//disableSensor(5, 0);
 	forceDisableSensor(5);
-	//pr_info("[SSP/ww] disable prox other way\n");
-	//enableSensor(0);
 	flg_ww_trigger_noti = false;
 	ctr_ww_prox_hits = sttg_ww_mode;
 	wake_unlock(&wavewake_wake_lock);
-	pr_info("[LED/ww] unlocked wavewake_wake_lock\n");
+	pr_info("[LED/ww] FORCE unlocked wavewake_wake_lock\n");
 	
 	return;
 }
@@ -273,6 +273,14 @@ void ww_set_disable_prox(unsigned int delay)
 	return;
 }
 EXPORT_SYMBOL(ww_set_disable_prox);
+
+void ww_cancel_disable_prox(void)
+{
+	cancel_delayed_work_sync(&work_ww_disable_prox);
+	pr_info("[LED/ssp/ww] the delayed work that was set to turn prox off has been cancelled\n");
+	return;
+}
+EXPORT_SYMBOL(ww_cancel_disable_prox);
 
 void leds_reset_last(void)
 {
@@ -709,7 +717,10 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	struct an30259a_data *data = dev_get_drvdata(dev);
 	unsigned int time_since_suspend = 0;
 	unsigned int time_since_ww_last_screenoff = 0;
-	unsigned int tmp_flg_ctr_cpuboost = 0;
+	static unsigned int time_since_manualtrigger = 0;
+	static unsigned int time_since_resume = 0;
+	unsigned int tmp_flg_ctr_cpuboost_mid = 0;
+	static struct timeval time_now;
 	int led_r_brightness = 0;
 	int led_g_brightness = 0;
 	int led_b_brightness = 0;
@@ -726,11 +737,6 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	if (retval == 0) {
 		dev_err(&data->client->dev, "fail to get led_blink value.\n");
 		return count;
-	}
-	
-	if (flg_ctr_cpuboost < 3) {
-		// boost cpu for a few samples.
-		flg_ctr_cpuboost = 3;
 	}
 	
 	flg_ww_skip_pattern = false;
@@ -885,7 +891,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		led_r_brightness_orig_last = 999;
 	}
 	
-	if (sttg_ww_mode > 0
+	if ((sttg_ww_mode > 0 || sttg_bb_mode) // if wavewake or backblink is enabled
 		&& (!sttg_ww_trigger_noti_only || flg_ww_trigger_noti)
 		&& led_r_brightness_orig + led_g_brightness_orig + led_b_brightness_orig > 0
 		&& (!sttg_ww_noredundancies
@@ -903,11 +909,11 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		}
 		
 		if (sttg_ww_linger > 0) {
-			// boost cpu. multiply by 5, since sampling rate is probably ~200ms.
-			tmp_flg_ctr_cpuboost = 5 * (sttg_ww_linger / 1000);
+			// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcoded 30 sec max.
+			tmp_flg_ctr_cpuboost_mid = min((int) (5 * (sttg_ww_linger / 1000)), 150);
 		} else {
 			// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
-			tmp_flg_ctr_cpuboost = 50;
+			tmp_flg_ctr_cpuboost_mid = 50; // ~10 seconds
 		}
 		
 		if (!flg_ww_trigger_noti) {
@@ -925,17 +931,34 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 			pr_info("[LED/ww] not getting new ledwenton time\n");
 		}
 		
-		time_since_suspend = (time_ledwenton.tv_sec - time_suspended.tv_sec) * MSEC_PER_SEC +
-							(time_ledwenton.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
+		// save current time.
+		do_gettimeofday(&time_now);
 		
-		if (time_since_suspend > 3000) {
+		// when the screen goes off with an led notification still on, such as while charging,
+		// this code runs. but we don't want ww or bb activating from that, so establish a few
+		// second lockout period during which all led activity is ignored by us.
+		time_since_suspend = (time_now.tv_sec - time_suspended.tv_sec) * MSEC_PER_SEC +
+							(time_now.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
+		
+		// not needed since ww and bb only activate while screen-off.
+		/*// the reverse might also happen. meaning the led might come on within a few milliseconds
+		// of the device resuming. so calculate that lockout, too.
+		time_since_resume = (time_now.tv_sec - time_resumed.tv_sec) * MSEC_PER_SEC +
+								(time_now.tv_usec - time_resumed.tv_usec) / USEC_PER_MSEC;*/
+		
+		// and we also don't want to trigger here if the manual noti sysfs was started instead.
+		// so set a lockout period based on the time of the last manual noti.
+		time_since_manualtrigger = (time_now.tv_sec - time_ww_last_manualtrigger.tv_sec) * MSEC_PER_SEC +
+									(time_now.tv_usec - time_ww_last_manualtrigger.tv_usec) / USEC_PER_MSEC;
+		
+		if (time_since_suspend > 3000 && time_since_manualtrigger > 2000) {
 			// hook for WaveWake
 			
 			pr_info("[LED/ww] it has been %d ms since suspended\n", time_since_suspend);
 			
-			if (sttg_ww_mode > 0 && !flg_ww_prox_on && !flg_screen_on && !flg_system_noti) {
+			if (!flg_ww_prox_on && !flg_screen_on && !flg_system_noti) {
 				
-				flg_ctr_cpuboost = tmp_flg_ctr_cpuboost;
+				flg_ctr_cpuboost_mid = tmp_flg_ctr_cpuboost_mid;
 				
 				pr_info("[LED/ww] locking wavewake_wake_lock\n");
 				wake_lock(&wavewake_wake_lock);
@@ -948,17 +971,34 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 				//setProxDelay(66667000);
 				
 				cancel_delayed_work_sync(&work_ww_disable_prox);
-				schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
 				
-			} else if (sttg_ww_mode > 0 && flg_ww_prox_on && !flg_screen_on && !flg_system_noti && flg_ww_trigger_noti) {
+				if (sttg_ww_mode) {
+					// if this is a ww event, schedule normal linger.
+					schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
+					
+				} else if (sttg_bb_mode) {
+					// if this is a bb event, schedule just a blip.
+					schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(250));
+				}
+				
+				
+			} else if (flg_ww_prox_on && !flg_screen_on && !flg_system_noti && flg_ww_trigger_noti) {
 				// if this is a flg_ww_trigger_noti event, that means the prox was tripped several seconds ago
 				// so we need to reset the scheduled work, otherwise the user will only get a fraction of their duration.
 				
-				flg_ctr_cpuboost = tmp_flg_ctr_cpuboost;
+				flg_ctr_cpuboost_mid = tmp_flg_ctr_cpuboost_mid;
 				
 				pr_info("[LED/ssp/ww] resetting work_ww_disable_prox to start from now\n");
 				cancel_delayed_work_sync(&work_ww_disable_prox);
-				schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
+				
+				if (sttg_ww_mode) {
+					// if this is a ww event, schedule normal linger.
+					schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(sttg_ww_linger));
+					
+				} else if (sttg_bb_mode) {
+					// if this is a bb event, schedule just a blip.
+					schedule_delayed_work(&work_ww_disable_prox, msecs_to_jiffies(250));
+				}
 				
 			} else {
 				
