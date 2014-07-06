@@ -34,17 +34,17 @@ unsigned int Boeffla_sound_hook_wm8994_write(unsigned int reg, unsigned int valu
 #define BOEFFLA_SOUND_VERSION 	"1.6.6"
 
 // Debug mode
-#define DEBUG_DEFAULT 		1
+#define DEBUG_BOF_DEFAULT 		1
 
-#define DEBUG_OFF 		0
-#define DEBUG_NORMAL 		1
-#define DEBUG_VERBOSE 		2
+#define DEBUG_BOF_OFF 0
+#define DEBUG_BOF_NORMAL 		1
+#define DEBUG_BOF_VERBOSE 		2
 
 // Debug register
 #define DEBUG_REGISTER_KEY 	66
 
 // EQ mode
-#define EQ_DEFAULT 		0
+#define EQ_BOF_DEFAULT 		0
 
 #define EQ_OFF			0
 #define EQ_NORMAL		1
@@ -133,7 +133,7 @@ unsigned int Boeffla_sound_hook_wm8994_write(unsigned int reg, unsigned int valu
 #define STEREO_EXPANSION_GAIN_MAX		31
 
 // headphone levels
-#define HEADPHONE_DEFAULT 	57
+#define HEADPHONE_BOF_DEFAULT 	57
 
 #define HEADPHONE_MAX 		63
 #define HEADPHONE_MIN 		0
