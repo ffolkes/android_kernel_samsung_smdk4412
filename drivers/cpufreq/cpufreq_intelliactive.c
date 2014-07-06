@@ -1406,11 +1406,11 @@ static void interactive_input_event(struct input_handle *handle,
 			|| (strstr(handle->dev->name, "touchkey") && !boost_on_tk)
 		) {
 			// we were told not to boost from this device, so just return.
-			pr_info("[intelliactive] did not boost for input event from: %s\n", handle->dev->name);
+			//pr_info("[intelliactive] did not boost for input event from: %s\n", handle->dev->name);
 			return;
 		}
 		
-		pr_info("[intelliactive] boosted because of input. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
+		//pr_info("[intelliactive] boosted because of input. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
 		
 		boostpulse_endtime = ktime_to_us(ktime_get()) +
 			boostpulse_duration_val;
