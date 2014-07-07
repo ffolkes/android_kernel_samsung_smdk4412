@@ -39,10 +39,12 @@ extern void controlRearLED(unsigned int level);
 
 static struct timer_list timer_backblink;
 bool flg_bb_active = false;
+bool flg_bb_testmode = false;
 static int ctr_bb_rearblink = 0;
 static int ctr_bb_rearblinkon = 0;
 static int ctr_bb_rearblinkoff = 0;
-static int ctr_bb_blinkgroup = 0;
+static int ctr_bb_blinkgroup_on = 0;
+static int ctr_bb_blinkgroup_off = 0;
 
 unsigned int sttg_bb_mode = 1; // 0 = off, 1 = on
 unsigned int sttg_bb_dutycycle_on = 200; // duration in ms rear led is on
@@ -50,8 +52,10 @@ unsigned int sttg_bb_dutycycle_off = 500; // duration in ms rear led is off
 unsigned int sttg_bb_limit = 3; // how many blinks
 bool sttg_bb_poweron_clearedobstacle = false; // turn power on when device picked up
 unsigned int sttg_bb_brightness = 1; // brightness step 1 to 15
-unsigned int sttg_bb_blinkgroup_size = 0; // how many flashes-on in each group
-unsigned int sttg_bb_blinkgroup_delay = 1000; // how long between each group
+unsigned int sttg_bb_blinkgroup_on_size = 0; // how many flashes-on in each group
+unsigned int sttg_bb_blinkgroup_on_delay = 500; // how long between each group
+unsigned int sttg_bb_blinkgroup_off_size = 0; // how many flashes-on in each group
+unsigned int sttg_bb_blinkgroup_off_delay = 1000; // how long between each group
 
 bool flg_kw_gyro_on = false;
 bool flg_tw_prox_on = false;
@@ -1177,12 +1181,12 @@ static ssize_t bb_brightness_write(struct device * dev, struct device_attribute 
 	return size;
 }
 
-static ssize_t bb_blinkgroup_size_read(struct device * dev, struct device_attribute * attr, char * buf)
+static ssize_t bb_blinkgroup_on_size_read(struct device * dev, struct device_attribute * attr, char * buf)
 {
-	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_size);
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_on_size);
 }
 
-static ssize_t bb_blinkgroup_size_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+static ssize_t bb_blinkgroup_on_size_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
 {
 	unsigned int data;
 	
@@ -1191,19 +1195,19 @@ static ssize_t bb_blinkgroup_size_write(struct device * dev, struct device_attri
 			data = 2; // it would be pointless to have a blinkgroup of 1.
 			
 		}
-		sttg_bb_blinkgroup_size = data;
-		pr_info("[TW/bb] sttg_bb_blinkgroup_size has been set to %d\n", sttg_bb_blinkgroup_size);
+		sttg_bb_blinkgroup_on_size = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_on_size has been set to %d\n", sttg_bb_blinkgroup_on_size);
 	}
 	
 	return size;
 }
 
-static ssize_t bb_blinkgroup_delay_read(struct device * dev, struct device_attribute * attr, char * buf)
+static ssize_t bb_blinkgroup_on_delay_read(struct device * dev, struct device_attribute * attr, char * buf)
 {
-	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_delay);
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_on_delay);
 }
 
-static ssize_t bb_blinkgroup_delay_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+static ssize_t bb_blinkgroup_on_delay_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
 {
 	unsigned int data;
 	
@@ -1211,8 +1215,83 @@ static ssize_t bb_blinkgroup_delay_write(struct device * dev, struct device_attr
 		if (data < 1) {
 			data = 1; // no faster than 1 ms.
 		}
-		sttg_bb_blinkgroup_delay = data;
-		pr_info("[TW/bb] sttg_bb_blinkgroup_delay has been set to %d\n", sttg_bb_blinkgroup_delay);
+		sttg_bb_blinkgroup_on_delay = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_on_delay has been set to %d\n", sttg_bb_blinkgroup_on_delay);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_blinkgroup_off_size_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_off_size);
+}
+
+static ssize_t bb_blinkgroup_off_size_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data != 0 && data < 2) {
+			data = 2; // it would be pointless to have a blinkgroup of 1.
+			
+		}
+		sttg_bb_blinkgroup_off_size = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_off_size has been set to %d\n", sttg_bb_blinkgroup_off_size);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_blinkgroup_off_delay_read(struct device * dev, struct device_attribute * attr, char * buf)
+{
+	return sprintf(buf, "%u\n", sttg_bb_blinkgroup_off_delay);
+}
+
+static ssize_t bb_blinkgroup_off_delay_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		if (data < 1) {
+			data = 1; // no faster than 1 ms.
+		}
+		sttg_bb_blinkgroup_off_delay = data;
+		pr_info("[TW/bb] sttg_bb_blinkgroup_off_delay has been set to %d\n", sttg_bb_blinkgroup_off_delay);
+	}
+	
+	return size;
+}
+
+static ssize_t bb_test_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		
+		if (flg_bb_testmode || data == 0) {
+			
+			// turn it off this time.
+			flg_bb_testmode = false;
+			del_timer(&timer_backblink);
+			
+			// turn off rear led.
+			controlRearLED(0);
+			
+		} else {
+			
+			// reset some backblink stuff.
+			ctr_bb_rearblink = 0;
+			ctr_bb_rearblinkon = 0;
+			ctr_bb_rearblinkoff = 0;
+			ctr_bb_blinkgroup_on = 0;
+			ctr_bb_blinkgroup_off = 0;
+			
+			// start blinker.
+			flg_bb_testmode = true;
+			mod_timer(&timer_backblink,
+					  jiffies + msecs_to_jiffies(300));
+		}
 	}
 	
 	return size;
@@ -2245,8 +2324,11 @@ static DEVICE_ATTR(bb_dutycycle_off, S_IRUGO | S_IWUGO, bb_dutycycle_off_read, b
 static DEVICE_ATTR(bb_limit, S_IRUGO | S_IWUGO, bb_limit_read, bb_limit_write);
 static DEVICE_ATTR(bb_poweron_clearedobstacle, S_IRUGO | S_IWUGO, bb_poweron_clearedobstacle_read, bb_poweron_clearedobstacle_write);
 static DEVICE_ATTR(bb_brightness, S_IRUGO | S_IWUGO, bb_brightness_read, bb_brightness_write);
-static DEVICE_ATTR(bb_blinkgroup_size, S_IRUGO | S_IWUGO, bb_blinkgroup_size_read, bb_blinkgroup_size_write);
-static DEVICE_ATTR(bb_blinkgroup_delay, S_IRUGO | S_IWUGO, bb_blinkgroup_delay_read, bb_blinkgroup_delay_write);
+static DEVICE_ATTR(bb_blinkgroup_on_size, S_IRUGO | S_IWUGO, bb_blinkgroup_on_size_read, bb_blinkgroup_on_size_write);
+static DEVICE_ATTR(bb_blinkgroup_on_delay, S_IRUGO | S_IWUGO, bb_blinkgroup_on_delay_read, bb_blinkgroup_on_delay_write);
+static DEVICE_ATTR(bb_blinkgroup_off_size, S_IRUGO | S_IWUGO, bb_blinkgroup_off_size_read, bb_blinkgroup_off_size_write);
+static DEVICE_ATTR(bb_blinkgroup_off_delay, S_IRUGO | S_IWUGO, bb_blinkgroup_off_delay_read, bb_blinkgroup_off_delay_write);
+static DEVICE_ATTR(bb_test, S_IWUGO, NULL, bb_test_write);
 static DEVICE_ATTR(ww_mode, S_IRUGO | S_IWUGO, ww_mode_read, ww_mode_write);
 static DEVICE_ATTR(ww_linger, S_IRUGO | S_IWUGO, ww_linger_read, ww_linger_write);
 static DEVICE_ATTR(ww_waveoff, S_IRUGO | S_IWUGO, ww_waveoff_read, ww_waveoff_write);
@@ -2334,8 +2416,11 @@ static struct attribute *touchwake_notification_attributes[] =
 	&dev_attr_bb_limit.attr,
 	&dev_attr_bb_poweron_clearedobstacle.attr,
 	&dev_attr_bb_brightness.attr,
-	&dev_attr_bb_blinkgroup_size.attr,
-	&dev_attr_bb_blinkgroup_delay.attr,
+	&dev_attr_bb_blinkgroup_on_size.attr,
+	&dev_attr_bb_blinkgroup_on_delay.attr,
+	&dev_attr_bb_blinkgroup_off_size.attr,
+	&dev_attr_bb_blinkgroup_off_delay.attr,
+	&dev_attr_bb_test.attr,
 	&dev_attr_ww_mode.attr,
 	&dev_attr_ww_linger.attr,
 	&dev_attr_ww_waveoff.attr,
@@ -2418,9 +2503,8 @@ static void timerhandler_backblink()
 		ctr_bb_rearblinkon++;
 		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_on;
 		
-		// increment blinks on. this variable gets reset when the group size threshold is met,
-		// then the code on the OFF cycle injects the group delay.
-		ctr_bb_blinkgroup++;
+		// increment blinks on. this variable gets reset when the on-blinkgroup size threshold is met.
+		ctr_bb_blinkgroup_on++;
 		
 		// toggle rearled at brightness level 1.
 		toggleRearLED(sttg_bb_brightness);
@@ -2428,12 +2512,36 @@ static void timerhandler_backblink()
 		pr_info("[TW/backblinkhandler] toggled rear led ON. total blinks: %i, blinks on: %i, blinks off: %i\n",
 				ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff);
 		
+		// blink group-on gets calculated on the ON cycle.
+		if (sttg_bb_blinkgroup_on_size && ctr_bb_blinkgroup_on >= sttg_bb_blinkgroup_on_size) {
+			// the user wants to divide the blinks into groups.
+			// if we are here, we have met the threshold to inject a delay for ON.
+			
+			// the blinkgroup mechanism has its own counter.
+			// it increments on the rising side until the group size is met,
+			// then injects a delay of sttg_bb_blinkgroup_on_delay
+			// into the tmp_dutycycle used for mod_timer() on the falling side,
+			// then resets itself.
+			
+			// inject the blinkgroup delay.
+			tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_on_delay;
+			
+			pr_info("[TW/backblinkhandler] blinkgroup ON threshold reached. ctr_bb_blinkgroup_on: %d, sttg_bb_blinkgroup_on_size: %d, new delay: %d\n",
+					ctr_bb_blinkgroup_on, sttg_bb_blinkgroup_on_size, sttg_bb_blinkgroup_on_delay);
+			
+			// reset the counter.
+			ctr_bb_blinkgroup_on = 0;
+		}
+		
 	} else {
 		// otherwise increment the rearblinkoff counter, led is about to be turned OFF.
 		
 		// increment total blinks off, and update intended timer duration.
 		ctr_bb_rearblinkoff++;
 		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_off;
+		
+		// increment blinks on. this variable gets reset when the on-blinkgroup size threshold is met.
+		ctr_bb_blinkgroup_off++;
 		
 		// things are different when turning OFF because on the last OFF command, we
 		// want to manually turn the led OFF instead of just toggling it.
@@ -2443,6 +2551,9 @@ static void timerhandler_backblink()
 			
 			pr_info("[TW/backblinkhandler] backblink limit reached, turned rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i, limit: %d\n",
 					ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff, sttg_bb_limit);
+			
+			// reset the test flag, just in case this entire run was a test.
+			flg_bb_testmode = false;
 			
 			controlRearLED(0);
 			
@@ -2460,24 +2571,24 @@ static void timerhandler_backblink()
 			// we still have at least another cycle to go, so toggle it off.
 			
 			// blink group gets calculated on the OFF cycle.
-			if (ctr_bb_blinkgroup >= sttg_bb_blinkgroup_size) {
+			if (sttg_bb_blinkgroup_off_size && ctr_bb_blinkgroup_off >= sttg_bb_blinkgroup_off_size) {
 				// the user wants to divide the blinks into groups.
-				// if we are here, we have met the threshold to inject a delay.
+				// if we are here, we have met the threshold to inject a delay for OFF.
 				
 				// the blinkgroup mechanism has its own counter.
 				// it increments on the rising side until the group size is met,
-				// then injects a delay of sttg_bb_blinkgroup_delay
+				// then injects a delay of sttg_bb_blinkgroup_off_delay
 				// into the tmp_dutycycle used for mod_timer() on the falling side,
 				// then resets itself.
 				
 				// inject the blinkgroup delay.
-				tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_delay;
+				tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_off_delay;
 				
-				pr_info("[TW/backblinkhandler] blinkgroup threshold reached. ctr_bb_blinkgroup: %d, sttg_bb_blinkgroup_size: %d, new delay: %d\n",
-						ctr_bb_blinkgroup, sttg_bb_blinkgroup_size, sttg_bb_blinkgroup_delay);
+				pr_info("[TW/backblinkhandler] blinkgroup OFF threshold reached. ctr_bb_blinkgroup_off: %d, sttg_bb_blinkgroup_off_size: %d, new delay: %d\n",
+						ctr_bb_blinkgroup_off, sttg_bb_blinkgroup_off_size, sttg_bb_blinkgroup_off_delay);
 				
 				// reset the counter.
-				ctr_bb_blinkgroup = 0;
+				ctr_bb_blinkgroup_off = 0;
 			}
 			
 			pr_info("[TW/backblinkhandler] toggled rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i\n",
@@ -2617,7 +2728,8 @@ void proximity_detected(void)
 				ctr_bb_rearblink = 0;
 				ctr_bb_rearblinkon = 0;
 				ctr_bb_rearblinkoff = 0;
-				ctr_bb_blinkgroup = 0;
+				ctr_bb_blinkgroup_on = 0;
+				ctr_bb_blinkgroup_off = 0;
 				
 				// start the blink timer.
 				flg_bb_active = true;
@@ -2638,8 +2750,8 @@ void proximity_detected(void)
 				
 				pr_info("[TW/ww/backblink] backblink resetting set_disable_prox to %d ms\n", tmp_set_disable_prox);
 				
-				if (sttg_bb_blinkgroup_size && sttg_bb_limit > sttg_bb_blinkgroup_size) {
-					// there is a blinkgroup we need to factor in.
+				if (sttg_bb_blinkgroup_on_size && sttg_bb_limit > sttg_bb_blinkgroup_on_size) {
+					// there is an on-blinkgroup we need to factor in.
 					// make sure the limit is greater than the groupsize, otherwise there's no point.
 					
 					// for example
@@ -2653,16 +2765,37 @@ void proximity_detected(void)
 					
 					// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
 					// add to the existing value as calculated already.
-					tmp_blinkgroups = ((sttg_bb_limit / sttg_bb_blinkgroup_size) - 1);
+					tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_on_size);
 					
 					// calculate new estimated backblink timeout.
-					tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_off));
+					tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_on_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_on));
 					
-					// for now let's ignore the drift.
-					/*// calculate drift. ~16ms a cycle.
-					tmp_set_disable_prox -= (sttg_bb_limit * 16);*/
+					pr_info("[TW/ww/backblink] on-blinkgroup detected, recalculated set_disable_prox to %d ms\n", tmp_set_disable_prox);
+				}
+				
+				if (sttg_bb_blinkgroup_off_size && sttg_bb_limit > sttg_bb_blinkgroup_off_size) {
+					// there is an off-blinkgroup we need to factor in.
+					// make sure the limit is greater than the groupsize, otherwise there's no point.
 					
-					pr_info("[TW/ww/backblink] blinkgroup detected, recalculated set_disable_prox to %d ms\n", tmp_set_disable_prox);
+					// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
+					// add to the existing value as calculated already.
+					tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_off_size);
+					
+					// calculate new estimated backblink timeout.
+					tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_off_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_off));
+					
+					// this isn't needed, since on the final run it stops itself before it even thinks to do an extra off-blinkgroup.
+					/*// if blinkgroup_off_size fits evenly into bb_limit, we know we will stop before
+					// the final off-blinkgroup, so subtract one.
+					if (sttg_bb_limit % sttg_bb_blinkgroup_off_size == 0) {
+						//
+						pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had no remainder\n", sttg_bb_limit, tmp_blinkgroups);
+						tmp_set_disable_prox -= sttg_bb_blinkgroup_off_delay;
+					} else {
+						pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had a remainder\n", sttg_bb_limit, tmp_blinkgroups);
+					}*/
+					
+					pr_info("[TW/ww/backblink] off-blinkgroup detected, recalculated set_disable_prox to %d ms. there were %d groups.\n", tmp_set_disable_prox, tmp_blinkgroups);
 				}
 				
 				ww_set_disable_prox(tmp_set_disable_prox);
