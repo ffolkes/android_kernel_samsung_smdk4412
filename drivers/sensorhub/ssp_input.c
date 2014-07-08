@@ -21,6 +21,12 @@
 extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
 extern unsigned int flg_ctr_cpuboost;
 
+extern bool flg_bb_magcheck;
+extern unsigned int flg_ctr_bb_magchecks;
+extern bool flg_bb_magpassed;
+extern int sttg_bb_magcheck_z_min;
+extern int sttg_bb_magcheck_z_max;
+
 static long ary_kw_gyro_y_history[25] = { 50, 50, 50, 50, 50,
 										50, 50, 50, 50, 50,
 										50, 50, 50, 50, 50,
@@ -30,7 +36,6 @@ static unsigned int ctr_kw_gyro_y_history = 0;
 int ctr_kw_gyro_skip = 0;
 static int ctr_kw_gyro_recheck = 0;
 static unsigned int ctr_max_unstable = 0;
-static int mag_z = 0;
 static bool flg_primethetime = true;
 unsigned int ctr_knocks;
 static struct timeval time_kw_knock1;
@@ -39,6 +44,8 @@ static struct timeval time_kw_knock3;
 static struct timeval time_kw_knock4;
 
 bool flg_kw_pressedpower = false;
+
+static unsigned int ctr_bb_magcheck = 0;
 
 static void deferred_knock2_work(struct work_struct * work_deferred_knock2);
 static DECLARE_DELAYED_WORK(work_deferred_knock2, deferred_knock2_work);
@@ -124,12 +131,6 @@ void report_gyro_data(struct ssp_data *data, struct sensor_value *gyrodata)
 		lTemp[1] = (long)data->buf[GYROSCOPE_SENSOR].y;
 		lTemp[2] = (long)data->buf[GYROSCOPE_SENSOR].z;
 	}
-	
-	/*if (mag_z > 2035 || mag_z < 1950) {
-		ctr_kw_gyro_skip = 1;
-		ctr_kw_gyro_recheck = 0;
-		ssp_dbg("[SSP/kw] gyro MAG SKIP mag_z: %i\n", mag_z);
-	}*/
 	
 	// screen-off check. also run on 2nd knock, to check for 3rd knock.
 	if (sttg_kw_mode > 0 && (sttg_ka_mode || !flg_screen_on || ctr_knocks > 1)) {
@@ -621,7 +622,38 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 	data->buf[GEOMAGNETIC_SENSOR].y = magdata->y;
 	data->buf[GEOMAGNETIC_SENSOR].z = magdata->z;
 	
-	mag_z = data->buf[GEOMAGNETIC_SENSOR].z;
+	// is bb using this data? has it already?
+	if (flg_bb_magcheck && !flg_bb_magpassed) {
+		// yes, bb wants us to analyze the z-data.
+		// and no, we haven't run yet.
+		
+		flg_ctr_bb_magchecks++;
+		
+		if (magdata->z >= sttg_bb_magcheck_z_min && magdata->z <= sttg_bb_magcheck_z_max) {
+			// the z-data was within the parameters specified to
+			// indicate a face-down position. however, let's make
+			// sure by checking it a few times before trusting it.
+			
+			ctr_bb_magcheck++;
+			ssp_dbg("[SSP/mag/bb] within parameters. ctr: %d\n", ctr_bb_magcheck);
+			
+			if (ctr_bb_magcheck >= 3) {
+				// this is the 3rd time the data has been correct,
+				// let's trust it.
+				
+				flg_bb_magpassed = true;
+				flg_bb_magcheck = false;
+				ssp_dbg("[SSP/mag/bb] flg_bb_magpassed = true, ctr: %d\n", ctr_bb_magcheck);
+			}
+
+		} else {
+			// z-data outside of parameters. device probably isn't steady.
+			
+			// abort.
+			flg_bb_magcheck = false;
+			ssp_dbg("[SSP/mag/bb] out of parameters, aborted.\n", ctr_bb_magcheck);
+		}
+	}
 	
 	//ssp_dbg("[SSP] mag x: %i, y: %i, z: %i\n",
 	//		data->buf[GEOMAGNETIC_SENSOR].x,

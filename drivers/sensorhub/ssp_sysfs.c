@@ -219,6 +219,12 @@ void forceDisableSensor(unsigned int sensorId)
 			//return;
 		}
 		
+		if (sensorId == GEOMAGNETIC_SENSOR && !flg_bb_mag_on) {
+			// don't turn the prox sensor off unless we think we turned it on.
+			pr_info("[SSP/disablesensor]: calling for mag off but flg_bb_mag_on was not set, probably shouldn't disable\n");
+			//return;
+		}
+		
 		if (sensorId == PROXIMITY_SENSOR && !flg_ww_prox_on) {
 			// don't turn the prox sensor off unless we think we turned it on.
 			pr_info("[SSP/disablesensor]: calling for prox off but flg_ww_prox_on/flg_tw_prox_on was not set, probably shouldn't disable\n");
@@ -248,6 +254,11 @@ void forceDisableSensor(unsigned int sensorId)
 		if (sensorId == GYROSCOPE_SENSOR) {
 			flg_kw_gyro_on = false;
 			pr_info("[SSP/disablesensor]: KW_GYRO OFF!\n");
+		}
+		
+		if (sensorId == GEOMAGNETIC_SENSOR) {
+			flg_bb_mag_on = false;
+			pr_info("[SSP/disablesensor]: BB_MAG OFF!\n");
 		}
 		
 		if (sensorId == PROXIMITY_SENSOR) {
@@ -339,6 +350,18 @@ void forceEnableSensor(unsigned int sensorId, bool force)
 			
 			change_sensor_delay(prox_device, GYROSCOPE_SENSOR, sttg_kw_resolution);
 			pr_info("[SSP/enablesensor]: GYRO ON!\n");
+			
+		} else if (sensorId == 2) {
+			
+			if (!force) {
+				pr_info("[SSP/enablesensor]: flg_bb_mag_on= true changing delay\n");
+				flg_bb_mag_on = true;
+			} else {
+				pr_info("[SSP/enablesensor]: flg_bb_mag_on=false changing delay\n");
+			}
+			
+			change_sensor_delay(prox_device, GEOMAGNETIC_SENSOR, 66667000);
+			pr_info("[SSP/enablesensor]: MAG ON!\n");
 			
 		} else if (sensorId == 5) {
 			
@@ -479,7 +502,7 @@ static ssize_t set_sensors_enable(struct device *dev,
 				
 			} else { /* Change to ADD_SENSOR_STATE from KitKat */
 				
-				pr_info("[SSP]: %d isn't being removed\n", uChangedSensor);
+				pr_info("[SSP]: %d is being added\n", uChangedSensor);
 				
 				if (data->aiCheckStatus[uChangedSensor] == INITIALIZATION_STATE) {
 					

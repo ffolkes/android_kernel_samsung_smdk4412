@@ -55,6 +55,8 @@ extern unsigned int sttg_ww_waveoff_linger;
 extern bool sttg_ww_noredundancies;
 extern bool sttg_ww_trigger_noti_only;
 
+extern bool flg_bb_mag_on;
+
 extern unsigned int sttg_ka_mode;
 extern unsigned int sttg_ka_knock2_window;
 extern unsigned int sttg_ka_knock3_window;
