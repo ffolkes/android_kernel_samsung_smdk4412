@@ -132,6 +132,7 @@ struct zzmoove_profile {
 	unsigned int hotplug_idle_freq;
 	unsigned int hotplug_sleep;
 	unsigned int hotplug_engage_freq;
+	unsigned int hotplug_max_limit;
 	unsigned int ignore_nice_load;
 	int lcdfreq_enable;
 	unsigned int lcdfreq_kick_in_cores;
@@ -219,6 +220,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq (0=disable, range in system table from freq->min to freq->max in khz)
 		0,		// hotplug_sleep (0=all cores enabled, range 1 to MAX_CORES - 1)
 		0,		// hotplug_engage_freq (0=disable, range in system table from freq->min to freq->max in khz)
+		0,		// hotplug_max_limit (0=disable, range from 1 to 8 cores)
 		0,		// ignore_nice_load (0=disable, 1=enable)
 		0,		// lcdfreq_enable (0=disable, 1=enable)
 		0,		// lcdfreq_kick_in_cores (range from 0 to 4)
@@ -304,6 +306,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -389,6 +392,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -474,6 +478,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -559,6 +564,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -644,6 +650,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -729,6 +736,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -814,6 +822,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -899,6 +908,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -984,6 +994,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores
@@ -1069,6 +1080,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// hotplug_idle_freq
 		0,		// hotplug_sleep
 		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
 		0,		// ignore_nice_load
 		0,		// lcdfreq_enable
 		0,		// lcdfreq_kick_in_cores

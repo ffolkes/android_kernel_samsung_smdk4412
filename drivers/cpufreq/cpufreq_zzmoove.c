@@ -557,6 +557,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_HOTPLUG_IDLE_THRESHOLD			(0)	// ZZ: default hotplug idle threshold
 #define DEF_HOTPLUG_IDLE_FREQ				(0)	// ZZ: default hotplug idle freq
 #define DEF_HOTPLUG_ENGAGE_FREQ				(0)	// ZZ: default hotplug engage freq. the frequency below which we run on only one core (0 = disabled) (ffolkes)
+#define DEF_HOTPLUG_MAX_LIMIT				(0) // ff: default for hotplug_max_limit. the number of cores we allow to be online (0 = disabled)
 #define DEF_SCALING_BLOCK_THRESHOLD			(0)	// ZZ: default scaling block threshold
 #define DEF_SCALING_BLOCK_CYCLES			(0)	// ZZ: default scaling block cycles
 #define DEF_SCALING_BLOCK_FREQ				(0)	// ZZ: default scaling block freq
@@ -818,6 +819,7 @@ static struct dbs_tuners {
 	unsigned int hotplug_idle_threshold;			// ZZ: hotplug idle threshold tuneable
 	unsigned int hotplug_idle_freq;				// ZZ: hotplug idle freq tuneable
 	unsigned int hotplug_engage_freq;			// ZZ: frequency below which we run on only one core (ffolkes)
+	unsigned int hotplug_max_limit;					// ff: the number of cores we allow to be online
 	unsigned int scaling_block_threshold;			// ZZ: scaling block threshold tuneable
 	unsigned int scaling_block_cycles;			// ZZ: scaling block cycles tuneable
 	unsigned int scaling_block_freq;			// ZZ: scaling block freq tuneable
@@ -907,6 +909,7 @@ static struct dbs_tuners {
 	.hotplug_idle_threshold = DEF_HOTPLUG_IDLE_THRESHOLD,
 	.hotplug_idle_freq = DEF_HOTPLUG_IDLE_FREQ,
 	.hotplug_engage_freq = DEF_HOTPLUG_ENGAGE_FREQ,
+	.hotplug_max_limit = DEF_HOTPLUG_MAX_LIMIT,
 	.scaling_block_threshold = DEF_SCALING_BLOCK_THRESHOLD,
 	.scaling_block_cycles = DEF_SCALING_BLOCK_CYCLES,
 	.scaling_block_freq = DEF_SCALING_BLOCK_FREQ,
@@ -1321,6 +1324,7 @@ show_one(hotplug_block_down_cycles, hotplug_block_down_cycles);				// ZZ: hotplu
 show_one(hotplug_idle_threshold, hotplug_idle_threshold);				// ZZ: hotplug idle threshold tuneable
 show_one(hotplug_idle_freq, hotplug_idle_freq);						// ZZ: hotplug idle freq tuneable
 show_one(hotplug_engage_freq, hotplug_engage_freq);					// ZZ: hotplug engage freq tuneable (ffolkes)
+show_one(hotplug_max_limit, hotplug_max_limit);								// ff: the number of cores we allow to be online
 show_one(scaling_block_threshold, scaling_block_threshold);				// ZZ: scaling block threshold tuneable
 show_one(scaling_block_cycles, scaling_block_cycles);					// ZZ: scaling block cycles tuneable
 show_one(scaling_block_freq, scaling_block_freq);					// ZZ: scaling block freq tuneable
@@ -2392,6 +2396,21 @@ static ssize_t store_hotplug_engage_freq(struct kobject *a, struct attribute *b,
 	return -EINVAL;
 }
 
+// ff: added tuneable hotplug_max_limit -> possible values: range from 0 disabled to 8, if not set default is 0
+static ssize_t store_hotplug_max_limit(struct kobject *a, struct attribute *b,
+								   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	
+	if ((ret != 1 || input < 0 || input > 8) && input != 0)
+	return -EINVAL;
+	
+	dbs_tuners_ins.hotplug_max_limit = input;
+	return count;
+}
+
 // ZZ: tuneable -> possible values: range from 0 (disabled) to policy->max, if not set default is 0 (ffolkes)
 static ssize_t store_scaling_responsiveness_freq(struct kobject *a, struct attribute *b, const char *buf, size_t count)
 {
@@ -2990,6 +3009,10 @@ static inline int set_profile(int profile_num)
 				}
 			}
 			
+			// ff: set hotplug_max_limit value
+			if (zzmoove_profiles[i].hotplug_max_limit == 0)
+			dbs_tuners_ins.hotplug_max_limit = zzmoove_profiles[i].hotplug_max_limit;
+			
 			// ZZ: set scaling_responsiveness_freq value
 			if (zzmoove_profiles[i].scaling_responsiveness_freq == 0) {
 				dbs_tuners_ins.scaling_responsiveness_freq = zzmoove_profiles[i].scaling_responsiveness_freq;
@@ -3551,6 +3574,7 @@ define_one_global_rw(hotplug_block_down_cycles);
 define_one_global_rw(hotplug_idle_threshold);
 define_one_global_rw(hotplug_idle_freq);
 define_one_global_rw(hotplug_engage_freq);
+define_one_global_rw(hotplug_max_limit);
 define_one_global_rw(scaling_block_threshold);
 define_one_global_rw(scaling_block_cycles);
 define_one_global_rw(scaling_block_freq);
@@ -3713,6 +3737,7 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_idle_threshold.attr,
 	&hotplug_idle_freq.attr,
 	&hotplug_engage_freq.attr,
+	&hotplug_max_limit.attr,
 	&scaling_block_threshold.attr,
 	&scaling_block_cycles.attr,
 	&scaling_block_freq.attr,
@@ -3986,8 +4011,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	hotplug_idle_flag = false;
 	
 	// ZZ: block cycles to be able to slow down hotplugging - added hotplug enagage freq (ffolkes)
+	// ff: also added a check to see if hotplug_max_limit is requesting only 1 core - if so, no sense in wasting time with hotplugging work
 	if (((!dbs_tuners_ins.disable_hotplug && num_online_cpus() != possible_cpus) || hotplug_idle_flag)
-	    && (!dbs_tuners_ins.hotplug_engage_freq || policy->cur >= dbs_tuners_ins.hotplug_engage_freq)) {
+	    && (!dbs_tuners_ins.hotplug_engage_freq || policy->cur >= dbs_tuners_ins.hotplug_engage_freq)
+		&& (!dbs_tuners_ins.hotplug_max_limit || dbs_tuners_ins.hotplug_max_limit > 1)) {
 	    if (hplg_up_block_cycles > dbs_tuners_ins.hotplug_block_up_cycles
 			|| (!hotplug_up_in_progress && dbs_tuners_ins.hotplug_block_up_cycles == 0)) {
 		    queue_work_on(policy->cpu, dbs_wq, &hotplug_online_work);
@@ -4209,6 +4236,7 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 	// Yank: added frequency thresholds
 	for (i = 1; likely(i < possible_cpus); i++) {
 		if (!cpu_online(i) && hotplug_thresholds[0][i-1] != 0 && cur_load >= hotplug_thresholds[0][i-1]
+			&& (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)
 		    && (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1]
 				|| boost_hotplug || max_freq_too_low))
 		cpu_up(i);
