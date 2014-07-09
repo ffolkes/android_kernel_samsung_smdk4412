@@ -512,6 +512,8 @@
 #include <linux/sched.h>
 #include <linux/earlysuspend.h>
 
+extern bool flg_screen_on;
+
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #include "cpufreq_zzmoove_profiles.h"
 #define DEF_PROFILE_NUMBER				(0)	// ZZ: default profile number (profile = 0 = 'none' = tuneable mode)
@@ -558,6 +560,8 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_HOTPLUG_IDLE_FREQ				(0)	// ZZ: default hotplug idle freq
 #define DEF_HOTPLUG_ENGAGE_FREQ				(0)	// ZZ: default hotplug engage freq. the frequency below which we run on only one core (0 = disabled) (ffolkes)
 #define DEF_HOTPLUG_MAX_LIMIT				(0) // ff: default for hotplug_max_limit. the number of cores we allow to be online (0 = disabled)
+#define DEF_HOTPLUG_MIN_LIMIT				(0) // ff: default for hotplug_min_limit. the number of cores we require to be online (0 = disabled)
+#define DEF_HOTPLUG_LOCK					(0) // ff: default for hotplug_lock. the number of cores we require to be online (0 = disabled)
 #define DEF_SCALING_BLOCK_THRESHOLD			(0)	// ZZ: default scaling block threshold
 #define DEF_SCALING_BLOCK_CYCLES			(0)	// ZZ: default scaling block cycles
 #define DEF_SCALING_BLOCK_FREQ				(0)	// ZZ: default scaling block freq
@@ -753,6 +757,7 @@ static struct dbs_tuners {
 	unsigned int sampling_down_max_mom;			// ZZ: sampling down momentum max tuneable
 	unsigned int sampling_down_mom_sens;			// ZZ: sampling down momentum sensitivity tuneable
 	unsigned int up_threshold;				// ZZ: scaling up threshold tuneable
+	unsigned int up_threshold_saved;		// ff: saved up_threshold
 	unsigned int up_threshold_hotplug1;			// ZZ: up threshold hotplug tuneable for core1
 	unsigned int up_threshold_hotplug_freq1;		// Yank: up threshold hotplug freq tuneable for core1
 #if (MAX_CORES == 4 || MAX_CORES == 8)
@@ -820,6 +825,10 @@ static struct dbs_tuners {
 	unsigned int hotplug_idle_freq;				// ZZ: hotplug idle freq tuneable
 	unsigned int hotplug_engage_freq;			// ZZ: frequency below which we run on only one core (ffolkes)
 	unsigned int hotplug_max_limit;					// ff: the number of cores we allow to be online
+	unsigned int hotplug_min_limit;					// ff: the number of cores we require to be online
+	unsigned int hotplug_min_limit_saved;			// ff: the number of cores we require to be online
+	unsigned int hotplug_min_limit_touchbooster;			// ff: the number of cores we require to be online
+	unsigned int hotplug_lock;						// ff: the number of cores we allow to be online
 	unsigned int scaling_block_threshold;			// ZZ: scaling block threshold tuneable
 	unsigned int scaling_block_cycles;			// ZZ: scaling block cycles tuneable
 	unsigned int scaling_block_freq;			// ZZ: scaling block freq tuneable
@@ -843,6 +852,7 @@ static struct dbs_tuners {
 	.sampling_down_max_mom = DEF_SAMPLING_DOWN_MAX_MOMENTUM,
 	.sampling_down_mom_sens = DEF_SAMPLING_DOWN_MOMENTUM_SENSITIVITY,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
+	.up_threshold_saved = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold_hotplug1 = DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG,
 	.up_threshold_hotplug_freq1 = DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG_FREQ,
 #if (MAX_CORES == 4 || MAX_CORES == 8)
@@ -910,6 +920,10 @@ static struct dbs_tuners {
 	.hotplug_idle_freq = DEF_HOTPLUG_IDLE_FREQ,
 	.hotplug_engage_freq = DEF_HOTPLUG_ENGAGE_FREQ,
 	.hotplug_max_limit = DEF_HOTPLUG_MAX_LIMIT,
+	.hotplug_min_limit = DEF_HOTPLUG_MIN_LIMIT,
+	.hotplug_min_limit_saved = DEF_HOTPLUG_MIN_LIMIT,
+	.hotplug_min_limit_touchbooster = 0,
+	.hotplug_lock = DEF_HOTPLUG_LOCK,
 	.scaling_block_threshold = DEF_SCALING_BLOCK_THRESHOLD,
 	.scaling_block_cycles = DEF_SCALING_BLOCK_CYCLES,
 	.scaling_block_freq = DEF_SCALING_BLOCK_FREQ,
@@ -1325,6 +1339,8 @@ show_one(hotplug_idle_threshold, hotplug_idle_threshold);				// ZZ: hotplug idle
 show_one(hotplug_idle_freq, hotplug_idle_freq);						// ZZ: hotplug idle freq tuneable
 show_one(hotplug_engage_freq, hotplug_engage_freq);					// ZZ: hotplug engage freq tuneable (ffolkes)
 show_one(hotplug_max_limit, hotplug_max_limit);								// ff: the number of cores we allow to be online
+show_one(hotplug_min_limit, hotplug_min_limit);								// ff: the number of cores we require to be online
+show_one(hotplug_lock, hotplug_lock);								// ff: the number of cores we require to be online
 show_one(scaling_block_threshold, scaling_block_threshold);				// ZZ: scaling block threshold tuneable
 show_one(scaling_block_cycles, scaling_block_cycles);					// ZZ: scaling block cycles tuneable
 show_one(scaling_block_freq, scaling_block_freq);					// ZZ: scaling block freq tuneable
@@ -2398,16 +2414,84 @@ static ssize_t store_hotplug_engage_freq(struct kobject *a, struct attribute *b,
 
 // ff: added tuneable hotplug_max_limit -> possible values: range from 0 disabled to 8, if not set default is 0
 static ssize_t store_hotplug_max_limit(struct kobject *a, struct attribute *b,
-								   const char *buf, size_t count)
+									   const char *buf, size_t count)
 {
 	unsigned int input;
+	unsigned int i;
 	int ret;
 	ret = sscanf(buf, "%u", &input);
-	
+    
 	if ((ret != 1 || input < 0 || input > 8) && input != 0)
 	return -EINVAL;
 	
+	if (input > 0) {
+        for (i = num_possible_cpus() - 1; i >= 1; i--) {
+			if (cpu_online(i) && i >= input && (!dbs_tuners_ins.hotplug_min_limit || i >= dbs_tuners_ins.hotplug_min_limit)) {
+				// this core is more than the limit, so turn it off, but don't go below hotplug_min_limit.
+				cpu_down(i);
+				pr_info("[zzmoove] hotplug_max_limit: CPU%d forced down\n", i);
+			}
+        }
+	}
+    
 	dbs_tuners_ins.hotplug_max_limit = input;
+	return count;
+}
+
+// ff: added tuneable hotplug_lock -> possible values: range from 0 disabled to 8, if not set default is 0
+static ssize_t store_hotplug_lock(struct kobject *a, struct attribute *b,
+								  const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if ((ret != 1 || input < 0 || input > 8) && input != 0)
+	return -EINVAL;
+	
+	if (input > 0) {
+        for (i = 1; i < num_possible_cpus(); i++) {
+			if (!cpu_online(i) && i < input) {
+				// this core is less than the lock, so bring it up.
+				cpu_up(i);
+				pr_info("[zzmoove] hotplug_lock: CPU%d forced up\n", i);
+			} else if (cpu_online(i) && i >= input) {
+				// this core is more than the lock, so turn it off.
+				cpu_down(i);
+				pr_info("[zzmoove] hotplug_lock: CPU%d forced down\n", i);
+			}
+        }
+	}
+    
+	dbs_tuners_ins.hotplug_lock = input;
+	return count;
+}
+
+// ff: added tuneable hotplug_min_limit -> possible values: range from 0 disabled to 8, if not set default is 0
+static ssize_t store_hotplug_min_limit(struct kobject *a, struct attribute *b,
+									   const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if ((ret != 1 || input < 0 || input > 8) && input != 0)
+	return -EINVAL;
+	
+	if (input > 0) {
+        for (i = 1; i < num_possible_cpus(); i++) {
+			if (!cpu_online(i) && i < input && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
+				// this core is below the minimum, so bring it up.
+				cpu_up(i);
+				pr_info("[zzmoove] hotplug_min_limit: CPU%d forced up\n", i);
+			}
+        }
+	}
+    
+	dbs_tuners_ins.hotplug_min_limit = input;
+	dbs_tuners_ins.hotplug_min_limit_saved = input;
 	return count;
 }
 
@@ -3013,6 +3097,14 @@ static inline int set_profile(int profile_num)
 			if (zzmoove_profiles[i].hotplug_max_limit == 0)
 			dbs_tuners_ins.hotplug_max_limit = zzmoove_profiles[i].hotplug_max_limit;
 			
+			// ff: set hotplug_min_limit value
+			if (zzmoove_profiles[i].hotplug_min_limit == 0)
+			dbs_tuners_ins.hotplug_min_limit = zzmoove_profiles[i].hotplug_min_limit;
+			
+			// ff: set hotplug_lock value
+			if (zzmoove_profiles[i].hotplug_lock == 0)
+			dbs_tuners_ins.hotplug_lock = zzmoove_profiles[i].hotplug_lock;
+			
 			// ZZ: set scaling_responsiveness_freq value
 			if (zzmoove_profiles[i].scaling_responsiveness_freq == 0) {
 				dbs_tuners_ins.scaling_responsiveness_freq = zzmoove_profiles[i].scaling_responsiveness_freq;
@@ -3575,6 +3667,8 @@ define_one_global_rw(hotplug_idle_threshold);
 define_one_global_rw(hotplug_idle_freq);
 define_one_global_rw(hotplug_engage_freq);
 define_one_global_rw(hotplug_max_limit);
+define_one_global_rw(hotplug_min_limit);
+define_one_global_rw(hotplug_lock);
 define_one_global_rw(scaling_block_threshold);
 define_one_global_rw(scaling_block_cycles);
 define_one_global_rw(scaling_block_freq);
@@ -3738,6 +3832,8 @@ static struct attribute *dbs_attributes[] = {
 	&hotplug_idle_freq.attr,
 	&hotplug_engage_freq.attr,
 	&hotplug_max_limit.attr,
+	&hotplug_min_limit.attr,
+	&hotplug_lock.attr,
 	&scaling_block_threshold.attr,
 	&scaling_block_cycles.attr,
 	&scaling_block_freq.attr,
@@ -3803,6 +3899,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int max_load = 0;
 	struct cpufreq_policy *policy;
 	unsigned int j;
+	unsigned int i;
 	
 	boost_freq = false;					// ZZ: reset early demand boost freq flag
 	boost_hotplug = false;					// ZZ: reset early demand boost hotplug flag
@@ -3810,6 +3907,33 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	cancel_up_scaling = false;				// ZZ: reset cancel up scaling flag
 	
 	policy = this_dbs_info->cur_policy;
+	
+	if (flg_ctr_cpuboost > 0) {
+		
+		//if (flg_debug)
+		pr_info("[zzmoove] manual max-boost call! boosting to: %d mhz %d more times\n", policy->max, flg_ctr_cpuboost);
+		
+		if (policy->cur < policy->max) {
+			__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
+		}
+		
+		flg_ctr_cpuboost--;
+		flg_ctr_cpuboost_mid--;
+		return;
+	}
+	
+	if (flg_ctr_cpuboost_mid > 0) {
+		
+		//if (flg_debug)
+		pr_info("[zzmoove] manual mid-boost call! boosting to: %d mhz %d more times\n", 800000, flg_ctr_cpuboost_mid);
+		
+		if (policy->cur < 800000) {
+			__cpufreq_driver_target(policy, 800000, CPUFREQ_RELATION_H);
+		}
+		
+		flg_ctr_cpuboost_mid--;
+		return;
+	}
 	
 	/*
 	 * Every sampling_rate, we check, if current idle time is less than 20%
@@ -4010,14 +4134,62 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	else
 	hotplug_idle_flag = false;
 	
+	if (flg_ctr_typingbooster_cycles > 0) {
+		
+		// make sure we have the minimum amount of cores requested online.
+		if (sttg_typingbooster_mincores > 1 && dbs_tuners_ins.hotplug_min_limit < sttg_typingbooster_mincores) {
+			if (num_online_cpus() < sttg_typingbooster_mincores) {
+				for (i = 1; i < num_possible_cpus(); i++) {
+					if (!cpu_online(i) && i < sttg_typingbooster_mincores) {
+						cpu_up(i);
+						//if (flg_debug)
+						pr_info("[zzmoove/typingbooster] CPU%d forced online\n", i);
+					}
+				}
+			}
+			dbs_tuners_ins.hotplug_min_limit = sttg_typingbooster_mincores;
+			//if (flg_debug)
+			pr_info("[zzmoove/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
+		}
+		
+		// decrease the up_threshold, if requested.
+		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < dbs_tuners_ins.up_threshold) {
+			dbs_tuners_ins.up_threshold = sttg_typingbooster_upthreshold;
+			//if (flg_debug)
+			pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+		}
+		
+		flg_ctr_typingbooster_cycles--;
+		
+	} else {
+		
+		if (dbs_tuners_ins.hotplug_min_limit != dbs_tuners_ins.hotplug_min_limit_saved){
+			// restore original hotplug_min.
+			//if (flg_debug)
+			pr_info("[zzmoove/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
+			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved;
+		}
+		
+		if (dbs_tuners_ins.up_threshold == sttg_typingbooster_upthreshold && dbs_tuners_ins.up_threshold != dbs_tuners_ins.up_threshold_saved) {
+			// restore original up_threshold.
+			//if (flg_debug)
+			pr_info("[zzmoove/typingbooster] typingbooster off. up_threshold resetting from %d back to %d\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.up_threshold_saved);
+			dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved;
+		}
+		
+	}
+	
 	// ZZ: block cycles to be able to slow down hotplugging - added hotplug enagage freq (ffolkes)
 	// ff: also added a check to see if hotplug_max_limit is requesting only 1 core - if so, no sense in wasting time with hotplugging work
+	// ff: also added a check for hotplug_lock - if it's enabled, don't hotplug.
 	if (((!dbs_tuners_ins.disable_hotplug && num_online_cpus() != possible_cpus) || hotplug_idle_flag)
 	    && (!dbs_tuners_ins.hotplug_engage_freq || policy->cur >= dbs_tuners_ins.hotplug_engage_freq)
-		&& (!dbs_tuners_ins.hotplug_max_limit || dbs_tuners_ins.hotplug_max_limit > 1)) {
+		&& (!dbs_tuners_ins.hotplug_max_limit || dbs_tuners_ins.hotplug_max_limit > 1)
+		&& (!dbs_tuners_ins.hotplug_lock || num_online_cpus() > dbs_tuners_ins.hotplug_lock)) {
 	    if (hplg_up_block_cycles > dbs_tuners_ins.hotplug_block_up_cycles
 			|| (!hotplug_up_in_progress && dbs_tuners_ins.hotplug_block_up_cycles == 0)) {
 		    queue_work_on(policy->cpu, dbs_wq, &hotplug_online_work);
+			//pr_info("[zzmoove] online_work\n");
 			if (dbs_tuners_ins.hotplug_block_up_cycles != 0)
 		    hplg_up_block_cycles = 0;
 	    }
@@ -4203,10 +4375,21 @@ static void __cpuinit hotplug_offline_work_fn(struct work_struct *work)
 	
 	hotplug_down_in_progress = true;
 	
+	if (dbs_tuners_ins.hotplug_lock > 0) {
+		for (cpu = num_possible_cpus() - 1; cpu >= 1; cpu--) {
+			if(cpu_online(cpu) && cpu >= dbs_tuners_ins.hotplug_lock)
+				cpu_down(cpu);
+		}
+		hotplug_down_in_progress = false;
+		return;
+	}
+	
 	// Yank: added frequency thresholds
 	for_each_online_cpu(cpu) {
 	    if (likely(cpu_online(cpu) && (cpu)) && cpu != 0
 			&& cur_load <= hotplug_thresholds[1][cpu-1]
+			&& (!dbs_tuners_ins.hotplug_min_limit || cpu >= dbs_tuners_ins.hotplug_min_limit)
+			&& (!dbs_tuners_ins.hotplug_min_limit_touchbooster || cpu >= dbs_tuners_ins.hotplug_min_limit_touchbooster)
 			&& (hotplug_thresholds_freq[1][cpu-1] == 0
 				|| cur_freq <= hotplug_thresholds_freq[1][cpu-1]
 				|| max_freq_too_low))
@@ -4222,6 +4405,15 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 	int i = 0;	// ZZ: for hotplug up loop
 	
 	hotplug_up_in_progress = true;
+	
+	if (dbs_tuners_ins.hotplug_lock > 0) {
+		for (i = 1; i < num_possible_cpus(); i++) {
+			if(!cpu_online(i) && i < dbs_tuners_ins.hotplug_lock)
+				cpu_up(i);
+		}
+		hotplug_up_in_progress = false;
+		return;
+	}
 	
 	/*
 	 * ZZ: hotplug idle flag to enable offline cores on idle to avoid higher/achieve balanced cpu load at idle
@@ -4280,6 +4472,26 @@ static inline void dbs_timer_exit(struct cpu_dbs_info_s *dbs_info)
 	dbs_info->enable = 0;
 	cancel_delayed_work(&dbs_info->work);		// ZZ: use asyncronous mode to avoid freezes/reboots when leaving zzmoove
 }
+
+void zzmoove_touchbooster_mincores(unsigned int cores)
+{
+	unsigned int i;
+	
+	pr_info("[zzmoove] zzmoove_mincores: called for %d cores\n", cores);
+	
+	dbs_tuners_ins.hotplug_min_limit_touchbooster = cores;
+	
+	if (num_online_cpus() < cores) {
+		for (i = 1; i < num_possible_cpus(); i++) {
+			if (!cpu_online(i) && i < cores && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
+				// this core is below the minimum, so bring it up.
+				cpu_up(i);
+				pr_info("[zzmoove] zzmoove_mincores: CPU%d forced up\n", i);
+			}
+		}
+	}
+}
+EXPORT_SYMBOL(zzmoove_touchbooster_mincores);
 
 // raise sampling rate to SR*multiplier and adjust sampling rate/thresholds/hotplug/scaling/freq limit/freq step on blank screen
 static void __cpuinit powersave_early_suspend(struct early_suspend *handler)
