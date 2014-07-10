@@ -511,6 +511,8 @@
 #include <linux/ktime.h>
 #include <linux/sched.h>
 #include <linux/earlysuspend.h>
+#include <linux/slab.h>
+#include <linux/input.h>
 
 extern bool flg_screen_on;
 
@@ -626,6 +628,14 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_AFS_THRESHOLD3				(75)	// ZZ: default auto fast scaling step three
 #define DEF_AFS_THRESHOLD4				(90)	// ZZ: default auto fast scaling step four
 
+#define DEF_INPUTBOOST_CYCLES			(0)			// ff: default number of cycles to boost up/down thresholds
+#define DEF_INPUTBOOST_UP_THRESHOLD		(50)		// ff: default up threshold for inputbooster
+#define DEF_INPUTBOOST_PUNCH_CYCLES		(10)		// ff: default number of cycles to meet or exceed punch freq
+#define DEF_INPUTBOOST_PUNCH_FREQ		(800000)	// ff: default frequency to keep cur_freq at or above
+#define DEF_INPUTBOOST_ON_TSP			(1)			// ff: default to boost on touchscreen input events
+#define DEF_INPUTBOOST_ON_GPIO			(1)			// ff: default to boost on gpio (button) input events
+#define DEF_INPUTBOOST_ON_TK			(1)			// ff: default to boost on touchkey input events
+
 // ZZ: Sampling Down Momentum variables
 static unsigned int min_sampling_rate;				// ZZ: minimal possible sampling rate
 static unsigned int orig_sampling_down_factor;			// ZZ: for saving previously set sampling down factor
@@ -712,6 +722,13 @@ static unsigned int fast_scaling_up_asleep;			// Yank: for setting fast scaling 
 static unsigned int fast_scaling_down_asleep;			// Yank: for setting fast scaling value at early suspend for downscaling
 static unsigned int freq_step_asleep;				// ZZ: for setting freq step value at early suspend
 static unsigned int disable_hotplug_asleep;			// ZZ: for setting hotplug on/off at early suspend
+
+// ff: inputbooster variables
+static unsigned int boost_on_tsp = DEF_INPUTBOOST_ON_TSP;	// hardcoded since it'd be silly not to use it
+static unsigned int boost_on_gpio = DEF_INPUTBOOST_ON_GPIO;	// hardcoded since it'd be silly not to use it
+static unsigned int boost_on_tk = DEF_INPUTBOOST_ON_TK;		// hardcoded since it'd be silly not to use it
+static int flg_ctr_inputboost = 0;
+static int flg_ctr_inputboost_punch = 0;
 
 struct work_struct hotplug_offline_work;			// ZZ: hotplugging down work
 struct work_struct hotplug_online_work;				// ZZ: hotplugging up work
@@ -843,6 +860,10 @@ static struct dbs_tuners {
 	unsigned int scaling_fastdown_down_threshold;		// ZZ: down threshold when scaling fastdown freq exceeded (ffolkes)
 	unsigned int scaling_responsiveness_freq;		// ZZ: frequency below which we use a lower up threshold (ffolkes)
 	unsigned int scaling_responsiveness_up_threshold;	// ZZ: up threshold we use when below scaling responsiveness freq (ffolkes)
+	unsigned int inputboost_cycles;					// ff: default number of cycles to boost up/down thresholds
+	unsigned int inputboost_up_threshold;			// ff: default up threshold for inputbooster
+	unsigned int inputboost_punch_cycles;			// ff: default number of cycles to meet or exceed punch freq
+	unsigned int inputboost_punch_freq;				// ff: default frequency to keep cur_freq at or above
 	
 	// ZZ: set tuneable default values
 } dbs_tuners_ins = {
@@ -939,6 +960,128 @@ static struct dbs_tuners {
 	.scaling_fastdown_down_threshold = DEF_SCALING_FASTDOWN_DOWN_THRESHOLD,
 	.scaling_responsiveness_freq = DEF_SCALING_RESPONSIVENESS_FREQ,
 	.scaling_responsiveness_up_threshold = DEF_SCALING_RESPONSIVENESS_UP_THRESHOLD,
+	.inputboost_cycles = DEF_INPUTBOOST_CYCLES,
+	.inputboost_up_threshold = DEF_INPUTBOOST_UP_THRESHOLD,
+	.inputboost_punch_cycles = DEF_INPUTBOOST_PUNCH_CYCLES,
+	.inputboost_punch_freq = DEF_INPUTBOOST_PUNCH_FREQ,
+};
+
+// ff: inputbooster code needs to be here so it is available for tuneables.
+
+static void interactive_input_event(struct input_handle *handle,
+									unsigned int type,
+									unsigned int code, int value)
+{
+	if (type == EV_SYN && code == SYN_REPORT) {
+		
+		if (!dbs_tuners_ins.inputboost_cycles) {
+			// inputboost isn't enabled.
+			// we shouldn't ever be here...
+			return;
+		}
+		
+		if ((strstr(handle->dev->name, "touchscreen") && !boost_on_tsp)
+			|| (strstr(handle->dev->name, "gpio") && !boost_on_gpio)
+			|| (strstr(handle->dev->name, "touchkey") && !boost_on_tk)
+			) {
+			// we were told not to boost from this device, so just return.
+			return;
+		}
+		
+		if (dbs_tuners_ins.inputboost_punch_cycles && dbs_tuners_ins.inputboost_punch_freq && !flg_ctr_inputboost) {
+			// a punch length and frequency is set, so boost!
+			// but only do so if the inputboost counter is 0, aka
+			// this is the first event since the regular inputboost counter
+			// has run out.
+			
+			// remember, flg_ctr_inputboost_punch is decremented before it is used, so add 1.
+			flg_ctr_inputboost_punch = dbs_tuners_ins.inputboost_punch_cycles + 1;
+			
+			//pr_info("[zzmoove] inputboost - punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
+		}
+		
+		if (dbs_tuners_ins.inputboost_up_threshold) {
+			// an up threshold has been set for the inputbooster,
+			// otherwise there'd be no point to set the counter.
+			
+			flg_ctr_inputboost = dbs_tuners_ins.inputboost_cycles;
+		}
+		
+		//pr_info("[zzmoove] input event. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
+	}
+}
+
+static int input_dev_filter(const char *input_dev_name)
+{
+	if (strstr(input_dev_name, "touchscreen") ||
+	    strstr(input_dev_name, "touch_dev") ||
+	    strstr(input_dev_name, "sec-touchscreen") ||
+	    strstr(input_dev_name, "sec_touchscreen") ||
+	    strstr(input_dev_name, "gpio-keys") ||
+	    strstr(input_dev_name, "sec_touchkey") ||
+	    strstr(input_dev_name, "keypad")) {
+		
+		pr_info("[zzmoove] inputboost - found input device: %s\n", input_dev_name);
+		
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+
+static int interactive_input_connect(struct input_handler *handler,
+									 struct input_dev *dev, const struct input_device_id *id)
+{
+	struct input_handle *handle;
+	int error;
+	
+	if (input_dev_filter(dev->name))
+		return -ENODEV;
+	
+	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
+	if (!handle)
+		return -ENOMEM;
+	
+	handle->dev = dev;
+	handle->handler = handler;
+	handle->name = "cpufreq";
+	
+	error = input_register_handle(handle);
+	if (error)
+		goto err2;
+	
+	error = input_open_device(handle);
+	if (error)
+		goto err1;
+	
+	return 0;
+	
+err1:
+	input_unregister_handle(handle);
+err2:
+	kfree(handle);
+	return error;
+}
+
+static void interactive_input_disconnect(struct input_handle *handle)
+{
+	input_close_device(handle);
+	input_unregister_handle(handle);
+	kfree(handle);
+}
+
+static const struct input_device_id interactive_ids[] = {
+	{ .driver_info = 1 },
+	{ },
+};
+
+static struct input_handler interactive_input_handler = {
+	.event		= interactive_input_event,
+	.connect	= interactive_input_connect,
+	.disconnect	= interactive_input_disconnect,
+	.name		= "zzmoove",
+	.id_table	= interactive_ids,
 };
 
 /**
@@ -1357,6 +1500,10 @@ show_one(scaling_fastdown_up_threshold, scaling_fastdown_up_threshold);			// ZZ:
 show_one(scaling_fastdown_down_threshold, scaling_fastdown_down_threshold);		// ZZ: scaling fastdown down threshold tuneable (ffolkes-ZaneZam)
 show_one(scaling_responsiveness_freq, scaling_responsiveness_freq);			// ZZ: scaling responsiveness freq tuneable (ffolkes)
 show_one(scaling_responsiveness_up_threshold, scaling_responsiveness_up_threshold);	// ZZ: scaling responsiveness up threshold tuneable (ffolkes)
+show_one(inputboost_cycles, inputboost_cycles);								// ff: inputbooster duration
+show_one(inputboost_up_threshold, inputboost_up_threshold);					// ff: inputbooster up threshold
+show_one(inputboost_punch_cycles, inputboost_punch_cycles);					// ff: inputbooster punch cycles
+show_one(inputboost_punch_freq, inputboost_punch_freq);						// ff: inputbooster punch freq
 
 // ZZ: tuneable for showing the currently active governor settings profile
 static ssize_t show_profile(struct kobject *kobj, struct attribute *attr, char *buf)
@@ -2813,6 +2960,110 @@ static ssize_t store_scaling_fastdown_down_threshold(struct kobject *a, struct a
 	return count;
 }
 
+// ff: added tuneable inputboost_cycles -> possible values: range from 0 disabled to 1000, if not set default is 0
+static ssize_t store_inputboost_cycles(struct kobject *a, struct attribute *b,
+									   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	int rc;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 1000)
+	return -EINVAL;
+	
+	// inputbooster operates independently of profiles, so no checks.
+	
+	if (!input && dbs_tuners_ins.inputboost_cycles != input) {
+		// input is 0, and it wasn't before.
+		// so remove booster and unregister.
+		
+		input_unregister_handler(&interactive_input_handler);
+		
+		// reset counters.
+		flg_ctr_inputboost = 0;
+		flg_ctr_inputboost_punch = 0;
+		
+	} else if (input && dbs_tuners_ins.inputboost_cycles == 0) {
+		// input is something other than 0, and it wasn't before,
+		// so add booster and register.
+		
+		rc = input_register_handler(&interactive_input_handler);
+		if (!rc)
+			pr_info("[zzmoove] inputbooster - registered\n");
+		else
+			pr_info("[zzmoove] inputbooster - register FAILED\n");
+	}
+	
+	dbs_tuners_ins.inputboost_cycles = input;
+	return count;
+}
+
+// ff: added tuneable inputboost_up_threshold -> possible values: range from 0 disabled (future use) to 100, if not set default is 50
+static ssize_t store_inputboost_up_threshold(struct kobject *a, struct attribute *b,
+									   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 100)
+	return -EINVAL;
+	
+	// inputbooster operates independently of profiles, so no checks.
+	
+	dbs_tuners_ins.inputboost_up_threshold = input;
+	return count;
+}
+
+// ff: added tuneable inputboost_punch_cycles -> possible values: range from 0 disabled to 500, if not set default is 0
+static ssize_t store_inputboost_punch_cycles(struct kobject *a, struct attribute *b,
+									   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 500)
+	return -EINVAL;
+	
+	// inputbooster operates independently of profiles, so no checks.
+	
+	dbs_tuners_ins.inputboost_punch_cycles = input;
+	return count;
+}
+
+// ff: added tuneable inputboost_punch_freq -> possible values: range from 0 disabled to policy->max, if not set default is 0
+static ssize_t store_inputboost_punch_freq(struct kobject *a, struct attribute *b,
+											 const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	struct cpufreq_frequency_table *table;	// Yank: use system frequency table
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	// inputbooster operates independently of profiles, so no checks.
+	
+	table = cpufreq_frequency_get_table(0);					// Yank: get system frequency table
+	
+	if (!table) {
+	    return -EINVAL;
+	} else if (input > table[max_scaling_freq_hard].frequency) {		// Yank: allow only frequencies below or equal to hard max
+		return -EINVAL;
+	} else {
+	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
+		if (unlikely(table[i].frequency == input)) {
+		    dbs_tuners_ins.inputboost_punch_freq = input;
+		    return count;
+		}
+	}
+	return -EINVAL;
+}
+
 // ZZ: function for switching a settings profile either at governor start by macro 'DEF_PROFILE_NUMBER' or later by tuneable 'profile_number'
 static inline int set_profile(int profile_num)
 {
@@ -3755,6 +4006,10 @@ define_one_global_rw(scaling_fastdown_up_threshold);
 define_one_global_rw(scaling_fastdown_down_threshold);
 define_one_global_rw(scaling_responsiveness_freq);
 define_one_global_rw(scaling_responsiveness_up_threshold);
+define_one_global_rw(inputboost_cycles);
+define_one_global_rw(inputboost_up_threshold);
+define_one_global_rw(inputboost_punch_cycles);
+define_one_global_rw(inputboost_punch_freq);
 
 // Yank: version info tunable
 static ssize_t show_version(struct device *dev, struct device_attribute *attr, char *buf)
@@ -3825,7 +4080,11 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   "hotplug down threshold3        : %d\n"
 				   "hotplug down threshold1 freq   : %d\n"
 				   "hotplug down threshold2 freq   : %d\n"
-				   "hotplug down threshold3 freq   : %d\n",
+				   "hotplug down threshold3 freq   : %d\n"
+				   "inputboost cycles              : %d\n"
+				   "inputboost up threshold        : %d\n"
+				   "inputboost punch_cycles        : %d\n"
+				   "inputboost punch freq          : %d\n",
 				   possible_cpus,
 				   cpu_online(0),
 				   cpu_online(1),
@@ -3860,7 +4119,11 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   hotplug_thresholds[1][2],
 				   hotplug_thresholds_freq[1][0],
 				   hotplug_thresholds_freq[1][1],
-				   hotplug_thresholds_freq[1][2]);
+				   hotplug_thresholds_freq[1][2],
+				   inputboost_cycles,
+				   inputboost_up_threshold,
+				   inputboost_punch_cycles,
+				   inputboost_punch_freq);
 }
 
 static DEVICE_ATTR(debug, S_IRUGO , show_debug, NULL);
@@ -3952,6 +4215,10 @@ static struct attribute *dbs_attributes[] = {
 	&down_threshold_hotplug7.attr,
 	&down_threshold_hotplug_freq7.attr,
 #endif
+	&inputboost_cycles.attr,
+	&inputboost_up_threshold.attr,
+	&inputboost_punch_cycles.attr,
+	&inputboost_punch_freq.attr,
 	&dev_attr_version.attr,
 	&dev_attr_version_profiles.attr,
 	&dev_attr_profile_list.attr,
@@ -4011,6 +4278,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		
 		flg_ctr_cpuboost_mid--;
 		return;
+	}
+	
+	if (flg_ctr_inputboost_punch) {
+		
+		// boost to inputboost_punch_freq later on.
+		flg_ctr_inputboost_punch--;
+		
+		if (!flg_ctr_inputboost_punch) {
+			//pr_info("[zzmoove] inputboost - punch expired\n");
+		}
 	}
 	
 	/*
@@ -4284,9 +4561,20 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	    scaling_up_threshold = dbs_tuners_ins.up_threshold;
 	}
 	
+	// ff: apply inputboost up threshold
+	if (flg_ctr_inputboost && !suspend_flag) {
+		if (dbs_tuners_ins.inputboost_up_threshold) {
+			// in the future there may be other boost options,
+			// so be prepared for this one to be 0.
+			//pr_info("[zzmoove] inputboost - boosting up threshold to: %d, from: %d, %d more times\n", dbs_tuners_ins.inputboost_up_threshold, scaling_up_threshold, flg_ctr_inputboost);
+			scaling_up_threshold = dbs_tuners_ins.inputboost_up_threshold;
+		}
+		flg_ctr_inputboost--;
+	}
+	
 	// Check for frequency increase
-	if ((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
-	    && !cancel_up_scaling && !force_down_scaling) {
+	if ((flg_ctr_inputboost_punch && policy->cur < dbs_tuners_ins.inputboost_punch_freq) || ((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
+	    && !cancel_up_scaling && !force_down_scaling)) {
 		
 	    // ZZ: Sampling rate idle
 	    if (dbs_tuners_ins.sampling_rate_idle != dbs_tuners_ins.sampling_rate
@@ -4321,6 +4609,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	    if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
 			> dbs_tuners_ins.freq_limit)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
+		
+		if (flg_ctr_inputboost_punch && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
+			pr_info("[zzmoove] inputboost - punched freq to %d from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
+			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
+		}
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_H);
 		
@@ -4371,7 +4664,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	scaling_down_threshold = dbs_tuners_ins.down_threshold;
 	
 	// Check for frequency decrease
-	if (max_load < scaling_down_threshold || force_down_scaling) {				// ZZ: added force down switch
+	if (!flg_ctr_inputboost_punch && (max_load < scaling_down_threshold || force_down_scaling)) {				// ZZ: added force down switch
 		
 	    // ZZ: Sampling rate idle
 	    if (dbs_tuners_ins.sampling_rate_idle != dbs_tuners_ins.sampling_rate
@@ -4907,6 +5200,10 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			 * is used for first time
 			 */
 			if (dbs_enable == 0)
+			
+			if (!policy->cpu)
+				input_unregister_handler(&interactive_input_handler);
+			
 		    cpufreq_unregister_notifier(
 										&dbs_cpufreq_notifier_block,
 										CPUFREQ_TRANSITION_NOTIFIER);
