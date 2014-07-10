@@ -639,7 +639,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 // ZZ: Sampling Down Momentum variables
 static unsigned int min_sampling_rate;				// ZZ: minimal possible sampling rate
 static unsigned int orig_sampling_down_factor;			// ZZ: for saving previously set sampling down factor
-static unsigned int zz_sampling_down_factor;			// ff: actual use variable, so dbs_tuner_ins version stays constant
+static unsigned int zz_sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;	// ff: actual use variable, so dbs_tuner_ins version stays constant
 static unsigned int orig_sampling_down_max_mom;			// ZZ: for saving previously set smapling down max momentum
 static unsigned int zz_sampling_down_max_mom;			// ff: actual use variable, so dbs_tuner_ins version stays constant
 
