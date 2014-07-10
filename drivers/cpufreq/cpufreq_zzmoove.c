@@ -629,7 +629,9 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 // ZZ: Sampling Down Momentum variables
 static unsigned int min_sampling_rate;				// ZZ: minimal possible sampling rate
 static unsigned int orig_sampling_down_factor;			// ZZ: for saving previously set sampling down factor
+static unsigned int zz_sampling_down_factor;			// ff: actual use variable, so dbs_tuner_ins version stays constant
 static unsigned int orig_sampling_down_max_mom;			// ZZ: for saving previously set smapling down max momentum
+static unsigned int zz_sampling_down_max_mom;			// ff: actual use variable, so dbs_tuner_ins version stays constant
 
 // ZZ: search limit for frequencies in scaling table, variables for scaling modes and state flag for suspend detection
 static int scaling_mode_up;					// ZZ: fast scaling up mode holding up value during runtime
@@ -1379,13 +1381,13 @@ static ssize_t store_sampling_down_max_momentum(struct kobject *a, struct attrib
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
 	
-	dbs_tuners_ins.sampling_down_max_mom = input;
+	dbs_tuners_ins.sampling_down_max_mom = zz_sampling_down_max_mom = input;
 	
 	orig_sampling_down_max_mom = dbs_tuners_ins.sampling_down_max_mom;
 	
 	// ZZ: reset sampling down factor to default if momentum was disabled
 	if (dbs_tuners_ins.sampling_down_max_mom == 0)
-	dbs_tuners_ins.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
+	zz_sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
 	
 	// ZZ: reset momentum_adder and reset down sampling multiplier in case momentum was disabled
 	for_each_online_cpu(j) {
@@ -1445,7 +1447,7 @@ static ssize_t store_sampling_down_factor(struct kobject *a, struct attribute *b
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
 	
-	dbs_tuners_ins.sampling_down_factor = input;
+	dbs_tuners_ins.sampling_down_factor = zz_sampling_down_factor = input;
 	
 	// ZZ: reset down sampling multiplier in case it was active
 	for_each_online_cpu(j) {
@@ -3158,7 +3160,7 @@ static inline int set_profile(int profile_num)
 			
 			// ff: set hotplug_min_limit value
 			if (zzmoove_profiles[i].hotplug_min_limit == 0)
-			dbs_tuners_ins.hotplug_min_limit = zzmoove_profiles[i].hotplug_min_limit;
+			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved = zzmoove_profiles[i].hotplug_min_limit;
 			
 			// ff: set hotplug_lock value
 			if (zzmoove_profiles[i].hotplug_lock == 0)
@@ -3199,7 +3201,7 @@ static inline int set_profile(int profile_num)
 			// ZZ: set sampling_down_factor value
 			if (zzmoove_profiles[i].sampling_down_factor <= MAX_SAMPLING_DOWN_FACTOR
 				&& zzmoove_profiles[i].sampling_down_factor >= 1)
-		    dbs_tuners_ins.sampling_down_factor = zzmoove_profiles[i].sampling_down_factor;
+		    dbs_tuners_ins.sampling_down_factor = zz_sampling_down_factor = zzmoove_profiles[i].sampling_down_factor;
 			
 		    // ZZ: Reset down sampling multiplier in case it was active
 		    for_each_online_cpu(j) {
@@ -3211,13 +3213,13 @@ static inline int set_profile(int profile_num)
 			// ZZ: set sampling_down_max_momentum value
 			if (zzmoove_profiles[i].sampling_down_max_momentum <= MAX_SAMPLING_DOWN_FACTOR - dbs_tuners_ins.sampling_down_factor
 				&& zzmoove_profiles[i].sampling_down_max_momentum >= 0) {
-				dbs_tuners_ins.sampling_down_max_mom = zzmoove_profiles[i].sampling_down_max_momentum;
+				dbs_tuners_ins.sampling_down_max_mom = zz_sampling_down_max_mom = zzmoove_profiles[i].sampling_down_max_momentum;
 				orig_sampling_down_max_mom = dbs_tuners_ins.sampling_down_max_mom;
 			}
 			
 			// ZZ: Reset sampling down factor to default if momentum was disabled
 			if (dbs_tuners_ins.sampling_down_max_mom == 0)
-		    dbs_tuners_ins.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
+		    zz_sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
 			
 		    // ZZ: Reset momentum_adder and reset down sampling multiplier in case momentum was disabled
 		    for_each_online_cpu(j) {
@@ -3330,7 +3332,7 @@ static inline int set_profile(int profile_num)
 				// ZZ: set up_threshold value
 				if (zzmoove_profiles[i].up_threshold <= 100 && zzmoove_profiles[i].up_threshold
 					>= zzmoove_profiles[i].down_threshold)
-				dbs_tuners_ins.up_threshold = zzmoove_profiles[i].up_threshold;
+				dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved = zzmoove_profiles[i].up_threshold;
 				
 				// ZZ: set up_threshold_hotplug1 value
 				if (zzmoove_profiles[i].up_threshold_hotplug1 >= 0 && zzmoove_profiles[i].up_threshold_hotplug1 <= 100) {
@@ -4300,7 +4302,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	    }
 		
 	    // ZZ: Sampling down momentum - if momentum is inactive switch to 'down_skip' method
-	    if (dbs_tuners_ins.sampling_down_max_mom == 0 && dbs_tuners_ins.sampling_down_factor > 1)
+	    if (zz_sampling_down_max_mom == 0 && zz_sampling_down_factor > 1)
 		this_dbs_info->down_skip = 0;
 		
 	    // ZZ: Frequency Limit: if we are at freq_limit break out early
@@ -4312,8 +4314,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		return;
 		
 	    // ZZ: Sampling down momentum - if momentum is active and we are switching to max speed, apply sampling_down_factor
-	    if (dbs_tuners_ins.sampling_down_max_mom != 0 && policy->cur < policy->max)
-		this_dbs_info->rate_mult = dbs_tuners_ins.sampling_down_factor;
+	    if (zz_sampling_down_max_mom != 0 && policy->cur < policy->max)
+		this_dbs_info->rate_mult = zz_sampling_down_factor;
 		
 		this_dbs_info->requested_freq = zz_get_next_freq(policy->cur, 1, max_load);
 	    if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
@@ -4323,12 +4325,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 								CPUFREQ_RELATION_H);
 		
 	    // ZZ: Sampling down momentum - calculate momentum and update sampling down factor
-	    if (dbs_tuners_ins.sampling_down_max_mom != 0 && this_dbs_info->momentum_adder
+	    if (zz_sampling_down_max_mom != 0 && this_dbs_info->momentum_adder
 			< dbs_tuners_ins.sampling_down_mom_sens) {
 			this_dbs_info->momentum_adder++;
 			dbs_tuners_ins.sampling_down_momentum = (this_dbs_info->momentum_adder
-													 * dbs_tuners_ins.sampling_down_max_mom) / dbs_tuners_ins.sampling_down_mom_sens;
-			dbs_tuners_ins.sampling_down_factor = orig_sampling_down_factor
+													 * zz_sampling_down_max_mom) / dbs_tuners_ins.sampling_down_mom_sens;
+			zz_sampling_down_factor = orig_sampling_down_factor
 			+ dbs_tuners_ins.sampling_down_momentum;
 	    }
 	    return;
@@ -4347,18 +4349,18 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 	
 	// ZZ: Sampling down momentum - if momentum is inactive switch to down skip method and if sampling_down_factor is active break out early
-	if (dbs_tuners_ins.sampling_down_max_mom == 0 && dbs_tuners_ins.sampling_down_factor > 1) {
-	    if (++this_dbs_info->down_skip < dbs_tuners_ins.sampling_down_factor)
+	if (zz_sampling_down_max_mom == 0 && zz_sampling_down_factor > 1) {
+	    if (++this_dbs_info->down_skip < zz_sampling_down_factor)
 		return;
 	    this_dbs_info->down_skip = 0;
 	}
 	
 	// ZZ: Sampling down momentum - calculate momentum and update sampling down factor
-	if (dbs_tuners_ins.sampling_down_max_mom != 0 && this_dbs_info->momentum_adder > 1) {
+	if (zz_sampling_down_max_mom != 0 && this_dbs_info->momentum_adder > 1) {
 	    this_dbs_info->momentum_adder -= 2;
 	    dbs_tuners_ins.sampling_down_momentum = (this_dbs_info->momentum_adder
-												 * dbs_tuners_ins.sampling_down_max_mom) / dbs_tuners_ins.sampling_down_mom_sens;
-	    dbs_tuners_ins.sampling_down_factor = orig_sampling_down_factor
+												 * zz_sampling_down_max_mom) / dbs_tuners_ins.sampling_down_mom_sens;
+	    zz_sampling_down_factor = orig_sampling_down_factor
 	    + dbs_tuners_ins.sampling_down_momentum;
 	}
 	
@@ -4576,7 +4578,7 @@ static void __cpuinit powersave_early_suspend(struct early_suspend *handler)
 	sampling_rate_awake = dbs_tuners_ins.sampling_rate_current;		// ZZ: save current sampling rate for restore on awake
 	up_threshold_awake = dbs_tuners_ins.up_threshold;			// ZZ: save up threshold for restore on awake
 	down_threshold_awake = dbs_tuners_ins.down_threshold;			// ZZ: save down threhold for restore on awake
-	dbs_tuners_ins.sampling_down_max_mom = 0;				// ZZ: sampling down momentum - disabled at suspend
+	zz_sampling_down_max_mom = 0;				// ZZ: sampling down momentum - disabled at suspend
 	smooth_up_awake = dbs_tuners_ins.smooth_up;				// ZZ: save smooth up value for restore on awake
 	freq_step_awake = dbs_tuners_ins.freq_step;				// ZZ: save freq step for restore on awake
 	fast_scaling_up_awake = dbs_tuners_ins.fast_scaling_up;			// Yank: save scaling setting for restore on awake for upscaling
@@ -4755,7 +4757,7 @@ static void __cpuinit powersave_late_resume(struct early_suspend *handler)
 #endif
 	}
 	
-	dbs_tuners_ins.sampling_down_max_mom = orig_sampling_down_max_mom;	// ZZ: Sampling down momentum - restore max value
+	zz_sampling_down_max_mom = orig_sampling_down_max_mom;	// ZZ: Sampling down momentum - restore max value
 	dbs_tuners_ins.sampling_rate_current = sampling_rate_awake;		// ZZ: restore previous settings
 	dbs_tuners_ins.up_threshold = up_threshold_awake;			// ZZ: restore previous settings
 	dbs_tuners_ins.down_threshold = down_threshold_awake;			// ZZ: restore previous settings
@@ -4869,8 +4871,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 #if (DEF_PROFILE_NUMBER > 0)
 				set_profile(DEF_PROFILE_NUMBER);
 #endif
-				orig_sampling_down_factor = dbs_tuners_ins.sampling_down_factor;	// ZZ: Sampling down momentum - set down factor
-				orig_sampling_down_max_mom = dbs_tuners_ins.sampling_down_max_mom;	// ZZ: Sampling down momentum - set max momentum
+				orig_sampling_down_factor = zz_sampling_down_factor;	// ZZ: Sampling down momentum - set down factor
+				orig_sampling_down_max_mom = zz_sampling_down_max_mom;	// ZZ: Sampling down momentum - set max momentum
 				sampling_rate_awake = dbs_tuners_ins.sampling_rate
 				= dbs_tuners_ins.sampling_rate_current;
 				up_threshold_awake = dbs_tuners_ins.up_threshold;
