@@ -779,7 +779,6 @@ static struct dbs_tuners {
 	unsigned int sampling_down_max_mom;			// ZZ: sampling down momentum max tuneable
 	unsigned int sampling_down_mom_sens;			// ZZ: sampling down momentum sensitivity tuneable
 	unsigned int up_threshold;				// ZZ: scaling up threshold tuneable
-	unsigned int up_threshold_saved;		// ff: saved up_threshold
 	unsigned int up_threshold_hotplug1;			// ZZ: up threshold hotplug tuneable for core1
 	unsigned int up_threshold_hotplug_freq1;		// Yank: up threshold hotplug freq tuneable for core1
 #if (MAX_CORES == 4 || MAX_CORES == 8)
@@ -879,7 +878,6 @@ static struct dbs_tuners {
 	.sampling_down_max_mom = DEF_SAMPLING_DOWN_MAX_MOMENTUM,
 	.sampling_down_mom_sens = DEF_SAMPLING_DOWN_MOMENTUM_SENSITIVITY,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
-	.up_threshold_saved = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold_hotplug1 = DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG,
 	.up_threshold_hotplug_freq1 = DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG_FREQ,
 #if (MAX_CORES == 4 || MAX_CORES == 8)
@@ -997,7 +995,7 @@ static void interactive_input_event(struct input_handle *handle,
 			// remember, flg_ctr_inputboost_punch is decremented before it is used, so add 1.
 			flg_ctr_inputboost_punch = dbs_tuners_ins.inputboost_punch_cycles + 1;
 			
-			//pr_info("[zzmoove] inputboost - punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
+			pr_info("[zzmoove] inputboost - punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
 		}
 		
 		if (dbs_tuners_ins.inputboost_up_threshold) {
@@ -3583,7 +3581,7 @@ static inline int set_profile(int profile_num)
 				// ZZ: set up_threshold value
 				if (zzmoove_profiles[i].up_threshold <= 100 && zzmoove_profiles[i].up_threshold
 					>= zzmoove_profiles[i].down_threshold)
-				dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved = zzmoove_profiles[i].up_threshold;
+				dbs_tuners_ins.up_threshold = zzmoove_profiles[i].up_threshold;
 				
 				// ZZ: set up_threshold_hotplug1 value
 				if (zzmoove_profiles[i].up_threshold_hotplug1 >= 0 && zzmoove_profiles[i].up_threshold_hotplug1 <= 100) {
@@ -4264,6 +4262,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		
 		flg_ctr_cpuboost--;
 		flg_ctr_cpuboost_mid--;
+		flg_ctr_inputboost_punch--;
 		return;
 	}
 	
@@ -4277,7 +4276,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		}
 		
 		flg_ctr_cpuboost_mid--;
-		return;
 	}
 	
 	if (flg_ctr_inputboost_punch) {
@@ -4286,7 +4284,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		flg_ctr_inputboost_punch--;
 		
 		if (!flg_ctr_inputboost_punch) {
-			//pr_info("[zzmoove] inputboost - punch expired\n");
+			pr_info("[zzmoove] inputboost - punch expired\n");
 		}
 	}
 	
@@ -4507,15 +4505,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			pr_info("[zzmoove/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
 		}
 		
-		// decrease the up_threshold, if requested.
-		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < dbs_tuners_ins.up_threshold) {
-			dbs_tuners_ins.up_threshold = sttg_typingbooster_upthreshold;
-			//if (flg_debug)
-			pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
-		}
-		
-		flg_ctr_typingbooster_cycles--;
-		
 	} else {
 		
 		if (dbs_tuners_ins.hotplug_min_limit != dbs_tuners_ins.hotplug_min_limit_saved){
@@ -4524,14 +4513,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			pr_info("[zzmoove/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
 			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved;
 		}
-		
-		if (dbs_tuners_ins.up_threshold == sttg_typingbooster_upthreshold && dbs_tuners_ins.up_threshold != dbs_tuners_ins.up_threshold_saved) {
-			// restore original up_threshold.
-			//if (flg_debug)
-			pr_info("[zzmoove/typingbooster] typingbooster off. up_threshold resetting from %d back to %d\n", dbs_tuners_ins.up_threshold, dbs_tuners_ins.up_threshold_saved);
-			dbs_tuners_ins.up_threshold = dbs_tuners_ins.up_threshold_saved;
-		}
-		
 	}
 	
 	// ZZ: block cycles to be able to slow down hotplugging - added hotplug enagage freq (ffolkes)
@@ -4572,8 +4553,21 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		flg_ctr_inputboost--;
 	}
 	
+	// ff: apply typingbooster up threshold
+	if (flg_ctr_typingbooster_cycles > 0) {
+		
+		// decrease the up_threshold, if requested.
+		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < scaling_up_threshold) {
+			scaling_up_threshold = sttg_typingbooster_upthreshold;
+			//if (flg_debug)
+			pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+		}
+		
+		flg_ctr_typingbooster_cycles--;
+	}
+	
 	// Check for frequency increase
-	if ((flg_ctr_inputboost_punch && policy->cur < dbs_tuners_ins.inputboost_punch_freq) || ((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
+	if (((flg_ctr_inputboost_punch || flg_ctr_cpuboost_mid) && policy->cur < dbs_tuners_ins.inputboost_punch_freq) || ((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
 	    && !cancel_up_scaling && !force_down_scaling)) {
 		
 	    // ZZ: Sampling rate idle
@@ -4614,6 +4608,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			pr_info("[zzmoove] inputboost - punched freq to %d from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
 			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
 		}
+		
+		if (flg_ctr_cpuboost_mid && this_dbs_info->requested_freq < 800000) {
+			// the midbooster was called and it is higher than what was going to be set.
+			pr_info("[zzmoove] midboost - boosted freq to %d from %d\n", 800000, this_dbs_info->requested_freq);
+			this_dbs_info->requested_freq = 800000;
+		}
+		
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_H);
 		
