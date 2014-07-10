@@ -1368,13 +1368,13 @@ static ssize_t store_sampling_down_max_momentum(struct kobject *a, struct attrib
 	    dbs_tuners_ins.sampling_down_factor || input < 0 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_down_max_mom = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_down_max_mom != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_down_max_mom = input;
 	
 	orig_sampling_down_max_mom = dbs_tuners_ins.sampling_down_max_mom;
 	
@@ -1404,13 +1404,13 @@ static ssize_t store_sampling_down_momentum_sensitivity(struct kobject *a, struc
 	    || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_down_mom_sens = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_down_mom_sens != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_down_mom_sens = input;
 	
 	// ZZ: reset momentum_adder
 	for_each_online_cpu(j) {
@@ -1434,13 +1434,13 @@ static ssize_t store_sampling_down_factor(struct kobject *a, struct attribute *b
 	    || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_down_factor = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_down_factor != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_down_factor = input;
 	
 	// ZZ: reset down sampling multiplier in case it was active
 	for_each_online_cpu(j) {
@@ -1460,14 +1460,15 @@ static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b, const
 	if (ret != 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_rate = dbs_tuners_ins.sampling_rate_current
-	= max(input, min_sampling_rate); // ZZ: set it to new value
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_rate != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_rate = dbs_tuners_ins.sampling_rate_current
+	= max(input, min_sampling_rate); // ZZ: set it to new value
+	
 	return count;
 }
 
@@ -1484,17 +1485,18 @@ static ssize_t store_sampling_rate_idle(struct kobject *a, struct attribute *b, 
 	if (ret != 1 || set_profile_active == true)
 	return -EINVAL;
 	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_rate_idle != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
 	if (input == 0)
 	dbs_tuners_ins.sampling_rate_current = dbs_tuners_ins.sampling_rate_idle
 	= dbs_tuners_ins.sampling_rate;	// ZZ: set current and idle rate to normal = disable feature
 	else
 	dbs_tuners_ins.sampling_rate_idle = max(input, min_sampling_rate);	// ZZ: set idle rate to new value
 	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
-	    dbs_tuners_ins.profile_number = 0;
-	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	}
 	return count;
 }
 
@@ -1508,13 +1510,14 @@ static ssize_t store_sampling_rate_idle_threshold(struct kobject *a, struct attr
 	if (ret != 1 || input > 100 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_rate_idle_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_rate_idle_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_rate_idle_threshold = input;
+	
 	return count;
 }
 
@@ -1532,13 +1535,14 @@ static ssize_t store_sampling_rate_idle_delay(struct kobject *a, struct attribut
 	sampling_rate_step_up_delay = 0;
 	sampling_rate_step_down_delay = 0;
 	
-	dbs_tuners_ins.sampling_rate_idle_delay = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_rate_idle_delay != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_rate_idle_delay = input;
+
 	return count;
 }
 
@@ -1553,13 +1557,14 @@ static ssize_t store_sampling_rate_sleep_multiplier(struct kobject *a, struct at
 	    || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.sampling_rate_sleep_multiplier = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_rate_sleep_multiplier != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.sampling_rate_sleep_multiplier = input;
+
 	return count;
 }
 
@@ -1573,13 +1578,14 @@ static ssize_t store_up_threshold(struct kobject *a, struct attribute *b, const 
 	    || input <= dbs_tuners_ins.down_threshold || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.up_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.up_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.up_threshold = input;
+	
 	return count;
 }
 
@@ -1594,13 +1600,14 @@ static ssize_t store_up_threshold_sleep(struct kobject *a, struct attribute *b, 
 	    || input <= dbs_tuners_ins.down_threshold_sleep || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.up_threshold_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.up_threshold_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.up_threshold_sleep = input;
+	
 	return count;
 }
 
@@ -1616,14 +1623,14 @@ ret = sscanf(buf, "%u", &input);							\
 if (ret != 1 || input < 0 || input > 100 || set_profile_active == true)		\
 return -EINVAL;									\
 \
-dbs_tuners_ins.up_threshold_hotplug##name = input;					\
-hotplug_thresholds[0][core] = input;						\
 \
-if (dbs_tuners_ins.profile_number != 0) {						\
+if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.up_threshold_hotplug##name != input) {						\
 dbs_tuners_ins.profile_number = 0;						\
 strncpy(dbs_tuners_ins.profile, custom_profile,					\
 sizeof(dbs_tuners_ins.profile));						\
 }											\
+dbs_tuners_ins.up_threshold_hotplug##name = input;					\
+hotplug_thresholds[0][core] = input;						\
 \
 return count;										\
 }
@@ -1639,14 +1646,14 @@ ret = sscanf(buf, "%u", &input);							\
 if (ret != 1 || input < 1 || input > 100 || set_profile_active == true)		\
 return -EINVAL;									\
 \
-dbs_tuners_ins.down_threshold_hotplug##name = input;				\
-hotplug_thresholds[1][core] = input;						\
 \
-if (dbs_tuners_ins.profile_number != 0) {						\
+if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.down_threshold_hotplug##name != input) {						\
 dbs_tuners_ins.profile_number = 0;						\
 strncpy(dbs_tuners_ins.profile, custom_profile,					\
 sizeof(dbs_tuners_ins.profile));						\
 }											\
+dbs_tuners_ins.down_threshold_hotplug##name = input;				\
+hotplug_thresholds[1][core] = input;						\
 \
 return count;										\
 }
@@ -1689,13 +1696,14 @@ static ssize_t store_down_threshold(struct kobject *a, struct attribute *b, cons
 	    input = dbs_tuners_ins.up_threshold - 1;
 	}
 	
-	dbs_tuners_ins.down_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.down_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.down_threshold = input;
+
 	return count;
 }
 
@@ -1715,13 +1723,14 @@ static ssize_t store_down_threshold_sleep(struct kobject *a, struct attribute *b
 	    input = dbs_tuners_ins.up_threshold - 1;
 	}
 	
-	dbs_tuners_ins.down_threshold_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.down_threshold_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.down_threshold_sleep = input;
+	
 	return count;
 }
 
@@ -1743,13 +1752,13 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b, co
 	    return count;
 	}
 	
-	dbs_tuners_ins.ignore_nice = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.ignore_nice != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.ignore_nice = input;
 	
 	// ZZ: we need to re-evaluate prev_cpu_idle
 	for_each_online_cpu(j) {
@@ -1776,17 +1785,18 @@ static ssize_t store_freq_step(struct kobject *a, struct attribute *b, const cha
 	if (input > 100)
 	input = 100;
 	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_step != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
 	/*
 	 * no need to test here if freq_step is zero as the user might actually
 	 * want this, they would be crazy though :)
 	 */
 	dbs_tuners_ins.freq_step = input;
 	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
-	    dbs_tuners_ins.profile_number = 0;
-	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	}
 	return count;
 }
 
@@ -1806,17 +1816,18 @@ static ssize_t store_freq_step_sleep(struct kobject *a, struct attribute *b, con
 	if (input > 100)
 	input = 100;
 	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_step_sleep != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
 	/*
 	 * no need to test here if freq_step is zero as the user might actually
 	 * want this, they would be crazy though :)
 	 */
 	dbs_tuners_ins.freq_step_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
-	    dbs_tuners_ins.profile_number = 0;
-	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	}
+
 	return count;
 }
 
@@ -1829,13 +1840,14 @@ static ssize_t store_smooth_up(struct kobject *a, struct attribute *b, const cha
 	if (ret != 1 || input > 100 || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.smooth_up = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.smooth_up != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.smooth_up = input;
+	
 	return count;
 }
 
@@ -1849,13 +1861,14 @@ static ssize_t store_smooth_up_sleep(struct kobject *a, struct attribute *b, con
 	if (ret != 1 || input > 100 || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.smooth_up_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.smooth_up_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.smooth_up_sleep = input;
+	
 	return count;
 }
 
@@ -1873,13 +1886,14 @@ static ssize_t store_hotplug_sleep(struct kobject *a, struct attribute *b, const
 	    || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.hotplug_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.hotplug_sleep = input;
+	
 	return count;
 }
 
@@ -1911,13 +1925,14 @@ static ssize_t store_freq_limit(struct kobject *a, struct attribute *b, const ch
 	    else
 		limit_table_end = table[freq_table_size].frequency;	// ZZ: set search end point to max freq when using ascending table
 		
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_limit != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
+		
 	    freq_limit_awake = dbs_tuners_ins.freq_limit = input;
 		
-		// ZZ: set profile number to 0 and profile name to custom mode
-		if (dbs_tuners_ins.profile_number != 0) {
-		    dbs_tuners_ins.profile_number = 0;
-		    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		}
 		return count;
 	}
 	
@@ -1932,13 +1947,14 @@ static ssize_t store_freq_limit(struct kobject *a, struct attribute *b, const ch
 			else
 			limit_table_end = table[i].frequency;	// ZZ: set search end point to max soft freq limit when using ascenting table
 			
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_limit != input) {
+				dbs_tuners_ins.profile_number = 0;
+				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+			}
+			
 			freq_limit_awake = dbs_tuners_ins.freq_limit = input;
 			
-			// ZZ: set profile number to 0 and profile name to custom mode
-			if (dbs_tuners_ins.profile_number != 0) {
-			    dbs_tuners_ins.profile_number = 0;
-			    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-			}
 			return count;
 		}
 	}
@@ -1963,13 +1979,15 @@ static ssize_t store_freq_limit_sleep(struct kobject *a, struct attribute *b, co
 	return -EINVAL;
 	
 	if (input == 0) {
-	    freq_limit_asleep = dbs_tuners_ins.freq_limit_sleep = input;
 		
-		// ZZ: set profile number to 0 and profile name to custom mode
-		if (dbs_tuners_ins.profile_number != 0) {
-		    dbs_tuners_ins.profile_number = 0;
-		    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_limit_sleep != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 		}
+		
+	    freq_limit_asleep = dbs_tuners_ins.freq_limit_sleep = input;
+
 		return count;
 	}
 	
@@ -1982,12 +2000,12 @@ static ssize_t store_freq_limit_sleep(struct kobject *a, struct attribute *b, co
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    freq_limit_asleep = dbs_tuners_ins.freq_limit_sleep = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.freq_limit_sleep != input) {
 				dbs_tuners_ins.profile_number = 0;
-		        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+			}
+		    freq_limit_asleep = dbs_tuners_ins.freq_limit_sleep = input;
 			return count;
 		}
 	}
@@ -2005,13 +2023,13 @@ static ssize_t store_fast_scaling_up(struct kobject *a, struct attribute *b, con
 	if (ret != 1 || input > 5 || input < 0 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.fast_scaling_up = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.fast_scaling_up != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.fast_scaling_up = input;
 	
 	if (input > 4)				// ZZ: auto fast scaling mode
 	return count;
@@ -2032,13 +2050,13 @@ static ssize_t store_fast_scaling_down(struct kobject *a, struct attribute *b, c
 	if (ret != 1 || input > 5 || input < 0 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.fast_scaling_down = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.fast_scaling_down != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.fast_scaling_down = input;
 	
 	if (input > 4)				// ZZ: auto fast scaling mode
 	return count;
@@ -2059,13 +2077,13 @@ static ssize_t store_fast_scaling_sleep_up(struct kobject *a, struct attribute *
 	if (ret != 1 || input > 5 || input < 0 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.fast_scaling_sleep_up = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.fast_scaling_sleep_up != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.fast_scaling_sleep_up = input;
 	
 	return count;
 }
@@ -2081,13 +2099,13 @@ static ssize_t store_fast_scaling_sleep_down(struct kobject *a, struct attribute
 	if (ret != 1 || input > 5 || input < 0 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.fast_scaling_sleep_down = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.fast_scaling_sleep_down != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.fast_scaling_sleep_down = input;
 	
 	return count;
 }
@@ -2104,12 +2122,12 @@ ret = sscanf(buf, "%u", &input);							\
 if (ret != 1 || input > 100 || input < 0 || set_profile_active == true)			\
 return -EINVAL;									\
 \
-dbs_tuners_ins.afs_threshold##name = input;						\
-\
-if (dbs_tuners_ins.profile_number != 0) {						\
+if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.afs_threshold##name != input) {						\
 dbs_tuners_ins.profile_number = 0;							\
 strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));	\
 }											\
+\
+dbs_tuners_ins.afs_threshold##name = input;						\
 return count;										\
 }												\
 
@@ -2128,13 +2146,14 @@ static ssize_t store_grad_up_threshold(struct kobject *a, struct attribute *b, c
 	if (ret != 1 || input > 100 || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.grad_up_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.grad_up_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.grad_up_threshold = input;
+	
 	return count;
 }
 
@@ -2148,13 +2167,14 @@ static ssize_t store_grad_up_threshold_sleep(struct kobject *a, struct attribute
 	if (ret != 1 || input > 100 || input < 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.grad_up_threshold_sleep = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.grad_up_threshold_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.grad_up_threshold_sleep = input;
+	
 	return count;
 }
 
@@ -2168,13 +2188,16 @@ static ssize_t store_early_demand(struct kobject *a, struct attribute *b, const 
 	if (ret != 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.early_demand = !!input;
+	input = !!input;
 	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.early_demand != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.early_demand = input;
+	
 	return count;
 }
 
@@ -2188,13 +2211,16 @@ static ssize_t store_early_demand_sleep(struct kobject *a, struct attribute *b, 
 	if (ret != 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.early_demand_sleep = !!input;
+	input = !!input;
 	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.early_demand_sleep != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.early_demand_sleep = input;
+
 	return count;
 }
 
@@ -2209,23 +2235,23 @@ static ssize_t store_disable_hotplug(struct kobject *a, struct attribute *b, con
 	return -EINVAL;
 	
 	if (input > 0) {
-	    dbs_tuners_ins.disable_hotplug = true;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	    if (dbs_tuners_ins.profile_number != 0 && !dbs_tuners_ins.disable_hotplug) {
 			dbs_tuners_ins.profile_number = 0;
 			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	    }
+	    dbs_tuners_ins.disable_hotplug = true;
 		
 		enable_cores = true;
 		queue_work_on(0, dbs_wq, &hotplug_online_work);
 		
 	} else {
-	    dbs_tuners_ins.disable_hotplug = false;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	    if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.disable_hotplug) {
 			dbs_tuners_ins.profile_number = 0;
 			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	    }
+	    dbs_tuners_ins.disable_hotplug = false;
 	}
 	return count;
 }
@@ -2241,19 +2267,19 @@ static ssize_t store_disable_hotplug_sleep(struct kobject *a, struct attribute *
 	return -EINVAL;
 	
 	if (input > 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	    if (dbs_tuners_ins.profile_number != 0 && !dbs_tuners_ins.disable_hotplug_sleep) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	    }
 	    dbs_tuners_ins.disable_hotplug_sleep = true;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-			dbs_tuners_ins.profile_number = 0;
-			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 	} else {
-	    dbs_tuners_ins.disable_hotplug_sleep = false;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	    if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.disable_hotplug_sleep) {
 			dbs_tuners_ins.profile_number = 0;
 			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	    }
+	    dbs_tuners_ins.disable_hotplug_sleep = false;
 	}
 	return count;
 }
@@ -2271,13 +2297,14 @@ static ssize_t store_hotplug_block_up_cycles(struct kobject *a, struct attribute
 	if (input == 0)
 	hplg_up_block_cycles = 0;
 	
-	dbs_tuners_ins.hotplug_block_up_cycles = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_block_up_cycles != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.hotplug_block_up_cycles = input;
+	
 	return count;
 }
 
@@ -2294,13 +2321,14 @@ static ssize_t store_hotplug_block_down_cycles(struct kobject *a, struct attribu
 	if (input == 0)
 	hplg_down_block_cycles = 0;
 	
-	dbs_tuners_ins.hotplug_block_down_cycles = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_block_down_cycles != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.hotplug_block_down_cycles = input;
+	
 	return count;
 }
 
@@ -2314,13 +2342,14 @@ static ssize_t store_hotplug_idle_threshold(struct kobject *a, struct attribute 
 	if (((ret != 1 || input < 0 || input > 100) && input != 0) || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.hotplug_idle_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_idle_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.hotplug_idle_threshold = input;
+	
 	return count;
 }
 
@@ -2338,12 +2367,12 @@ static ssize_t store_hotplug_idle_freq(struct kobject *a, struct attribute *b, c
 	return -EINVAL;
 	
 	if (input == 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_idle_freq != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
 	    dbs_tuners_ins.hotplug_idle_freq = input;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-	        dbs_tuners_ins.profile_number = 0;
-	        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 		return count;
 	}
 	
@@ -2356,12 +2385,12 @@ static ssize_t store_hotplug_idle_freq(struct kobject *a, struct attribute *b, c
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    dbs_tuners_ins.hotplug_idle_freq = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_idle_freq != input) {
 				dbs_tuners_ins.profile_number = 0;
 				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+			}
+		    dbs_tuners_ins.hotplug_idle_freq = input;
 		    return count;
 		}
 	}
@@ -2382,12 +2411,12 @@ static ssize_t store_hotplug_engage_freq(struct kobject *a, struct attribute *b,
 	return -EINVAL;
 	
 	if (input == 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_engage_freq != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
 	    dbs_tuners_ins.hotplug_engage_freq = input;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-	        dbs_tuners_ins.profile_number = 0;
-	        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 		return count;
 	}
 	
@@ -2400,12 +2429,12 @@ static ssize_t store_hotplug_engage_freq(struct kobject *a, struct attribute *b,
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    dbs_tuners_ins.hotplug_engage_freq = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_engage_freq != input) {
 				dbs_tuners_ins.profile_number = 0;
 				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+			}
+		    dbs_tuners_ins.hotplug_engage_freq = input;
 		    return count;
 		}
 	}
@@ -2423,6 +2452,12 @@ static ssize_t store_hotplug_max_limit(struct kobject *a, struct attribute *b,
     
 	if ((ret != 1 || input < 0 || input > 8) && input != 0)
 	return -EINVAL;
+	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_max_limit != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
 	
 	if (input > 0) {
         for (i = num_possible_cpus() - 1; i >= 1; i--) {
@@ -2449,6 +2484,12 @@ static ssize_t store_hotplug_lock(struct kobject *a, struct attribute *b,
     
 	if ((ret != 1 || input < 0 || input > 8) && input != 0)
 	return -EINVAL;
+	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_lock != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
 	
 	if (input > 0) {
         for (i = 1; i < num_possible_cpus(); i++) {
@@ -2480,6 +2521,12 @@ static ssize_t store_hotplug_min_limit(struct kobject *a, struct attribute *b,
 	if ((ret != 1 || input < 0 || input > 8) && input != 0)
 	return -EINVAL;
 	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_min_limit != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
 	if (input > 0) {
         for (i = 1; i < num_possible_cpus(); i++) {
 			if (!cpu_online(i) && i < input && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
@@ -2509,12 +2556,12 @@ static ssize_t store_scaling_responsiveness_freq(struct kobject *a, struct attri
 	return -EINVAL;
 	
 	if (input == 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_responsiveness_freq != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
 	    dbs_tuners_ins.scaling_responsiveness_freq = input;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-	        dbs_tuners_ins.profile_number = 0;
-	        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 		return count;
 	}
 	
@@ -2527,12 +2574,12 @@ static ssize_t store_scaling_responsiveness_freq(struct kobject *a, struct attri
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    dbs_tuners_ins.scaling_responsiveness_freq = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_responsiveness_freq != input) {
 				dbs_tuners_ins.profile_number = 0;
 				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+			}
+		    dbs_tuners_ins.scaling_responsiveness_freq = input;
 		    return count;
 		}
 	}
@@ -2550,13 +2597,14 @@ static ssize_t store_scaling_responsiveness_up_threshold(struct kobject *a, stru
 	if (ret != 1 || input > 100 || input < 11 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.scaling_responsiveness_up_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_responsiveness_up_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_responsiveness_up_threshold = input;
+	
 	return count;
 }
 
@@ -2570,13 +2618,14 @@ static ssize_t store_scaling_block_threshold(struct kobject *a, struct attribute
 	if (((ret != 1 || input < 0 || input > 100) && input != 0) || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.scaling_block_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_block_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_block_threshold = input;
+	
 	return count;
 }
 
@@ -2593,13 +2642,14 @@ static ssize_t store_scaling_block_cycles(struct kobject *a, struct attribute *b
 	if (input == 0)
 	scaling_block_cycles_count = 0;
 	
-	dbs_tuners_ins.scaling_block_cycles = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_block_cycles != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_block_cycles = input;
+	
 	return count;
 }
 
@@ -2617,12 +2667,12 @@ static ssize_t store_scaling_block_freq(struct kobject *a, struct attribute *b, 
 	return -EINVAL;
 	
 	if (input == 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_block_freq != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
 	    dbs_tuners_ins.scaling_block_freq = input;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-	        dbs_tuners_ins.profile_number = 0;
-	        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 		return count;
 	}
 	
@@ -2635,12 +2685,12 @@ static ssize_t store_scaling_block_freq(struct kobject *a, struct attribute *b, 
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    dbs_tuners_ins.scaling_block_freq = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_block_freq != input) {
 				dbs_tuners_ins.profile_number = 0;
 				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+			}
+		    dbs_tuners_ins.scaling_block_freq = input;
 		    return count;
 		}
 	}
@@ -2657,13 +2707,14 @@ static ssize_t store_scaling_block_force_down(struct kobject *a, struct attribut
 	if (ret != 1 || input < 0 || input == 1 || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.scaling_block_force_down = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_block_force_down != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_block_force_down = input;
+	
 	return count;
 }
 
@@ -2682,12 +2733,12 @@ static ssize_t store_scaling_fastdown_freq(struct kobject *a, struct attribute *
 	return -EINVAL;
 	
 	if (input == 0) {
+		// ZZ: set profile number to 0 and profile name to custom mode if value changed
+		if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_fastdown_freq != input) {
+			dbs_tuners_ins.profile_number = 0;
+			strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+		}
 	    dbs_tuners_ins.scaling_fastdown_freq = input;
-	    // ZZ: set profile number to 0 and profile name to custom mode
-	    if (dbs_tuners_ins.profile_number != 0) {
-	        dbs_tuners_ins.profile_number = 0;
-	        strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-	    }
 		return count;
 	}
 	
@@ -2700,12 +2751,12 @@ static ssize_t store_scaling_fastdown_freq(struct kobject *a, struct attribute *
 	} else {
 	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
 		if (unlikely(table[i].frequency == input)) {
-		    dbs_tuners_ins.scaling_fastdown_freq = input;
-		    // ZZ: set profile number to 0 and profile name to custom mode
-		    if (dbs_tuners_ins.profile_number != 0) {
+			// ZZ: set profile number to 0 and profile name to custom mode if value changed
+			if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_fastdown_freq != input) {
 				dbs_tuners_ins.profile_number = 0;
 				strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
-		    }
+			}
+		    dbs_tuners_ins.scaling_fastdown_freq = input;
 		    return count;
 		}
 	}
@@ -2722,13 +2773,15 @@ static ssize_t store_scaling_fastdown_up_threshold(struct kobject *a, struct att
 	if (ret != 1 || input > 100 || input <= dbs_tuners_ins.scaling_fastdown_down_threshold || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.scaling_fastdown_up_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_fastdown_up_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_fastdown_up_threshold = input;
+	
+	// ZZ: set profile number to 0 and profile name to custom mode
 	return count;
 }
 
@@ -2742,13 +2795,14 @@ static ssize_t store_scaling_fastdown_down_threshold(struct kobject *a, struct a
 	if ((ret != 1 || input > 100 || (input < 11 && input >= dbs_tuners_ins.scaling_fastdown_up_threshold)) || set_profile_active == true)
 	return -EINVAL;
 	
-	dbs_tuners_ins.scaling_fastdown_down_threshold = input;
-	
-	// ZZ: set profile number to 0 and profile name to custom mode
-	if (dbs_tuners_ins.profile_number != 0) {
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.scaling_fastdown_down_threshold != input) {
 	    dbs_tuners_ins.profile_number = 0;
 	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
 	}
+	
+	dbs_tuners_ins.scaling_fastdown_down_threshold = input;
+	
 	return count;
 }
 
@@ -3486,13 +3540,13 @@ if (ret != 1 || set_profile_active == true)						\
 return -EINVAL;									\
 \
 if (input == 0) {									\
-dbs_tuners_ins.up_threshold_hotplug_freq##name = input;				\
-hotplug_thresholds_freq[0][core] = input;						\
-if (dbs_tuners_ins.profile_number != 0) {						\
+if (dbs_tuners_ins.profile_number != 0 && (dbs_tuners_ins.up_threshold_hotplug_freq##name != input || hotplug_thresholds_freq[0][core] == input)) {						\
 dbs_tuners_ins.profile_number = 0;						\
 strncpy(dbs_tuners_ins.profile, custom_profile,					\
 sizeof(dbs_tuners_ins.profile));						\
 }											\
+dbs_tuners_ins.up_threshold_hotplug_freq##name = input;				\
+hotplug_thresholds_freq[0][core] = input;						\
 return count;										\
 }											\
 \
@@ -3505,13 +3559,13 @@ return -EINVAL;									\
 } else {										\
 for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)		\
 if (unlikely(table[i].frequency == input)) {				\
-dbs_tuners_ins.up_threshold_hotplug_freq##name = input;			\
-hotplug_thresholds_freq[0][core] = input;				\
-if (dbs_tuners_ins.profile_number != 0) {				\
+if (dbs_tuners_ins.profile_number != 0 && (dbs_tuners_ins.up_threshold_hotplug_freq##name != input || hotplug_thresholds_freq[0][core] == input)) {				\
 dbs_tuners_ins.profile_number = 0;					\
 strncpy(dbs_tuners_ins.profile, custom_profile,			\
 sizeof(dbs_tuners_ins.profile));					\
 }									\
+dbs_tuners_ins.up_threshold_hotplug_freq##name = input;			\
+hotplug_thresholds_freq[0][core] = input;				\
 return count;								\
 }										\
 }											\
@@ -3532,13 +3586,13 @@ if (ret != 1 || set_profile_active == true)						\
 return -EINVAL;									\
 \
 if (input == 0) {									\
-dbs_tuners_ins.down_threshold_hotplug_freq##name = input;				\
-hotplug_thresholds_freq[1][core] = input;						\
-if (dbs_tuners_ins.profile_number != 0) {						\
+if (dbs_tuners_ins.profile_number != 0 && (dbs_tuners_ins.down_threshold_hotplug_freq##name != input || hotplug_thresholds_freq[1][core] == input)) {						\
 dbs_tuners_ins.profile_number = 0;						\
 strncpy(dbs_tuners_ins.profile, custom_profile,					\
 sizeof(dbs_tuners_ins.profile));						\
 }											\
+dbs_tuners_ins.down_threshold_hotplug_freq##name = input;				\
+hotplug_thresholds_freq[1][core] = input;						\
 return count;										\
 }											\
 \
@@ -3551,13 +3605,13 @@ return -EINVAL;									\
 } else {										\
 for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)		\
 if (unlikely(table[i].frequency == input)) {				\
-dbs_tuners_ins.down_threshold_hotplug_freq##name = input;		\
-hotplug_thresholds_freq[1][core] = input;				\
-if (dbs_tuners_ins.profile_number != 0) {				\
+if (dbs_tuners_ins.profile_number != 0 && (dbs_tuners_ins.down_threshold_hotplug_freq##name != input || hotplug_thresholds_freq[1][core] == input)) {				\
 dbs_tuners_ins.profile_number = 0;					\
 strncpy(dbs_tuners_ins.profile, custom_profile,			\
 sizeof(dbs_tuners_ins.profile));					\
 }									\
+dbs_tuners_ins.down_threshold_hotplug_freq##name = input;		\
+hotplug_thresholds_freq[1][core] = input;				\
 return count;								\
 }										\
 }											\
