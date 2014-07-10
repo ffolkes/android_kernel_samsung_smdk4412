@@ -903,7 +903,8 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	}
 
 #endif
-		flg_ctr_cpuboost = 20;
+		if (flg_screen_on)
+			flg_ctr_cpuboost = 20;
 		
 		tk_key_keycode = touchkey_keycode[keycode_type];
 
@@ -915,7 +916,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 				tk_key_keycode = sttg_tk_key1_key_code;
 				pr_info("[TK/custom] SET - key1 set to: %d\n", tk_key_keycode);
 				
-				if (pressed && sttg_tk_key1_key_code >= 900 || sttg_tk_key1_key_code == KEY_POWER) {
+				if (pressed && (sttg_tk_key1_key_code >= 900 || sttg_tk_key1_key_code == KEY_POWER)) {
 					// user wants to use a special keycode.
 					
 					press_button(sttg_tk_key1_key_code, false, true, false, false);
@@ -932,7 +933,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 				tk_key_keycode = sttg_tk_key2_key_code;
 				pr_info("[TK/custom] SET - key2 set to: %d\n", tk_key_keycode);
 				
-				if (pressed && sttg_tk_key2_key_code >= 900 || sttg_tk_key2_key_code == KEY_POWER) {
+				if (pressed && (sttg_tk_key2_key_code >= 900 || sttg_tk_key2_key_code == KEY_POWER)) {
 					// user wants to use a special keycode.
 					
 					press_button(sttg_tk_key2_key_code, false, true, false, false);
