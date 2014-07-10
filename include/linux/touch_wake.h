@@ -46,7 +46,7 @@ extern unsigned int sttg_ww_mode;
 extern unsigned int sttg_ww_linger;
 extern unsigned int sttg_ww_dismissled;
 extern bool sttg_ww_lightflow;
-extern bool flg_ww_trigger_noti;
+extern bool flg_ww_userspace_noti;
 extern bool sttg_ww_waveoff;
 extern void ww_set_disable_prox(unsigned int delay);
 extern void ww_disable_prox(void);

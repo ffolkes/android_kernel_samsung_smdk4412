@@ -26,6 +26,10 @@
 #include <linux/wakelock.h>
 #include <linux/input.h>
 
+#define HSL2RGB_H
+
+void RGBtoHSL(void);
+
 extern void touchscreen_enable(void);
 extern void touchscreen_disable(void);
 extern unsigned int flg_ctr_cpuboost;
@@ -36,6 +40,7 @@ extern unsigned int ctr_knocks;
 extern int ctr_kw_gyro_skip;
 extern void toggleRearLED(unsigned int level);
 extern void controlRearLED(unsigned int level);
+extern struct timeval time_ledtriggered;
 
 static struct timer_list timer_backblink;
 bool flg_bb_active = false;
@@ -48,6 +53,9 @@ static int ctr_bb_rearblinkon = 0;
 static int ctr_bb_rearblinkoff = 0;
 static int ctr_bb_blinkgroup_on = 0;
 static int ctr_bb_blinkgroup_off = 0;
+unsigned int bb_color_r = 0;
+unsigned int bb_color_g = 0;
+unsigned int bb_color_b = 0;
 
 unsigned int sttg_bb_mode = 1; // 0 = off, 1 = on
 bool sttg_bb_magcheck = true;
@@ -62,6 +70,13 @@ unsigned int sttg_bb_blinkgroup_on_size = 0; // how many flashes-on in each grou
 unsigned int sttg_bb_blinkgroup_on_delay = 500; // how long between each group
 unsigned int sttg_bb_blinkgroup_off_size = 0; // how many flashes-on in each group
 unsigned int sttg_bb_blinkgroup_off_delay = 1000; // how long between each group
+
+unsigned int use_sttg_bb_dutycycle_on = 0;
+unsigned int use_sttg_bb_dutycycle_off = 0;
+unsigned int use_sttg_bb_blinkgroup_on_size = 0;
+unsigned int use_sttg_bb_blinkgroup_on_delay = 0;
+unsigned int use_sttg_bb_blinkgroup_off_size = 0;
+unsigned int use_sttg_bb_blinkgroup_off_delay = 0;
 
 bool flg_kw_gyro_on = false;
 bool flg_tw_prox_on = false;
@@ -107,7 +122,7 @@ unsigned int sttg_ww_dismissled = 0;
 bool sttg_ww_noredundancies = true;
 bool sttg_ww_lightflow = false;
 bool sttg_ww_trigger_noti_only = false;
-bool flg_ww_trigger_noti = false;
+bool flg_ww_userspace_noti = false;
 
 unsigned int sttg_kw_mode = 0; // disabled.
 int64_t sttg_kw_resolution = 60000000;
@@ -186,6 +201,210 @@ int ctr_ww_prox_hits = 1;
 #define POWERPRESS_TIMEOUT 0
 
 #define DEBUG_PRINT
+
+void bb_set_blinkpattern_manual(void)
+{
+	use_sttg_bb_dutycycle_on = sttg_bb_dutycycle_on;
+	use_sttg_bb_dutycycle_off = sttg_bb_dutycycle_off;
+	use_sttg_bb_blinkgroup_on_size = sttg_bb_blinkgroup_on_size;
+	use_sttg_bb_blinkgroup_on_delay = sttg_bb_blinkgroup_on_delay;
+	use_sttg_bb_blinkgroup_off_size = sttg_bb_blinkgroup_off_size;
+	use_sttg_bb_blinkgroup_off_delay = sttg_bb_blinkgroup_off_delay;
+	
+	pr_info("[TW/bb_set_blinkpattern_manual] reset to user-defined defaults\n");
+}
+
+void bb_set_blinkpattern_autorgb(unsigned int r, unsigned int g, unsigned int b)
+{
+	unsigned int r_percent = (r / 255);
+	unsigned int g_percent = (g / 255);
+	unsigned int b_percent = (b / 255);
+	unsigned int max_color = 0;
+	unsigned int min_color = 0;
+	unsigned int h = 0;
+	
+	if (!r && !g && !b) {
+		// found 0, 0, 0.
+		// reset to user-defined values and return.
+		
+		bb_set_blinkpattern_manual();
+		return;
+	}
+	
+	if (r == g && r == b) {
+		// neutral color.
+		
+		use_sttg_bb_dutycycle_on = 20;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] NEUTRAL\n");
+		
+		// we're done.
+		return;
+	}
+	
+	// calculate hue from RGB values.
+	
+	if ((r_percent >= g_percent) && (r_percent >= b_percent)) {
+		max_color = r_percent;
+	}
+	
+	if ((g_percent >= r_percent) && (g_percent >= b_percent)) {
+		max_color = g_percent;
+	}
+	
+	if ((b_percent >= r_percent) && (b_percent >= g_percent)) {
+		max_color = b_percent;
+	}
+	
+	if ((r_percent <= g_percent) && (r_percent <= b_percent)) {
+		min_color = r_percent;
+	}
+	
+	if ((g_percent <= r_percent) && (g_percent <= b_percent)) {
+		min_color = g_percent;
+	}
+	
+	if ((b_percent <= r_percent) && (b_percent <= g_percent)) {
+		min_color = b_percent;
+	}
+	
+	if (max_color == min_color) {
+		
+		h = 0;
+		
+	} else {
+		
+		if (max_color == r_percent) {
+			h = (g_percent - b_percent) / (max_color - min_color);
+		}
+		
+		if (max_color == g_percent) {
+			h = 2 + (b_percent - r_percent) / (max_color - min_color);
+		}
+		
+		if (max_color == b_percent) {
+			h = 4 + (r_percent - g_percent) / (max_color - min_color);
+		}
+	}
+	
+	h = h * 60;
+	
+	if (h < 0) {
+		h += 360;
+	}
+	
+	pr_info("[TW/bb_set_blinkpattern_autorgb] h: %d\n", h);
+	
+	if (h <= 20 || h >= 330) {
+		// red.
+		
+		use_sttg_bb_dutycycle_on = 20;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] RED\n");
+		
+	} else if (h <= 20 || h <= 50) {
+		// orange.
+		
+		use_sttg_bb_dutycycle_on = 40;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] ORANGE\n");
+		
+	} else if (h <= 50 || h <= 67) {
+		// yellow.
+		
+		use_sttg_bb_dutycycle_on = 60;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] YELLOW\n");
+		
+	} else if (h <= 65 || h <= 160) {
+		// green.
+		
+		use_sttg_bb_dutycycle_on = 80;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] GREEN\n");
+		
+	} else if (h <= 160 || h <= 170) {
+		// teal.
+		
+		use_sttg_bb_dutycycle_on = 100;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] TEAL\n");
+		
+	} else if (h <= 170 || h <= 190) {
+		// cyan.
+		
+		use_sttg_bb_dutycycle_on = 120;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] CYAN\n");
+		
+	} else if (h <= 190 || h <= 260) {
+		// blue.
+		
+		use_sttg_bb_dutycycle_on = 140;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] BLUE\n");
+		
+	} else if (h <= 260 || h <= 290) {
+		// purple.
+		
+		use_sttg_bb_dutycycle_on = 160;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] PURPLE\n");
+		
+	} else if (h <= 290 || h <= 330) {
+		// pink.
+		
+		use_sttg_bb_dutycycle_on = 180;
+		use_sttg_bb_dutycycle_off = 100;
+		use_sttg_bb_blinkgroup_on_size = 0;
+		use_sttg_bb_blinkgroup_on_delay = 0;
+		use_sttg_bb_blinkgroup_off_size = 0;
+		use_sttg_bb_blinkgroup_off_delay = 0;
+		pr_info("[TW/bb_set_blinkpattern_autorgb] PINK\n");
+		
+	} else {
+		// unknown.
+		
+		bb_set_blinkpattern_manual();
+		pr_info("[TW/bb_set_blinkpattern_autorgb] UNKNOWN - reset to user-defined values\n");
+	}
+}
 
 static void press_power()
 {
@@ -278,6 +497,15 @@ static void touchwake_early_suspend(struct early_suspend * h)
     flg_touchwake_pressed = false;
     flg_touchwake_active = true;
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
+	
+	if (sttg_touchwake_ignoretkeys) {
+		// touchkeys are being ignored, so turn the hardware off.
+		
+		if (touchwake_imp) {
+			pr_info("[TW/early_suspend] TKEYS - TURNING OFF\n");
+			touchwake_imp->disable();
+		}
+	}
     
     if (sttg_touchwake_persistent) {
         // if we are in persistent mode, don't go beyond this if-statement.
@@ -395,7 +623,7 @@ static void touchwake_late_resume(struct early_suspend * h)
 	cancel_delayed_work_sync(&touchoff_work);
     cancel_delayed_work_sync(&touchwake_reset_swipeonly_work);
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
-	flg_ww_trigger_noti = false;
+	flg_ww_userspace_noti = false;
 	flg_ctr_cpuboost_mid = 0;
 	//flush_scheduled_work();
 	
@@ -1353,6 +1581,9 @@ static ssize_t bb_test_write(struct device * dev, struct device_attribute * attr
 			ctr_bb_blinkgroup_on = 0;
 			ctr_bb_blinkgroup_off = 0;
 			
+			// use manual pattern.
+			bb_set_blinkpattern_manual();
+			
 			// start blinker.
 			flg_bb_testmode = true;
 			mod_timer(&timer_backblink,
@@ -1502,10 +1733,45 @@ static ssize_t ww_trigger_noti_only_write(struct device * dev, struct device_att
 static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
 {
 	unsigned int data;
-	static struct timeval time_now;
-	static unsigned int time_since_manualtrigger;
+	//static struct timeval time_now;
+	//static unsigned int time_since_manualtrigger;
+	//static unsigned int time_since_ledtriggered;
 	
 	if(sscanf(buf, "%u\n", &data) == 1) {
+		
+		// the purpose of this is to let us know when to ignore the antiredundancy checks
+		// in the led hook. otherwise, repeated things (sms, etc) wouldn't know to trigger
+		// a new ww/bb event.
+		
+		pr_info("[TW/ww/manual] userspace has requested a manual noti\n");
+		
+		if ((sttg_ww_mode || sttg_bb_mode) && !flg_screen_on) {
+			
+			pr_info("[TW/ww/manual] saving manual trigger time\n");
+			do_gettimeofday(&time_ww_last_manualtrigger);
+			
+			// boost the cpu.
+			if (sttg_ww_linger > 0) {
+				// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcoded 30 sec max.
+				flg_ctr_cpuboost_mid = min((int) (5 * (sttg_ww_linger / 1000)), 150);
+			} else {
+				// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
+				flg_ctr_cpuboost_mid = 50; // ~10 seconds
+			}
+			
+			pr_info("[TW/ww/manual] flg_ctr_cpuboost: %d\n", flg_ctr_cpuboost);
+			
+			flg_ww_userspace_noti = true;
+			pr_info("[TW/ww/manual] userspace has set flg_ww_userspace_noti\n");
+			
+		}
+		
+		/*if (!sttg_ww_trigger_noti_mode) {
+			// user doesn't want manual noti's.
+			return size;
+		}
+		
+		pr_info("[TW/ww/manual] userspace has requested a manual noti\n");
 		
 		// leave this outside of the IF for global benefit.
 		if (flg_ctr_cpuboost < 5) {
@@ -1523,8 +1789,24 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 		
 		if ((sttg_ww_mode > 0 || sttg_bb_mode) && !flg_screen_on && !flg_ww_prox_on && time_since_manualtrigger > 3000) {
 			
-			flg_ww_trigger_noti = true;
-			pr_info("[TW/ww/manual] userspace has set flg_ww_trigger_noti\n");
+			flg_ww_bypass_antiredundancy = true;
+			pr_info("[TW/ww/manual] userspace has set flg_ww_bypass_antiredundancy\n");
+			
+			// when was bb triggered by the led last?
+			time_since_ledtriggered = (time_now.tv_sec - time_ledtriggered.tv_sec) * MSEC_PER_SEC +
+										(time_now.tv_usec - time_ledtriggered.tv_usec) / USEC_PER_MSEC;
+			
+			if (time_since_ledtriggered > 2000) {
+				// it has been at least 2 seconds since the led was called.
+				// this means this manual noti should use manual timings,
+				// as it's consider its own event now.
+				
+				pr_info("[TW/ww/manual] resetting bb_colors\n");
+				
+				bb_color_r = 0;
+				bb_color_g = 0;
+				bb_color_b = 0;
+			}
 			
 			if (sttg_ww_linger > 0) {
 				// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcoded 30 sec max.
@@ -1552,7 +1834,7 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 				// if this is a bb event, schedule just a blip.
 				ww_set_disable_prox(200);
 			}
-		}
+		}*/
 	}
 	
 	return size;
@@ -2560,23 +2842,120 @@ static struct miscdevice touchwake_device =
 	.name = "touchwake",
 };
 
-static void bb_magcheck_off_work(struct work_struct * work_bb_magcheck_off)
+static void bb_start(void)
 {
 	unsigned int tmp_set_disable_prox = 0;
 	unsigned int tmp_blinkgroups = 0;
 	
+	pr_info("[TW/bb/bb_start] ACTIVATING BACKBLINK\n");
+	
+	// reset some backblink blinker stuff.
+	ctr_bb_rearblink = 0;
+	ctr_bb_rearblinkon = 0;
+	ctr_bb_rearblinkoff = 0;
+	ctr_bb_blinkgroup_on = 0;
+	ctr_bb_blinkgroup_off = 0;
+	
+	// use auto or manual blink timing?
+	if (sttg_bb_mode == 2 && (bb_color_r || bb_color_g || bb_color_b)) {
+		// auto mode requested, and colors are set.
+		
+		// set auto blink pattern.
+		pr_info("[TW/bb/bb_start] setting auto blink pattern based on color\n");
+		bb_set_blinkpattern_autorgb(bb_color_r, bb_color_g, bb_color_b);
+		
+	} else {
+		
+		// use normal blink pattern.
+		pr_info("[TW/bb/bb_start] setting user blink pattern\n");
+		bb_set_blinkpattern_manual();
+	}
+	
+	// start the blink timer.
+	flg_bb_active = true;
+	
+	mod_timer(&timer_backblink,
+			  jiffies + msecs_to_jiffies(300));
+	
+	// now the rear led is blinking. each blink will count up
+	// until the threshold is met, then it will stop on its own.
+	// on its last blink, it will turn the prox off.
+	
+	// however, the prox will turn itself off probably too soon,
+	// so reset it to match roughly (bb_dutyon + bb_dutyoff) * bb_limit.
+	// remember to subtract one bb_dutyoff, since the limit stops the instant
+	// the last bb_dutyoff starts.
+	
+	tmp_set_disable_prox = ((sttg_bb_dutycycle_on * sttg_bb_limit) + (sttg_bb_dutycycle_off * (sttg_bb_limit - 1)));
+	
+	pr_info("[TW/bb/bb_start] backblink extending prox timeout to: %d ms\n", tmp_set_disable_prox);
+	
+	if (sttg_bb_blinkgroup_on_size && sttg_bb_limit > sttg_bb_blinkgroup_on_size) {
+		// there is an on-blinkgroup we need to factor in.
+		// make sure the limit is greater than the groupsize, otherwise there's no point.
+		
+		// for example
+		// total limit: 10
+		// blinkgroup delay: 500ms
+		// blinkgroup size: 2
+		// total limit / size = 10 / 2 = 5
+		// subract one group, since it will be clipped: 5 - 1 = 4
+		// 4 groups * delay = 4 * 500 = 2000ms extra needed
+		// don't forget: each blinkgroup delay replaces a normal delay, so subtract those. -= 5 groups * dutyoff
+		
+		// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
+		// add to the existing value as calculated already.
+		tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_on_size);
+		
+		// calculate new estimated backblink timeout.
+		tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_on_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_on));
+		
+		pr_info("[TW/bb/bb_start] on-blinkgroup detected, recalculated extension to: %d ms\n", tmp_set_disable_prox);
+	}
+	
+	if (sttg_bb_blinkgroup_off_size && sttg_bb_limit > sttg_bb_blinkgroup_off_size) {
+		// there is an off-blinkgroup we need to factor in.
+		// make sure the limit is greater than the groupsize, otherwise there's no point.
+		
+		// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
+		// add to the existing value as calculated already.
+		tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_off_size);
+		
+		// calculate new estimated backblink timeout.
+		tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_off_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_off));
+		
+		// this isn't needed, since on the final run it stops itself before it even thinks to do an extra off-blinkgroup.
+		/*// if blinkgroup_off_size fits evenly into bb_limit, we know we will stop before
+		 // the final off-blinkgroup, so subtract one.
+		 if (sttg_bb_limit % sttg_bb_blinkgroup_off_size == 0) {
+		 //
+		 pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had no remainder\n", sttg_bb_limit, tmp_blinkgroups);
+		 tmp_set_disable_prox -= sttg_bb_blinkgroup_off_delay;
+		 } else {
+		 pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had a remainder\n", sttg_bb_limit, tmp_blinkgroups);
+		 }*/
+		
+		pr_info("[TW/bb/bb_start] off-blinkgroup detected, recalculated extension to: %d ms. there were %d estimated blinkgroups\n", tmp_set_disable_prox, tmp_blinkgroups);
+	}
+	
+	ww_set_disable_prox(tmp_set_disable_prox);
+}
+
+static void bb_magcheck_off_work(struct work_struct * work_bb_magcheck_off)
+{
+	// turn off the mag sensor if need be.
 	if (sttg_bb_magcheck) {
 		// if magcheck is enabled, assume the sensor was on.
 		
-		pr_info("[TW/ww/backblink/magcheckoff] turning off mag sensor\n");
-		
+		// set this asap.
 		flg_bb_magcheck = false;
 		
-		// so turn it off now.
+		// turn off the sensor.
+		pr_info("[TW/bb/magcheckoff] TURNING OFF - MAG\n");
 		forceDisableSensor(2);
 	}
 	
-	// mag check is complete or uncalled.
+	// was the magcheck successful?
 	if ((sttg_bb_magcheck && (flg_bb_magpassed || !flg_ctr_bb_magchecks))
 		|| !sttg_bb_magcheck) {
 		// IF magcheck was called and completed
@@ -2584,102 +2963,43 @@ static void bb_magcheck_off_work(struct work_struct * work_bb_magcheck_off)
 		// IF magcheck was never called.
 		// anyway, now bb has been validated, so it's time to blink.
 		
-		pr_info("[TW/ww/backblink] backblink activating\n");
-		
-		// reset some backblink blinker stuff.
-		ctr_bb_rearblink = 0;
-		ctr_bb_rearblinkon = 0;
-		ctr_bb_rearblinkoff = 0;
-		ctr_bb_blinkgroup_on = 0;
-		ctr_bb_blinkgroup_off = 0;
-		
-		// start the blink timer.
-		flg_bb_active = true;
-		
-		mod_timer(&timer_backblink,
-				  jiffies + msecs_to_jiffies(300));
-		
-		// now the rear led is blinking. each blink will count up
-		// until the threshold is met, then it will stop on its own.
-		// on its last blink, it will turn the prox off.
-		
-		// however, the prox will turn itself off probably too soon,
-		// so reset it to match roughly (bb_dutyon + bb_dutyoff) * bb_limit.
-		// remember to subtract one bb_dutyoff, since the limit stops the instant
-		// the last bb_dutyoff starts.
-		
-		tmp_set_disable_prox = ((sttg_bb_dutycycle_on * sttg_bb_limit) + (sttg_bb_dutycycle_off * (sttg_bb_limit - 1)));
-		
-		pr_info("[TW/ww/backblink] backblink resetting set_disable_prox to %d ms\n", tmp_set_disable_prox);
-		
-		if (sttg_bb_blinkgroup_on_size && sttg_bb_limit > sttg_bb_blinkgroup_on_size) {
-			// there is an on-blinkgroup we need to factor in.
-			// make sure the limit is greater than the groupsize, otherwise there's no point.
-			
-			// for example
-			// total limit: 10
-			// blinkgroup delay: 500ms
-			// blinkgroup size: 2
-			// total limit / size = 10 / 2 = 5
-			// subract one group, since it will be clipped: 5 - 1 = 4
-			// 4 groups * delay = 4 * 500 = 2000ms extra needed
-			// don't forget: each blinkgroup delay replaces a normal delay, so subtract those. -= 5 groups * dutyoff
-			
-			// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
-			// add to the existing value as calculated already.
-			tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_on_size);
-			
-			// calculate new estimated backblink timeout.
-			tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_on_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_on));
-			
-			pr_info("[TW/ww/backblink] on-blinkgroup detected, recalculated set_disable_prox to %d ms\n", tmp_set_disable_prox);
-		}
-		
-		if (sttg_bb_blinkgroup_off_size && sttg_bb_limit > sttg_bb_blinkgroup_off_size) {
-			// there is an off-blinkgroup we need to factor in.
-			// make sure the limit is greater than the groupsize, otherwise there's no point.
-			
-			// calculate estimated amount of blinkgroups. since all we're doing is adding extended delays,
-			// add to the existing value as calculated already.
-			tmp_blinkgroups = (sttg_bb_limit / sttg_bb_blinkgroup_off_size);
-			
-			// calculate new estimated backblink timeout.
-			tmp_set_disable_prox += ((tmp_blinkgroups * sttg_bb_blinkgroup_off_delay) - (tmp_blinkgroups * sttg_bb_dutycycle_off));
-			
-			// this isn't needed, since on the final run it stops itself before it even thinks to do an extra off-blinkgroup.
-			/*// if blinkgroup_off_size fits evenly into bb_limit, we know we will stop before
-			 // the final off-blinkgroup, so subtract one.
-			 if (sttg_bb_limit % sttg_bb_blinkgroup_off_size == 0) {
-			 //
-			 pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had no remainder\n", sttg_bb_limit, tmp_blinkgroups);
-			 tmp_set_disable_prox -= sttg_bb_blinkgroup_off_delay;
-			 } else {
-			 pr_info("[TW/ww/backblink] bb_limit: %d divided by off-blinkgroups: %d had a remainder\n", sttg_bb_limit, tmp_blinkgroups);
-			 }*/
-			
-			pr_info("[TW/ww/backblink] off-blinkgroup detected, recalculated set_disable_prox to %d ms. there were %d groups.\n", tmp_set_disable_prox, tmp_blinkgroups);
-		}
-		
-		ww_set_disable_prox(tmp_set_disable_prox);
+		bb_start();
 		
 	} else {
 		// the magcheck failed.
 		// turn the prox off, and drop the wakelock.
 		
-		pr_info("[TW/ww/backblink/magcheckoff] turning off prox\n");
-		
+		pr_info("[TW/bb/magcheckoff] TURNING OFF - PROX\n");
 		forceDisableSensor(5);
 		wake_unlock(&wavewake_wake_lock);
-		pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+		pr_info("[TW/bb/magcheckoff] UNLOCKED wavewake_wake_lock\n");
+		
+		// anytime we prematurely turn the prox off, we run the risk
+		// that prox_near will never be reset, so make sure it's false.
 		prox_near = false;
 	}
-	
-	return;
 }
 
 static void timerhandler_backblink()
 {
 	static unsigned int tmp_sttg_bb_dutycycle;
+	
+	// sanity checks.
+	if (!use_sttg_bb_dutycycle_on) {
+		use_sttg_bb_dutycycle_on = 1;
+	}
+	
+	if (!use_sttg_bb_dutycycle_off) {
+		use_sttg_bb_dutycycle_off = 1;
+	}
+	
+	if (!use_sttg_bb_blinkgroup_on_delay) {
+		use_sttg_bb_blinkgroup_on_delay = 1;
+	}
+	
+	if (!use_sttg_bb_blinkgroup_off_delay) {
+		use_sttg_bb_blinkgroup_off_delay = 1;
+	}
 	
 	// increment total blink counter.
 	ctr_bb_rearblink++;
@@ -2690,7 +3010,7 @@ static void timerhandler_backblink()
 		
 		// increment total blinks on, and update intended timer duration.
 		ctr_bb_rearblinkon++;
-		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_on;
+		tmp_sttg_bb_dutycycle = use_sttg_bb_dutycycle_on;
 		
 		// increment blinks on. this variable gets reset when the on-blinkgroup size threshold is met.
 		ctr_bb_blinkgroup_on++;
@@ -2698,11 +3018,11 @@ static void timerhandler_backblink()
 		// toggle rearled at brightness level 1.
 		toggleRearLED(sttg_bb_brightness);
 		
-		pr_info("[TW/backblinkhandler] toggled rear led ON. total blinks: %i, blinks on: %i, blinks off: %i\n",
+		pr_info("[TW/bb/backblinkhandler] toggled rear led ON. total blinks: %i, blinks on: %i, blinks off: %i\n",
 				ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff);
 		
 		// blink group-on gets calculated on the ON cycle.
-		if (sttg_bb_blinkgroup_on_size && ctr_bb_blinkgroup_on >= sttg_bb_blinkgroup_on_size) {
+		if (use_sttg_bb_blinkgroup_on_size && ctr_bb_blinkgroup_on >= use_sttg_bb_blinkgroup_on_size) {
 			// the user wants to divide the blinks into groups.
 			// if we are here, we have met the threshold to inject a delay for ON.
 			
@@ -2713,10 +3033,10 @@ static void timerhandler_backblink()
 			// then resets itself.
 			
 			// inject the blinkgroup delay.
-			tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_on_delay;
+			tmp_sttg_bb_dutycycle = use_sttg_bb_blinkgroup_on_delay;
 			
-			pr_info("[TW/backblinkhandler] blinkgroup ON threshold reached. ctr_bb_blinkgroup_on: %d, sttg_bb_blinkgroup_on_size: %d, new delay: %d\n",
-					ctr_bb_blinkgroup_on, sttg_bb_blinkgroup_on_size, sttg_bb_blinkgroup_on_delay);
+			pr_info("[TW/bb/backblinkhandler] blinkgroup ON threshold reached. ctr_bb_blinkgroup_on: %d, sttg_bb_blinkgroup_on_size: %d, new delay: %d\n",
+					ctr_bb_blinkgroup_on, use_sttg_bb_blinkgroup_on_size, sttg_bb_blinkgroup_on_delay);
 			
 			// reset the counter.
 			ctr_bb_blinkgroup_on = 0;
@@ -2727,7 +3047,7 @@ static void timerhandler_backblink()
 		
 		// increment total blinks off, and update intended timer duration.
 		ctr_bb_rearblinkoff++;
-		tmp_sttg_bb_dutycycle = sttg_bb_dutycycle_off;
+		tmp_sttg_bb_dutycycle = use_sttg_bb_dutycycle_off;
 		
 		// increment blinks on. this variable gets reset when the on-blinkgroup size threshold is met.
 		ctr_bb_blinkgroup_off++;
@@ -2738,7 +3058,7 @@ static void timerhandler_backblink()
 		if (ctr_bb_rearblinkoff >= sttg_bb_limit) {
 			// we have blinked enough, turn off completely.
 			
-			pr_info("[TW/backblinkhandler] backblink limit reached, turned rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i, limit: %d\n",
+			pr_info("[TW/bb/backblinkhandler] backblink limit reached, turned rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i, limit: %d\n",
 					ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff, sttg_bb_limit);
 			
 			// reset the test flag, just in case this entire run was a test.
@@ -2760,7 +3080,7 @@ static void timerhandler_backblink()
 			// we still have at least another cycle to go, so toggle it off.
 			
 			// blink group gets calculated on the OFF cycle.
-			if (sttg_bb_blinkgroup_off_size && ctr_bb_blinkgroup_off >= sttg_bb_blinkgroup_off_size) {
+			if (use_sttg_bb_blinkgroup_off_size && ctr_bb_blinkgroup_off >= use_sttg_bb_blinkgroup_off_size) {
 				// the user wants to divide the blinks into groups.
 				// if we are here, we have met the threshold to inject a delay for OFF.
 				
@@ -2771,16 +3091,16 @@ static void timerhandler_backblink()
 				// then resets itself.
 				
 				// inject the blinkgroup delay.
-				tmp_sttg_bb_dutycycle = sttg_bb_blinkgroup_off_delay;
+				tmp_sttg_bb_dutycycle = use_sttg_bb_blinkgroup_off_delay;
 				
-				pr_info("[TW/backblinkhandler] blinkgroup OFF threshold reached. ctr_bb_blinkgroup_off: %d, sttg_bb_blinkgroup_off_size: %d, new delay: %d\n",
-						ctr_bb_blinkgroup_off, sttg_bb_blinkgroup_off_size, sttg_bb_blinkgroup_off_delay);
+				pr_info("[TW/bb/backblinkhandler] blinkgroup OFF threshold reached. ctr_bb_blinkgroup_off: %d, sttg_bb_blinkgroup_off_size: %d, new delay: %d\n",
+						ctr_bb_blinkgroup_off, use_sttg_bb_blinkgroup_off_size, use_sttg_bb_blinkgroup_off_delay);
 				
 				// reset the counter.
 				ctr_bb_blinkgroup_off = 0;
 			}
 			
-			pr_info("[TW/backblinkhandler] toggled rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i\n",
+			pr_info("[TW/bb/backblinkhandler] toggled rear led OFF. total blinks: %i, blinks on: %i, blinks off: %i\n",
 					ctr_bb_rearblink, ctr_bb_rearblinkon, ctr_bb_rearblinkoff);
 			
 			// toggle rearled at brightness level 1.
@@ -2788,7 +3108,7 @@ static void timerhandler_backblink()
 		}
 	}
 	
-	pr_info("[TW/backblinkhandler] recycling timer to start again in %d ms\n", tmp_sttg_bb_dutycycle);
+	pr_info("[TW/bb/backblinkhandler] recycling timer to start again in %d ms\n", tmp_sttg_bb_dutycycle);
 	
 	// recycle timer.
 	mod_timer(&timer_backblink,
@@ -2798,43 +3118,48 @@ static void timerhandler_backblink()
 void proximity_detected(void)
 {
 	struct timeval time_now;
-	unsigned int time_since_ledwenton;
-	unsigned int time_since_manualtrigger;
+	unsigned int time_since_ledtriggered;
 	
-	// remember to reset prox_near if exiting early, or else tsp will lock itself out because it thinks there is always something there.
+	// remember to reset prox_near if exiting early, or else tsp will
+	// lock itself out because it thinks there is always something there.
 	prox_near = true;
 	
 #ifdef DEBUG_PRINT
 	pr_info("[TOUCHWAKE] Proximity enabled\n");
 #endif
 	
-	do_gettimeofday(&time_now);
-	
-	time_since_ledwenton = (time_now.tv_sec - time_ledwenton.tv_sec) * MSEC_PER_SEC +
-							(time_now.tv_usec - time_ledwenton.tv_usec) / USEC_PER_MSEC;
-	
-	time_since_manualtrigger = (time_now.tv_sec - time_ww_last_manualtrigger.tv_sec) * MSEC_PER_SEC +
-							(time_now.tv_usec - time_ww_last_manualtrigger.tv_usec) / USEC_PER_MSEC;
-	
 	// do the touchwake waveoff check first.
 	if (flg_tw_prox_on) {
-		pr_info("[TW/SSP] ACTIVATED - pressing power!\n");
-		pr_info("[TW/SSP] PROX - DISABLE - touchwake is pressing power\n");
+		
+		pr_info("[TW/proximity_detected] TURNING OFF - PROX - touchwake is pressing power\n");
+		forceDisableSensor(5);
+		
+		// reset some stuff.
 		flg_tw_prox_on = false;
 		prox_near = false;
-		forceDisableSensor(5);
+		
+		// turn on.
+		pr_info("[TW/proximity_detected] PRESSPOWER\n");
 		press_power();
+		
+		// we're done.
 		return;
 	}
 	
+	do_gettimeofday(&time_now);
+	
+	// calculate time since led hook triggered prox on.
+	time_since_ledtriggered = (time_now.tv_sec - time_ledtriggered.tv_sec) * MSEC_PER_SEC +
+	(time_now.tv_usec - time_ledtriggered.tv_usec) / USEC_PER_MSEC;
+	
 	// we need to know if the sensor was already blocked when it came on,
 	// or did something move in the way.
-	if (time_since_ledwenton > 400 && time_since_manualtrigger > 400) {
+	if (time_since_ledtriggered > 400) {
 		// if the sensor hasn't said it is blocked by now, assume it's clear.
 		
 		if (sttg_ww_mode > 0) {
 			
-			pr_info("[TW/SSP/ww] ww is enabled. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
+			pr_info("[TW/SSP/ww] ww is enabled. time since LED: %d\n", time_since_ledtriggered);
 			
 			if (flg_ww_prox_on) {
 				
@@ -2899,7 +3224,7 @@ void proximity_detected(void)
 		
 		// reset some stuff.
 		ctr_ww_prox_hits = sttg_ww_mode;
-		flg_ww_trigger_noti = false;
+		flg_ww_userspace_noti = false;
 		
 		if (flg_ww_prox_on) {
 			// only mess with the prox sensor if we turned it on.
@@ -2914,25 +3239,37 @@ void proximity_detected(void)
 				flg_ctr_bb_magchecks = 0;
 				flg_bb_magpassed = false;
 				
-				pr_info("[TW/ww/backblink] holding out prox and turning on mag sensor and scheduling work to check it in %d ms\n", 500);
+				// does the user want a magcheck?
+				if (sttg_bb_magcheck) {
+					
+					pr_info("[TW/ww/bb/proximity_detected] holding out prox, turning on mag sensor, and scheduling work to check it in %d ms\n", 500);
+					
+					// extend prox timeout to give mag sensor a chance to work.
+					ww_set_disable_prox(550);
+					
+					// turn on mag sensor.
+					forceEnableSensor(2, false);
+					
+					// give it a little time, then schedule work to see
+					// if the magcheck passed or failed.
+					schedule_delayed_work(&work_bb_magcheck_off, msecs_to_jiffies(500));
+					
+					// we're done.
+					return;
+				}
 				
-				// extend prox timeout to give mag sensor a chance to work.
-				ww_set_disable_prox(550);
+				pr_info("[TW/ww/bb/proximity_detected] magcheck not enabled\n");
 				
-				// turn on mag sensor.
-				forceEnableSensor(2, false);
-				
-				// give it a little time, then schedule work to see
-				// if the magcheck passed or failed.
-				schedule_delayed_work(&work_bb_magcheck_off, msecs_to_jiffies(500));
+				// no magcheck, so start now.
+				bb_start();
 				
 			} else {
 				// prox was blocked, and backblink is disabled, so assume it's in a pocket and turn prox off.
 				
-				pr_info("[TW/SSP/ww] disable prox for this entire event. time since LED: %d, time since manual: %d\n", time_since_ledwenton, time_since_manualtrigger);
+				pr_info("[TW/ww/proximity_detected] TURNING OFF - PROX - time since led hook triggered prox: %d\n", time_since_ledtriggered);
 				forceDisableSensor(5);
 				wake_unlock(&wavewake_wake_lock);
-				pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+				pr_info("[TW/ww/proximity_detected] UNLOCKED wavewake_wake_lock\n");
 				prox_near = false;
 			}
 		}
@@ -2950,7 +3287,7 @@ void proximity_off(void)
 		// if backblink is active, then now it looks like someone lifted the device.
 		// stop the blinking, and turn prox off.
 		
-		pr_info("[TW/ww/backblink] backblink is active. disabling timer, rear led, and prox now\n");
+		pr_info("[TW/bb/proximity_off] backblink is active but needs to be turned off. disabling timer, rear led, and prox now\n");
 		
 		// turn off backblink.
 		flg_bb_active = false;
@@ -2960,16 +3297,17 @@ void proximity_off(void)
 		controlRearLED(0);
 		
 		// todo: make prox off into a function.
-		pr_info("[TW/ssp/ww/backblink] prox cleared, disable backblink\n");
+		pr_info("[TW/ww/bb/proximity_off] TURNING OFF - PROX\n");
 		forceDisableSensor(5);
 		wake_unlock(&wavewake_wake_lock);
-		pr_info("[SSP/ww] unlocked wavewake_wake_lock\n");
+		pr_info("[TW/ww/bb/proximity_off] UNLOCKED wavewake_wake_lock\n");
 		
 		if (!flg_screen_on && sttg_bb_poweron_clearedobstacle) {
 			// since the prox block has been cleared (presumably
 			// the user has picked the device up), the user
 			// has the option to turn the power on now.
 			
+			pr_info("[TW/ww/bb/proximity_off] PRESSPOWER - obstacle cleared\n");
 			press_power();
 		}
 	}
