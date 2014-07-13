@@ -530,7 +530,9 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define MAX_CORES					(4)
 
 // Yank: enable/disable debugging code
-//#define ZZMOOVE_DEBUG
+#define ZZMOOVE_DEBUG
+
+#define DEBUG_LEVEL				(0)		// ff: enable verbose kmsg debugging. 1 = basic (boosters, etc), 2 = more, 3 = max
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -730,6 +732,9 @@ static unsigned int boost_on_tk = DEF_INPUTBOOST_ON_TK;		// hardcoded since it'd
 static int flg_ctr_inputboost = 0;
 static int flg_ctr_inputboost_punch = 0;
 
+// ff: misc. variables
+static unsigned int flg_debug = DEBUG_LEVEL;
+
 struct work_struct hotplug_offline_work;			// ZZ: hotplugging down work
 struct work_struct hotplug_online_work;				// ZZ: hotplugging up work
 
@@ -863,6 +868,7 @@ static struct dbs_tuners {
 	unsigned int inputboost_up_threshold;			// ff: default up threshold for inputbooster
 	unsigned int inputboost_punch_cycles;			// ff: default number of cycles to meet or exceed punch freq
 	unsigned int inputboost_punch_freq;				// ff: default frequency to keep cur_freq at or above
+	unsigned int debug_level;						// ff: verbose debugging
 	
 	// ZZ: set tuneable default values
 } dbs_tuners_ins = {
@@ -962,6 +968,7 @@ static struct dbs_tuners {
 	.inputboost_up_threshold = DEF_INPUTBOOST_UP_THRESHOLD,
 	.inputboost_punch_cycles = DEF_INPUTBOOST_PUNCH_CYCLES,
 	.inputboost_punch_freq = DEF_INPUTBOOST_PUNCH_FREQ,
+	.debug_level = DEBUG_LEVEL,
 };
 
 // ff: inputbooster code needs to be here so it is available for tuneables.
@@ -995,7 +1002,8 @@ static void interactive_input_event(struct input_handle *handle,
 			// remember, flg_ctr_inputboost_punch is decremented before it is used, so add 1.
 			flg_ctr_inputboost_punch = dbs_tuners_ins.inputboost_punch_cycles + 1;
 			
-			pr_info("[zzmoove] inputboost - punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
+			if (flg_debug)
+				pr_info("[zzmoove/inputboost] punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
 		}
 		
 		if (dbs_tuners_ins.inputboost_up_threshold) {
@@ -1175,13 +1183,27 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 	
 	// ZZ: feq search loop with optimization
 	for (i = limit_table_start; (likely(table[i].frequency != limit_table_end)); i++) {
+		
+		//pr_info("[zzmoove] table loop: %d\n", table[i].frequency);
+		
 	    if (unlikely(curfreq == table[i].frequency)) {	// Yank: we found where we currently are (i)
-			if (updown == 1)				// Yank: scale up, but don't go above softlimit
-		    return	min(table[max_scaling_freq_soft].frequency, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up)
+			
+			if (updown == 1) {			// Yank: scale up, but don't go above softlimit
+				
+				if (flg_debug > 2)
+					pr_info("[zzmoove] UP min(%d MHz [%d], %d). freq_table_size: %d, table_end: %d\n", table[max_scaling_freq_soft].frequency, max_scaling_freq_soft, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up  ) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size, CPUFREQ_TABLE_END);
+				
+				return	min(table[max_scaling_freq_soft].frequency, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up)
 																					   * freq_table_order, 0, freq_table_size)].frequency);
-			else						// Yank: scale down, but don't go below min. freq.
-		    return	max(table[min_scaling_freq].frequency,table[validate_min_max((i + 1 + scaling_mode_down)
+			} else {						// Yank: scale down, but don't go below min. freq.
+				
+				if (flg_debug > 2)
+					pr_info("[zzmoove] DOWN max(%d MHz [%d], %d). freq_table_size: %d\n", table[min_scaling_freq].frequency, min_scaling_freq, table[validate_min_max((i + 1 + scaling_mode_down) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size);
+				
+				return	max(table[min_scaling_freq].frequency,table[validate_min_max((i + 1 + scaling_mode_down)
 																				 * freq_table_order, 0, freq_table_size)].frequency);
+			}
+			pr_info("[zzmoove] we shouldn't be here: %d\n", curfreq);
 			return (curfreq);				// Yank: we should never get here...
 		}
 	}
@@ -1502,6 +1524,7 @@ show_one(inputboost_cycles, inputboost_cycles);								// ff: inputbooster durat
 show_one(inputboost_up_threshold, inputboost_up_threshold);					// ff: inputbooster up threshold
 show_one(inputboost_punch_cycles, inputboost_punch_cycles);					// ff: inputbooster punch cycles
 show_one(inputboost_punch_freq, inputboost_punch_freq);						// ff: inputbooster punch freq
+show_one(debug_level, debug_level);										// ff: verbose debugging
 
 // ZZ: tuneable for showing the currently active governor settings profile
 static ssize_t show_profile(struct kobject *kobj, struct attribute *attr, char *buf)
@@ -3062,6 +3085,22 @@ static ssize_t store_inputboost_punch_freq(struct kobject *a, struct attribute *
 	return -EINVAL;
 }
 
+// ff: added tuneable debug_level -> possible values: range from 0 disabled to 3 (max amount)
+static ssize_t store_debug_level(struct kobject *a, struct attribute *b,
+											 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	dbs_tuners_ins.debug_level = input;
+	flg_debug = input;
+	return count;
+}
+
 // ZZ: function for switching a settings profile either at governor start by macro 'DEF_PROFILE_NUMBER' or later by tuneable 'profile_number'
 static inline int set_profile(int profile_num)
 {
@@ -4008,6 +4047,7 @@ define_one_global_rw(inputboost_cycles);
 define_one_global_rw(inputboost_up_threshold);
 define_one_global_rw(inputboost_punch_cycles);
 define_one_global_rw(inputboost_punch_freq);
+define_one_global_rw(debug_level);
 
 // Yank: version info tunable
 static ssize_t show_version(struct device *dev, struct device_attribute *attr, char *buf)
@@ -4223,6 +4263,7 @@ static struct attribute *dbs_attributes[] = {
 	&profile.attr,
 	&profile_number.attr,
 	&profile_sticky_mode.attr,
+	&debug_level.attr,
 #ifdef ZZMOOVE_DEBUG
 	&dev_attr_debug.attr,
 #endif
@@ -4253,8 +4294,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	
 	if (flg_ctr_cpuboost > 0) {
 		
-		//if (flg_debug)
-		pr_info("[zzmoove] manual max-boost call! boosting to: %d mhz %d more times\n", policy->max, flg_ctr_cpuboost);
+		if (flg_debug > 1)
+			pr_info("[zzmoove/dbs_check_cpu] max-boost request. boosting to: %d mhz, %d more times\n", policy->max, flg_ctr_cpuboost);
 		
 		if (policy->cur < policy->max) {
 			__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
@@ -4268,10 +4309,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	
 	if (flg_ctr_cpuboost_mid > 0) {
 		
-		//if (flg_debug)
-		pr_info("[zzmoove] manual mid-boost call! boosting to: %d mhz %d more times\n", 800000, flg_ctr_cpuboost_mid);
+		if (flg_debug > 1)
+			pr_info("[zzmoove/dbs_check_cpu] mid-boost request. boosting to: %d mhz, %d more times\n", 800000, flg_ctr_cpuboost_mid);
 		
 		if (policy->cur < 800000) {
+			
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu] forcing freq to at least %d\n", 800000);
+			
 			__cpufreq_driver_target(policy, 800000, CPUFREQ_RELATION_H);
 		}
 		
@@ -4283,8 +4328,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		// boost to inputboost_punch_freq later on.
 		flg_ctr_inputboost_punch--;
 		
-		if (!flg_ctr_inputboost_punch) {
-			pr_info("[zzmoove] inputboost - punch expired\n");
+		if (!flg_ctr_inputboost_punch && flg_debug) {
+			pr_info("[zzmoove/dbs_check_cpu] inputboost - punch expired\n");
 		}
 	}
 	
@@ -4495,22 +4540,22 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				for (i = 1; i < num_possible_cpus(); i++) {
 					if (!cpu_online(i) && i < sttg_typingbooster_mincores) {
 						cpu_up(i);
-						//if (flg_debug)
-						pr_info("[zzmoove/typingbooster] CPU%d forced online\n", i);
+						if (flg_debug)
+							pr_info("[zzmoove/dbs_check_cpu/typingbooster] CPU%d forced online\n", i);
 					}
 				}
 			}
 			dbs_tuners_ins.hotplug_min_limit = sttg_typingbooster_mincores;
-			//if (flg_debug)
-			pr_info("[zzmoove/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu/typingbooster] min_limit set to %d\n", sttg_typingbooster_mincores);
 		}
 		
 	} else {
 		
 		if (dbs_tuners_ins.hotplug_min_limit != dbs_tuners_ins.hotplug_min_limit_saved){
 			// restore original hotplug_min.
-			//if (flg_debug)
-			pr_info("[zzmoove/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu/typingbooster] typingbooster off. hotplug_min resetting from %d back to %d\n", dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved);
 			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved;
 		}
 	}
@@ -4559,8 +4604,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		// decrease the up_threshold, if requested.
 		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < scaling_up_threshold) {
 			scaling_up_threshold = sttg_typingbooster_upthreshold;
-			//if (flg_debug)
-			pr_info("[zzmoove/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
 		}
 		
 		flg_ctr_typingbooster_cycles--;
@@ -4605,13 +4650,15 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
 		
 		if (flg_ctr_inputboost_punch && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
-			pr_info("[zzmoove] inputboost - punched freq to %d from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu] inputboost - punched freq to %d, from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
 			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
 		}
 		
 		if (flg_ctr_cpuboost_mid && this_dbs_info->requested_freq < 800000) {
 			// the midbooster was called and it is higher than what was going to be set.
-			pr_info("[zzmoove] midboost - boosted freq to %d from %d\n", 800000, this_dbs_info->requested_freq);
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu] midboost - boosted target freq to %d, from %d\n", 800000, this_dbs_info->requested_freq);
 			this_dbs_info->requested_freq = 800000;
 		}
 		
@@ -4849,7 +4896,8 @@ void zzmoove_touchbooster_mincores(unsigned int cores)
 {
 	unsigned int i;
 	
-	pr_info("[zzmoove] zzmoove_mincores: called for %d cores\n", cores);
+	if (flg_debug)
+		pr_info("[zzmoove/touchbooster_mincores] mincores: requested at least %d cores online\n", cores);
 	
 	dbs_tuners_ins.hotplug_min_limit_touchbooster = cores;
 	
@@ -4858,7 +4906,8 @@ void zzmoove_touchbooster_mincores(unsigned int cores)
 			if (!cpu_online(i) && i < cores && (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)){
 				// this core is below the minimum, so bring it up.
 				cpu_up(i);
-				pr_info("[zzmoove] zzmoove_mincores: CPU%d forced up\n", i);
+				if (flg_debug)
+					pr_info("[zzmoove/touchbooster_mincores] CPU%d forced online\n", i);
 			}
 		}
 	}
