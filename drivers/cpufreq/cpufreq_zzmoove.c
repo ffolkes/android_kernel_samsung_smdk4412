@@ -993,7 +993,7 @@ static void interactive_input_event(struct input_handle *handle,
 			return;
 		}
 		
-		if (dbs_tuners_ins.inputboost_punch_cycles && dbs_tuners_ins.inputboost_punch_freq && !flg_ctr_inputboost) {
+		if (dbs_tuners_ins.inputboost_punch_cycles && dbs_tuners_ins.inputboost_punch_freq && flg_ctr_inputboost < 1) {
 			// a punch length and frequency is set, so boost!
 			// but only do so if the inputboost counter is 0, aka
 			// this is the first event since the regular inputboost counter
@@ -1006,12 +1006,8 @@ static void interactive_input_event(struct input_handle *handle,
 				pr_info("[zzmoove/inputboost] punched to %d mhz for %d cycles\n", dbs_tuners_ins.inputboost_punch_freq, dbs_tuners_ins.inputboost_punch_cycles);
 		}
 		
-		if (dbs_tuners_ins.inputboost_up_threshold) {
-			// an up threshold has been set for the inputbooster,
-			// otherwise there'd be no point to set the counter.
-			
-			flg_ctr_inputboost = dbs_tuners_ins.inputboost_cycles;
-		}
+		// we always need to set the main counter, as punch functionality relies on it.
+		flg_ctr_inputboost = dbs_tuners_ins.inputboost_cycles;
 		
 		//pr_info("[zzmoove] input event. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
 	}
@@ -3000,6 +2996,7 @@ static ssize_t store_inputboost_cycles(struct kobject *a, struct attribute *b,
 		// so remove booster and unregister.
 		
 		input_unregister_handler(&interactive_input_handler);
+		pr_info("[zzmoove/store_inputboost_cycles] inputbooster - unregistered\n");
 		
 		// reset counters.
 		flg_ctr_inputboost = 0;
@@ -3011,9 +3008,9 @@ static ssize_t store_inputboost_cycles(struct kobject *a, struct attribute *b,
 		
 		rc = input_register_handler(&interactive_input_handler);
 		if (!rc)
-			pr_info("[zzmoove] inputbooster - registered\n");
+			pr_info("[zzmoove/store_inputboost_cycles] inputbooster - registered\n");
 		else
-			pr_info("[zzmoove] inputbooster - register FAILED\n");
+			pr_info("[zzmoove/store_inputboost_cycles] inputbooster - register FAILED\n");
 	}
 	
 	dbs_tuners_ins.inputboost_cycles = input;
@@ -3049,6 +3046,12 @@ static ssize_t store_inputboost_punch_cycles(struct kobject *a, struct attribute
 	return -EINVAL;
 	
 	// inputbooster operates independently of profiles, so no checks.
+	
+	if (!input) {
+		// reset some stuff.
+		flg_ctr_inputboost = 0;
+		flg_ctr_inputboost_punch = 0;
+	}
 	
 	dbs_tuners_ins.inputboost_punch_cycles = input;
 	return count;
@@ -4323,13 +4326,26 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		flg_ctr_cpuboost_mid--;
 	}
 	
-	if (flg_ctr_inputboost_punch) {
+	if (flg_ctr_inputboost_punch > 0) {
 		
-		// boost to inputboost_punch_freq later on.
+		// decrement now, and boost to inputboost_punch_freq later on.
+		// ctr should have anticipated the lost final cycle by padding +1.
+		
 		flg_ctr_inputboost_punch--;
 		
 		if (!flg_ctr_inputboost_punch && flg_debug) {
+			
 			pr_info("[zzmoove/dbs_check_cpu] inputboost - punch expired\n");
+			
+		} else {
+			
+			if (policy->cur < dbs_tuners_ins.inputboost_punch_freq) {
+				
+				if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu] punching to %d immediately\n", dbs_tuners_ins.inputboost_punch_freq);
+				
+				__cpufreq_driver_target(policy, dbs_tuners_ins.inputboost_punch_freq, CPUFREQ_RELATION_H);
+			}
 		}
 	}
 	
@@ -4588,11 +4604,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 	
 	// ff: apply inputboost up threshold
-	if (flg_ctr_inputboost && !suspend_flag) {
+	if (flg_ctr_inputboost > 0 && !suspend_flag) {
 		if (dbs_tuners_ins.inputboost_up_threshold) {
 			// in the future there may be other boost options,
 			// so be prepared for this one to be 0.
-			//pr_info("[zzmoove] inputboost - boosting up threshold to: %d, from: %d, %d more times\n", dbs_tuners_ins.inputboost_up_threshold, scaling_up_threshold, flg_ctr_inputboost);
+			if (flg_debug > 2)
+				pr_info("[zzmoove] inputboost - boosting up threshold to: %d, from: %d, %d more times\n", dbs_tuners_ins.inputboost_up_threshold, scaling_up_threshold, flg_ctr_inputboost);
 			scaling_up_threshold = dbs_tuners_ins.inputboost_up_threshold;
 		}
 		flg_ctr_inputboost--;
@@ -4612,7 +4629,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	}
 	
 	// Check for frequency increase
-	if (((flg_ctr_inputboost_punch || flg_ctr_cpuboost_mid) && policy->cur < dbs_tuners_ins.inputboost_punch_freq) || ((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
+	if (((max_load >= scaling_up_threshold || boost_freq)		// ZZ: boost switch for early demand and scaling block switches added
 	    && !cancel_up_scaling && !force_down_scaling)) {
 		
 	    // ZZ: Sampling rate idle
@@ -4649,13 +4666,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			> dbs_tuners_ins.freq_limit)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
 		
-		if (flg_ctr_inputboost_punch && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
+		if (flg_ctr_inputboost_punch > 0 && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
+			// inputbooster punch is active and the the target freq needs to be at least that high.
 			if (flg_debug)
-				pr_info("[zzmoove/dbs_check_cpu] inputboost - punched freq to %d, from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
+				pr_info("[zzmoove/dbs_check_cpu] inputboost - UP too low - repunched freq to %d, from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
 			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
 		}
 		
-		if (flg_ctr_cpuboost_mid && this_dbs_info->requested_freq < 800000) {
+		if (flg_ctr_cpuboost_mid > 0 && this_dbs_info->requested_freq < 800000) {
 			// the midbooster was called and it is higher than what was going to be set.
 			if (flg_debug)
 				pr_info("[zzmoove/dbs_check_cpu] midboost - boosted target freq to %d, from %d\n", 800000, this_dbs_info->requested_freq);
@@ -4712,7 +4730,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	scaling_down_threshold = dbs_tuners_ins.down_threshold;
 	
 	// Check for frequency decrease
-	if (!flg_ctr_inputboost_punch && (max_load < scaling_down_threshold || force_down_scaling)) {				// ZZ: added force down switch
+	if (max_load < scaling_down_threshold || force_down_scaling) {				// ZZ: added force down switch
 		
 	    // ZZ: Sampling rate idle
 	    if (dbs_tuners_ins.sampling_rate_idle != dbs_tuners_ins.sampling_rate
@@ -4735,6 +4753,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		return;
 		
 		this_dbs_info->requested_freq = zz_get_next_freq(policy->cur, 2, max_load);
+		
+		if (flg_ctr_inputboost_punch > 0 && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
+			// inputbooster punch is active and the the target freq needs to be at least that high.
+			if (flg_debug)
+				pr_info("[zzmoove/dbs_check_cpu] inputboost - DOWN too low - repunched freq to %d, from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
+			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
+		}
+		
 		if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
 		    > dbs_tuners_ins.freq_limit)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
@@ -5066,6 +5092,11 @@ static void __cpuinit powersave_early_suspend(struct early_suspend *handler)
 	    }
 #endif
 	}
+	
+	// reset some stuff.
+	flg_ctr_inputboost = 0;
+	flg_ctr_inputboost_punch = 0;
+	flg_ctr_typingbooster_cycles = 0;
 }
 
 static void __cpuinit powersave_late_resume(struct early_suspend *handler)
