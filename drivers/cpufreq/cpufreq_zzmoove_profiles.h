@@ -176,6 +176,10 @@ struct zzmoove_profile {
 	unsigned int up_threshold_hotplug_freq6;
 	unsigned int up_threshold_hotplug_freq7;
 	unsigned int up_threshold_sleep;
+	unsigned int inputboost_cycles;
+	unsigned int inputboost_up_threshold;
+	unsigned int inputboost_punch_cycles;
+	unsigned int inputboost_punch_freq;
 };
 
 struct zzmoove_profile zzmoove_profiles[] = {
@@ -265,7 +269,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5 (0 to disable core, range from 1 to scaling max and should be higher than down_threshold_hotplug_freq5)
 		0,		// up_threshold_hotplug_freq6 (0 to disable core, range from 1 to scaling max and should be higher than down_threshold_hotplug_freq6)
 		0,		// up_threshold_hotplug_freq7 (0 to disable core, range from 1 to scaling max and should be higher than down_threshold_hotplug_freq7)
-		90		// up_threshold_sleep (range from above down_threshold_sleep to 100)
+		90,		// up_threshold_sleep (range from above down_threshold_sleep to 100)
+		0,		// inputboost_cycles (0 to disable, range from 1 to 1000)
+		0,		// inputboost_up_threshold (0 to disable, range from 1 to 100)
+		0,		// inputboost_punch_cycles (0 to disable, range from 1 to 500)
+		0		// inputboost_punch_freq (0 to disable, range all valid system frequencies)
 	},
 	{
 		2,
@@ -353,7 +361,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		85		// up_threshold_sleep
+		85,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		3,
@@ -441,7 +453,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		85		// up_threshold_sleep
+		85,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		4,
@@ -529,7 +545,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		5,
@@ -617,7 +637,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		6,
@@ -705,7 +729,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		7,
@@ -793,7 +821,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		8,
@@ -881,7 +913,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		9,
@@ -969,7 +1005,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	},
 	{
 		10,
@@ -1057,7 +1097,195 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		100		// up_threshold_sleep
+		100,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
+	},
+	{
+		11,
+		"plasmalegacy",	// Plasma kernel classic profile
+		0,		// disable_hotplug
+		0,		// disable_hotplug_sleep
+		65,		// down_threshold
+		20,		// down_threshold_hotplug1
+		50,		// down_threshold_hotplug2
+		70,		// down_threshold_hotplug3
+		55,		// down_threshold_hotplug4
+		55,		// down_threshold_hotplug5
+		55,		// down_threshold_hotplug6
+		55,		// down_threshold_hotplug7
+		0,		// down_threshold_hotplug_freq1
+		0,		// down_threshold_hotplug_freq2
+		0,		// down_threshold_hotplug_freq3
+		0,		// down_threshold_hotplug_freq4
+		0,		// down_threshold_hotplug_freq5
+		0,		// down_threshold_hotplug_freq6
+		0,		// down_threshold_hotplug_freq7
+		44,		// down_threshold_sleep
+		0,		// early_demand
+		0,		// early_demand_sleep
+		0,		// fast_scaling_up
+		0,		// fast_scaling_down
+		0,		// fast_scaling_sleep_up
+		0,		// fast_scaling_sleep_down
+		30,		// afs_threshold1
+		50,		// afs_threshold2
+		70,		// afs_threshold3
+		90,		// afs_threshold4
+		0,		// freq_limit
+		400000,	// freq_limit_sleep
+		25,		// freq_step
+		1,		// freq_step_sleep
+		50,		// grad_up_threshold
+		50,		// grad_up_threshold_sleep
+		0,		// hotplug_block_up_cycles
+		0,		// hotplug_block_down_cycles
+		0,		// hotplug_idle_threshold
+		0,		// hotplug_idle_freq
+		1,		// hotplug_sleep
+		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
+		0,		// hotplug_min_limit
+		0,		// hotplug_lock
+		0,		// ignore_nice_load
+		0,		// lcdfreq_enable
+		0,		// lcdfreq_kick_in_cores
+		5,		// lcdfreq_kick_in_down_delay
+		500000,	// lcdfreq_kick_in_freq
+		1,		// lcdfreq_kick_in_up_delay
+		1,		// sampling_down_factor
+		0,		// sampling_down_max_momentum
+		50,		// sampling_down_momentum_sensitivity
+		100000,	// sampling_rate
+		70000,	// sampling_rate_idle
+		0,		// sampling_rate_idle_delay
+		40,		// sampling_rate_idle_threshold
+		2,		// sampling_rate_sleep_multiplier
+		0,		// scaling_block_cycles
+		0,		// scaling_block_freq
+		0,		// scaling_block_threshold
+		0,		// scaling_block_force_down
+		1200000,// scaling_fastdown_freq
+		95,		// scaling_fastdown_up_threshold
+		90,		// scaling_fastdown_down_threshold
+		400000,	// scaling_responsiveness_freq
+		40,		// scaling_responsiveness_up_threshold
+		70,		// smooth_up
+		70,		// smooth_up_sleep
+		80,		// up_threshold
+		40,		// up_threshold_hotplug1
+		65,		// up_threshold_hotplug2
+		90,		// up_threshold_hotplug3
+		68,		// up_threshold_hotplug4
+		68,		// up_threshold_hotplug5
+		68,		// up_threshold_hotplug6
+		68,		// up_threshold_hotplug7
+		400000,	// up_threshold_hotplug_freq1
+		1200000,// up_threshold_hotplug_freq2
+		1600000,// up_threshold_hotplug_freq3
+		0,		// up_threshold_hotplug_freq4
+		0,		// up_threshold_hotplug_freq5
+		0,		// up_threshold_hotplug_freq6
+		0,		// up_threshold_hotplug_freq7
+		90,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
+	},
+	{
+		12,
+		"plasmadefault",	// Plasma kernel default profile
+		0,		// disable_hotplug
+		0,		// disable_hotplug_sleep
+		65,		// down_threshold
+		20,		// down_threshold_hotplug1
+		50,		// down_threshold_hotplug2
+		70,		// down_threshold_hotplug3
+		55,		// down_threshold_hotplug4
+		55,		// down_threshold_hotplug5
+		55,		// down_threshold_hotplug6
+		55,		// down_threshold_hotplug7
+		0,		// down_threshold_hotplug_freq1
+		0,		// down_threshold_hotplug_freq2
+		0,		// down_threshold_hotplug_freq3
+		0,		// down_threshold_hotplug_freq4
+		0,		// down_threshold_hotplug_freq5
+		0,		// down_threshold_hotplug_freq6
+		0,		// down_threshold_hotplug_freq7
+		44,		// down_threshold_sleep
+		0,		// early_demand
+		0,		// early_demand_sleep
+		0,		// fast_scaling_up
+		0,		// fast_scaling_down
+		0,		// fast_scaling_sleep_up
+		0,		// fast_scaling_sleep_down
+		30,		// afs_threshold1
+		50,		// afs_threshold2
+		70,		// afs_threshold3
+		90,		// afs_threshold4
+		0,		// freq_limit
+		400000,	// freq_limit_sleep
+		25,		// freq_step
+		1,		// freq_step_sleep
+		50,		// grad_up_threshold
+		50,		// grad_up_threshold_sleep
+		0,		// hotplug_block_up_cycles
+		0,		// hotplug_block_down_cycles
+		0,		// hotplug_idle_threshold
+		0,		// hotplug_idle_freq
+		1,		// hotplug_sleep
+		0,		// hotplug_engage_freq
+		0,		// hotplug_max_limit
+		0,		// hotplug_min_limit
+		0,		// hotplug_lock
+		0,		// ignore_nice_load
+		0,		// lcdfreq_enable
+		0,		// lcdfreq_kick_in_cores
+		5,		// lcdfreq_kick_in_down_delay
+		500000,	// lcdfreq_kick_in_freq
+		1,		// lcdfreq_kick_in_up_delay
+		1,		// sampling_down_factor
+		0,		// sampling_down_max_momentum
+		50,		// sampling_down_momentum_sensitivity
+		100000,	// sampling_rate
+		70000,	// sampling_rate_idle
+		0,		// sampling_rate_idle_delay
+		40,		// sampling_rate_idle_threshold
+		2,		// sampling_rate_sleep_multiplier
+		0,		// scaling_block_cycles
+		0,		// scaling_block_freq
+		0,		// scaling_block_threshold
+		0,		// scaling_block_force_down
+		1200000,// scaling_fastdown_freq
+		95,		// scaling_fastdown_up_threshold
+		90,		// scaling_fastdown_down_threshold
+		400000,	// scaling_responsiveness_freq
+		40,		// scaling_responsiveness_up_threshold
+		70,		// smooth_up
+		70,		// smooth_up_sleep
+		80,		// up_threshold
+		40,		// up_threshold_hotplug1
+		65,		// up_threshold_hotplug2
+		90,		// up_threshold_hotplug3
+		68,		// up_threshold_hotplug4
+		68,		// up_threshold_hotplug5
+		68,		// up_threshold_hotplug6
+		68,		// up_threshold_hotplug7
+		400000,	// up_threshold_hotplug_freq1
+		1200000,// up_threshold_hotplug_freq2
+		1600000,// up_threshold_hotplug_freq3
+		0,		// up_threshold_hotplug_freq4
+		0,		// up_threshold_hotplug_freq5
+		0,		// up_threshold_hotplug_freq6
+		0,		// up_threshold_hotplug_freq7
+		90,		// up_threshold_sleep
+		25,		// inputboost_cycles
+		70,		// inputboost_up_threshold
+		10,		// inputboost_punch_cycles
+		1000000	// inputboost_punch_freq
 	},
 	{
 		PROFILE_TABLE_END,
@@ -1145,6 +1373,10 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		0		// up_threshold_sleep
+		0,		// up_threshold_sleep
+		0,		// inputboost_cycles
+		0,		// inputboost_up_threshold
+		0,		// inputboost_punch_cycles
+		0		// inputboost_punch_freq
 	}
 };

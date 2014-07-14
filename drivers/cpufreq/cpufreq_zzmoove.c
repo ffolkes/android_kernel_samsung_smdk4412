@@ -2989,8 +2989,6 @@ static ssize_t store_inputboost_cycles(struct kobject *a, struct attribute *b,
 	if (ret != 1 || input < 0 || input > 1000)
 	return -EINVAL;
 	
-	// inputbooster operates independently of profiles, so no checks.
-	
 	if (!input && dbs_tuners_ins.inputboost_cycles != input) {
 		// input is 0, and it wasn't before.
 		// so remove booster and unregister.
@@ -3013,6 +3011,12 @@ static ssize_t store_inputboost_cycles(struct kobject *a, struct attribute *b,
 			pr_info("[zzmoove/store_inputboost_cycles] inputbooster - register FAILED\n");
 	}
 	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (!dbs_tuners_ins.inputboost_cycles && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.inputboost_cycles != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
 	dbs_tuners_ins.inputboost_cycles = input;
 	return count;
 }
@@ -3028,7 +3032,11 @@ static ssize_t store_inputboost_up_threshold(struct kobject *a, struct attribute
 	if (ret != 1 || input < 0 || input > 100)
 	return -EINVAL;
 	
-	// inputbooster operates independently of profiles, so no checks.
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (!dbs_tuners_ins.inputboost_up_threshold && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.inputboost_up_threshold != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
 	
 	dbs_tuners_ins.inputboost_up_threshold = input;
 	return count;
@@ -3045,7 +3053,11 @@ static ssize_t store_inputboost_punch_cycles(struct kobject *a, struct attribute
 	if (ret != 1 || input < 0 || input > 500)
 	return -EINVAL;
 	
-	// inputbooster operates independently of profiles, so no checks.
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (!dbs_tuners_ins.inputboost_punch_cycles && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.inputboost_punch_cycles != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
 	
 	if (!input) {
 		// reset some stuff.
@@ -3070,7 +3082,11 @@ static ssize_t store_inputboost_punch_freq(struct kobject *a, struct attribute *
 	if (ret != 1 || input < 0)
 	return -EINVAL;
 	
-	// inputbooster operates independently of profiles, so no checks.
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (!dbs_tuners_ins.inputboost_punch_freq && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.inputboost_punch_freq != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
 	
 	table = cpufreq_frequency_get_table(0);					// Yank: get system frequency table
 	
@@ -3456,6 +3472,18 @@ static inline int set_profile(int profile_num)
 			// ff: set hotplug_lock value
 			if (zzmoove_profiles[i].hotplug_lock == 0)
 			dbs_tuners_ins.hotplug_lock = zzmoove_profiles[i].hotplug_lock;
+			
+			// ff: set inputboost_cycles value
+			dbs_tuners_ins.inputboost_cycles = zzmoove_profiles[i].inputboost_cycles;
+			
+			// ff: set inputboost_up_threshold value
+			dbs_tuners_ins.inputboost_up_threshold = zzmoove_profiles[i].inputboost_up_threshold;
+			
+			// ff: set inputboost_punch_cycles value
+			dbs_tuners_ins.inputboost_punch_cycles = zzmoove_profiles[i].inputboost_punch_cycles;
+			
+			// ff: set inputboost_punch_freq value
+			dbs_tuners_ins.inputboost_punch_freq = zzmoove_profiles[i].inputboost_punch_freq;
 			
 			// ZZ: set scaling_responsiveness_freq value
 			if (zzmoove_profiles[i].scaling_responsiveness_freq == 0) {
