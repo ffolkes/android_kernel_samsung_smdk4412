@@ -1009,7 +1009,9 @@ static void interactive_input_event(struct input_handle *handle,
 		// we always need to set the main counter, as punch functionality relies on it.
 		flg_ctr_inputboost = dbs_tuners_ins.inputboost_cycles;
 		
-		//pr_info("[zzmoove] input event. name: %s, type: %d, code: %d, value: %d\n", handle->dev->name, type, code, value);
+		if (flg_debug > 3)
+			pr_info("[zzmoove] input event. name: %s, type: %d, code: %d, value: %d, ctr_inputboost: %d, ctr_punch: %d\n",
+					handle->dev->name, type, code, value, flg_ctr_inputboost, flg_ctr_inputboost_punch);
 	}
 }
 
@@ -1572,8 +1574,12 @@ static ssize_t store_sampling_down_momentum_sensitivity(struct kobject *a, struc
 	ret = sscanf(buf, "%u", &input);
 	
 	if (ret != 1 || input > MAX_SAMPLING_DOWN_MOMENTUM_SENSITIVITY
-	    || input < 1 || set_profile_active == true)
+	    || input < 0 || set_profile_active == true)
 	return -EINVAL;
+	
+	// ff: do this so synapse can set 0.
+	if (!input)
+		input = 1;
 	
 	// ZZ: set profile number to 0 and profile name to custom mode if value changed
 	if (!dbs_tuners_ins.profile_sticky_mode && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.sampling_down_mom_sens != input) {
@@ -3127,6 +3133,7 @@ static inline int set_profile(int profile_num)
 	int i = 0;					// ZZ: for main profile loop
 	int t = 0;					// ZZ: for sub-loop
 	unsigned int j;					// ZZ: for update routines
+	int rc = 0;
 	
 	table = cpufreq_frequency_get_table(0);		// ZZ: for tuneables using system table
 	set_profile_active = true;			// ZZ: avoid additional setting of tuneables during following loop
@@ -3462,27 +3469,47 @@ static inline int set_profile(int profile_num)
 			}
 			
 			// ff: set hotplug_max_limit value
-			if (zzmoove_profiles[i].hotplug_max_limit == 0)
+			if (zzmoove_profiles[i].hotplug_max_limit <= possible_cpus && zzmoove_profiles[i].hotplug_max_limit >= 0)
 			dbs_tuners_ins.hotplug_max_limit = zzmoove_profiles[i].hotplug_max_limit;
 			
 			// ff: set hotplug_min_limit value
-			if (zzmoove_profiles[i].hotplug_min_limit == 0)
+			if (zzmoove_profiles[i].hotplug_min_limit <= possible_cpus && zzmoove_profiles[i].hotplug_min_limit >= 0)
 			dbs_tuners_ins.hotplug_min_limit = dbs_tuners_ins.hotplug_min_limit_saved = zzmoove_profiles[i].hotplug_min_limit;
 			
 			// ff: set hotplug_lock value
-			if (zzmoove_profiles[i].hotplug_lock == 0)
+			if (zzmoove_profiles[i].hotplug_lock <= possible_cpus && zzmoove_profiles[i].hotplug_lock >= 0)
 			dbs_tuners_ins.hotplug_lock = zzmoove_profiles[i].hotplug_lock;
 			
 			// ff: set inputboost_cycles value
-			dbs_tuners_ins.inputboost_cycles = zzmoove_profiles[i].inputboost_cycles;
+			if (zzmoove_profiles[i].inputboost_cycles >= 0) {
+				if (!zzmoove_profiles[i].inputboost_cycles && dbs_tuners_ins.inputboost_cycles != zzmoove_profiles[i].inputboost_cycles) {
+					// inputbooster was on, so we need to turn it off.
+					input_unregister_handler(&interactive_input_handler);
+					pr_info("[zzmoove/store_inputboost_cycles] inputbooster - unregistered\n");
+					// reset counters.
+					flg_ctr_inputboost = 0;
+					flg_ctr_inputboost_punch = 0;
+				} else if (zzmoove_profiles[i].inputboost_cycles && dbs_tuners_ins.inputboost_cycles == 0) {
+					// inputbooster was off, so we need to turn it on.
+					rc = input_register_handler(&interactive_input_handler);
+					if (!rc)
+						pr_info("[zzmoove/store_inputboost_cycles] inputbooster - registered\n");
+					else
+						pr_info("[zzmoove/store_inputboost_cycles] inputbooster - register FAILED\n");
+				}
+				dbs_tuners_ins.inputboost_cycles = zzmoove_profiles[i].inputboost_cycles;
+			}
 			
 			// ff: set inputboost_up_threshold value
+			if (zzmoove_profiles[i].inputboost_up_threshold >= 0)
 			dbs_tuners_ins.inputboost_up_threshold = zzmoove_profiles[i].inputboost_up_threshold;
 			
 			// ff: set inputboost_punch_cycles value
+			if (zzmoove_profiles[i].inputboost_punch_cycles >= 0)
 			dbs_tuners_ins.inputboost_punch_cycles = zzmoove_profiles[i].inputboost_punch_cycles;
 			
 			// ff: set inputboost_punch_freq value
+			if (zzmoove_profiles[i].inputboost_punch_freq >= 0)
 			dbs_tuners_ins.inputboost_punch_freq = zzmoove_profiles[i].inputboost_punch_freq;
 			
 			// ZZ: set scaling_responsiveness_freq value
@@ -4189,10 +4216,10 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   hotplug_thresholds_freq[1][0],
 				   hotplug_thresholds_freq[1][1],
 				   hotplug_thresholds_freq[1][2],
-				   inputboost_cycles,
-				   inputboost_up_threshold,
-				   inputboost_punch_cycles,
-				   inputboost_punch_freq);
+				   dbs_tuners_ins.inputboost_cycles,
+				   dbs_tuners_ins.inputboost_up_threshold,
+				   dbs_tuners_ins.inputboost_punch_cycles,
+				   dbs_tuners_ins.inputboost_punch_freq);
 }
 
 static DEVICE_ATTR(debug, S_IRUGO , show_debug, NULL);
