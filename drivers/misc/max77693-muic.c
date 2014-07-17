@@ -44,6 +44,9 @@
 
 #define DEV_NAME	"max77693-muic"
 
+struct timeval time_usbcable_attached;
+struct timeval time_usbcable_detached;
+
 /* for providing API */
 static struct max77693_muic_info *gInfo;
 
@@ -2833,9 +2836,11 @@ static void max77693_muic_detect_dev(struct max77693_muic_info *info, int irq)
 	intr = max77693_muic_filter_dev(info, status[0], status[1]);
 
 	if (intr == INT_ATTACH) {
+		do_gettimeofday(&time_usbcable_attached);
 		dev_info(info->dev, "%s: ATTACHED\n", __func__);
 		max77693_muic_handle_attach(info, status[0], status[1], irq);
 	} else if (intr == INT_DETACH) {
+		do_gettimeofday(&time_usbcable_detached);
 		dev_info(info->dev, "%s: DETACHED\n", __func__);
 		max77693_muic_handle_detach(info, irq);
 	} else {

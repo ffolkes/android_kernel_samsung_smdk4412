@@ -102,6 +102,7 @@ extern void bb_rgb2blinkpattern(unsigned int r, unsigned int g, unsigned int b);
 extern unsigned int bb_color_r;
 extern unsigned int bb_color_g;
 extern unsigned int bb_color_b;
+extern struct timeval time_usbcable_attached;
 
 struct wake_lock wavewake_wake_lock;
 
@@ -734,6 +735,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	unsigned int delay_off_time = 0;
 	struct an30259a_data *data = dev_get_drvdata(dev);
 	unsigned int time_since_suspend = 0;
+	unsigned int time_since_usbcable_attached = 0;
 	unsigned int time_since_ww_last_screenoff = 0;
 	unsigned int tmp_flg_ctr_cpuboost_mid = 0;
 	static struct timeval time_now;
@@ -959,7 +961,13 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		time_since_suspend = (time_now.tv_sec - time_suspended.tv_sec) * MSEC_PER_SEC +
 							(time_now.tv_usec - time_suspended.tv_usec) / USEC_PER_MSEC;
 		
-		if (time_since_suspend > 3000) {
+		// we don't want to start ww/bb if the usb cable was recently plugged in.
+		time_since_usbcable_attached = (time_now.tv_sec - time_usbcable_attached.tv_sec) * MSEC_PER_SEC +
+										(time_now.tv_usec - time_usbcable_attached.tv_usec) / USEC_PER_MSEC;
+		
+		
+		
+		if (time_since_suspend > 3000 && time_since_usbcable_attached > 3000) {
 			// we've been sleeping for at least 2 seconds.
 			
 			pr_info("[LED/ww] it has been %d ms since suspended\n", time_since_suspend);
