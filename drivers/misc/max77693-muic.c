@@ -46,6 +46,7 @@
 
 struct timeval time_usbcable_attached;
 struct timeval time_usbcable_detached;
+bool flg_power_cableattached = false;
 
 /* for providing API */
 static struct max77693_muic_info *gInfo;
@@ -2837,10 +2838,12 @@ static void max77693_muic_detect_dev(struct max77693_muic_info *info, int irq)
 
 	if (intr == INT_ATTACH) {
 		do_gettimeofday(&time_usbcable_attached);
+		flg_power_cableattached = true;
 		dev_info(info->dev, "%s: ATTACHED\n", __func__);
 		max77693_muic_handle_attach(info, status[0], status[1], irq);
 	} else if (intr == INT_DETACH) {
 		do_gettimeofday(&time_usbcable_detached);
+		flg_power_cableattached = false;
 		dev_info(info->dev, "%s: DETACHED\n", __func__);
 		max77693_muic_handle_detach(info, irq);
 	} else {

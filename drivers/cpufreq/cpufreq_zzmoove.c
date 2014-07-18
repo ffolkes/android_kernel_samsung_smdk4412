@@ -515,6 +515,7 @@
 #include <linux/input.h>
 
 extern bool flg_screen_on;
+extern bool flg_power_cableattached;
 
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #include "cpufreq_zzmoove_profiles.h"
@@ -637,6 +638,8 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_INPUTBOOST_ON_TSP			(1)			// ff: default to boost on touchscreen input events
 #define DEF_INPUTBOOST_ON_GPIO			(1)			// ff: default to boost on gpio (button) input events
 #define DEF_INPUTBOOST_ON_TK			(1)			// ff: default to boost on touchkey input events
+
+#define DEF_CABLE_MIN_FREQ				(0)			// ff: default minimum freq to maintain while cable plugged in
 
 // ZZ: Sampling Down Momentum variables
 static unsigned int min_sampling_rate;				// ZZ: minimal possible sampling rate
@@ -869,6 +872,7 @@ static struct dbs_tuners {
 	unsigned int inputboost_punch_cycles;			// ff: default number of cycles to meet or exceed punch freq
 	unsigned int inputboost_punch_freq;				// ff: default frequency to keep cur_freq at or above
 	unsigned int debug_level;						// ff: verbose debugging
+	unsigned int cable_min_freq;					// ff: cable min freq
 	
 	// ZZ: set tuneable default values
 } dbs_tuners_ins = {
@@ -969,6 +973,7 @@ static struct dbs_tuners {
 	.inputboost_punch_cycles = DEF_INPUTBOOST_PUNCH_CYCLES,
 	.inputboost_punch_freq = DEF_INPUTBOOST_PUNCH_FREQ,
 	.debug_level = DEBUG_LEVEL,
+	.cable_min_freq = DEF_CABLE_MIN_FREQ,
 };
 
 // ff: inputbooster code needs to be here so it is available for tuneables.
@@ -985,11 +990,11 @@ static void interactive_input_event(struct input_handle *handle,
 			return;
 		}
 		
-		if ((strstr(handle->dev->name, "touchscreen") && !boost_on_tsp)
+		if ((strstr(handle->dev->name, "touchscreen") && (!boost_on_tsp || suspend_flag))
 			|| (strstr(handle->dev->name, "gpio") && !boost_on_gpio)
-			|| (strstr(handle->dev->name, "touchkey") && !boost_on_tk)
+			|| (strstr(handle->dev->name, "touchkey") && (!boost_on_tk || suspend_flag))
 			) {
-			// we were told not to boost from this device, so just return.
+			// we were told not to boost from this device, or the screen is off, so just return.
 			return;
 		}
 		
@@ -1523,6 +1528,7 @@ show_one(inputboost_up_threshold, inputboost_up_threshold);					// ff: inputboos
 show_one(inputboost_punch_cycles, inputboost_punch_cycles);					// ff: inputbooster punch cycles
 show_one(inputboost_punch_freq, inputboost_punch_freq);						// ff: inputbooster punch freq
 show_one(debug_level, debug_level);										// ff: verbose debugging
+show_one(cable_min_freq, cable_min_freq);
 
 // ZZ: tuneable for showing the currently active governor settings profile
 static ssize_t show_profile(struct kobject *kobj, struct attribute *attr, char *buf)
@@ -3088,6 +3094,13 @@ static ssize_t store_inputboost_punch_freq(struct kobject *a, struct attribute *
 	if (ret != 1 || input < 0)
 	return -EINVAL;
 	
+	if (!input) {
+		// input was 0, disable.
+		
+		dbs_tuners_ins.inputboost_punch_freq = input;
+		return count;
+	}
+	
 	// ZZ: set profile number to 0 and profile name to custom mode if value changed
 	if (!dbs_tuners_ins.inputboost_punch_freq && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.inputboost_punch_freq != input) {
 	    dbs_tuners_ins.profile_number = 0;
@@ -3123,6 +3136,47 @@ static ssize_t store_debug_level(struct kobject *a, struct attribute *b,
 	
 	dbs_tuners_ins.debug_level = input;
 	flg_debug = input;
+	return count;
+}
+
+// ff: added tuneable cable_min_freq -> possible values: range from 0 disabled to policy->max, if not set default is 0
+static ssize_t store_cable_min_freq(struct kobject *a, struct attribute *b,
+											 const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	struct cpufreq_frequency_table *table;	// Yank: use system frequency table
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (!input) {
+		// input was 0, disable.
+		
+		dbs_tuners_ins.cable_min_freq = input;
+		return count;
+	}
+	
+	// profiles don't apply to this tuneable.
+	
+	table = cpufreq_frequency_get_table(0);					// Yank: get system frequency table
+	
+	if (!table) {
+	    return -EINVAL;
+	} else if (input > table[max_scaling_freq_hard].frequency) {		// Yank: allow only frequencies below or equal to hard max
+		return -EINVAL;
+	} else {
+	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
+		if (unlikely(table[i].frequency == input)) {
+		    dbs_tuners_ins.cable_min_freq = input;
+		    return count;
+		}
+	}
+	return -EINVAL;
+	
+	dbs_tuners_ins.cable_min_freq = input;
 	return count;
 }
 
@@ -4106,6 +4160,7 @@ define_one_global_rw(inputboost_up_threshold);
 define_one_global_rw(inputboost_punch_cycles);
 define_one_global_rw(inputboost_punch_freq);
 define_one_global_rw(debug_level);
+define_one_global_rw(cable_min_freq);
 
 // Yank: version info tunable
 static ssize_t show_version(struct device *dev, struct device_attribute *attr, char *buf)
@@ -4180,7 +4235,9 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   "inputboost cycles              : %d\n"
 				   "inputboost up threshold        : %d\n"
 				   "inputboost punch_cycles        : %d\n"
-				   "inputboost punch freq          : %d\n",
+				   "inputboost punch freq          : %d\n"
+				   "cable min freq                 : %d\n"
+				   "cable attached                 : %d\n",
 				   possible_cpus,
 				   cpu_online(0),
 				   cpu_online(1),
@@ -4219,7 +4276,9 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   dbs_tuners_ins.inputboost_cycles,
 				   dbs_tuners_ins.inputboost_up_threshold,
 				   dbs_tuners_ins.inputboost_punch_cycles,
-				   dbs_tuners_ins.inputboost_punch_freq);
+				   dbs_tuners_ins.inputboost_punch_freq,
+				   dbs_tuners_ins.cable_min_freq,
+				   flg_power_cableattached);
 }
 
 static DEVICE_ATTR(debug, S_IRUGO , show_debug, NULL);
@@ -4315,6 +4374,7 @@ static struct attribute *dbs_attributes[] = {
 	&inputboost_up_threshold.attr,
 	&inputboost_punch_cycles.attr,
 	&inputboost_punch_freq.attr,
+	&cable_min_freq.attr,
 	&dev_attr_version.attr,
 	&dev_attr_version_profiles.attr,
 	&dev_attr_profile_list.attr,
@@ -4561,6 +4621,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				 && this_dbs_info->prev_load - max_load >= dbs_tuners_ins.scaling_block_threshold) ||
 				dbs_tuners_ins.scaling_block_threshold == 0) {
 				scaling_block_cycles_count++;							// ZZ: count gradients
+				if (flg_debug > 2)
+					pr_info("[zzmoove] up-scaling blocked. #%d\n", scaling_block_cycles_count);
 				cancel_up_scaling = true;							// ZZ: block scaling up at the same time
 		    }
 			
@@ -4735,6 +4797,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			this_dbs_info->requested_freq = 800000;
 		}
 		
+		if (flg_power_cableattached && dbs_tuners_ins.cable_min_freq && this_dbs_info->requested_freq < dbs_tuners_ins.cable_min_freq) {
+			// we are plugged in, a cable freq is requested,
+			// and the target freq is below it.
+			this_dbs_info->requested_freq = dbs_tuners_ins.cable_min_freq;
+		}
+		
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_H);
 		
@@ -4819,6 +4887,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
 		    > dbs_tuners_ins.freq_limit)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
+		
+		if (flg_power_cableattached && dbs_tuners_ins.cable_min_freq && this_dbs_info->requested_freq < dbs_tuners_ins.cable_min_freq) {
+			// we are plugged in, a cable freq is requested,
+			// and the target freq is below it. also, make sure
+			// this is after the freq limit check, otherwise the
+			// cable limit would be overridden by it.
+			this_dbs_info->requested_freq = dbs_tuners_ins.cable_min_freq;
+		}
 		
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_L);								// ZZ: changed to relation low
