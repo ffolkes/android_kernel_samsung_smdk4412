@@ -16,6 +16,7 @@
 
 unsigned int flg_ctr_cpuboost = 0;
 unsigned int flg_ctr_cpuboost_mid = 0;
+unsigned int sttg_boost_button_cycles = 3;
 
 static struct sysdev_class_attribute *cpu_sysdev_class_attrs[];
 
@@ -194,6 +195,33 @@ static ssize_t ctr_cpuboost_store(struct sysdev_class *class,
 
 static SYSDEV_CLASS_ATTR(ctr_cpuboost, S_IWUSR, NULL, ctr_cpuboost_store);
 
+static ssize_t ctr_cpuboost_buttons_show(struct sysdev_class *class,
+										 struct sysdev_class_attribute *attr, char *buf)
+{
+	int ret;
+	
+	ret = sprintf(buf, "%d\n", sttg_boost_button_cycles);
+	
+	return ret;
+}
+
+static ssize_t ctr_cpuboost_buttons_store(struct sysdev_class *class,
+								  struct sysdev_class_attribute *attr,
+								  const char *buf,
+								  size_t count)
+{
+	unsigned int data;
+	
+	if(sscanf(buf, "%u\n", &data) == 1) {
+		sttg_boost_button_cycles = data;
+		pr_info("[TW/ww] sttg_boost_button_cycles has been set to %d\n", sttg_boost_button_cycles);
+	}
+	
+	return count;
+}
+
+static SYSDEV_CLASS_ATTR(ctr_cpuboost_buttons, S_IRUGO | S_IWUSR | S_IWGRP, ctr_cpuboost_buttons_show, ctr_cpuboost_buttons_store);
+
 /* arch-optional setting to enable display of offline cpus >= nr_cpu_ids */
 unsigned int total_cpus;
 
@@ -291,5 +319,6 @@ static struct sysdev_class_attribute *cpu_sysdev_class_attrs[] = {
 	&attr_kernel_max,
 	&attr_offline,
 	&attr_ctr_cpuboost,
+	&attr_ctr_cpuboost_buttons,
 	NULL
 };

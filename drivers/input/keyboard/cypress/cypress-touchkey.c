@@ -64,6 +64,7 @@ extern bool epen_is_active;
 extern int touch_is_pressed;
 extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
 extern int flg_ctr_cpuboost;
+extern unsigned int sttg_boost_button_cycles;
 
 // Yank555.lu : Add cleartext status settings for h/w key LED lightup on touchscreen touch
 #define TOUCHKEY_LED_DISABLED	0
@@ -904,7 +905,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 
 #endif
 		if (flg_screen_on)
-			flg_ctr_cpuboost = 20;
+			flg_ctr_cpuboost = sttg_boost_button_cycles;
 		
 		tk_key_keycode = touchkey_keycode[keycode_type];
 
