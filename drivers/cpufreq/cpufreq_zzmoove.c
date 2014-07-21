@@ -563,6 +563,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_DISABLE_HOTPLUG				(0)	// ZZ: default hotplug switch
 #define DEF_HOTPLUG_BLOCK_UP_CYCLES			(0)	// ZZ: default hotplug up block cycles
 #define DEF_HOTPLUG_BLOCK_DOWN_CYCLES			(0)	// ZZ: default hotplug down block cycles
+#define DEF_HOTPLUG_STAGGER_UP				(0)	// ff: only bring one core up at a time when hotplug_online_work() called
 #define DEF_HOTPLUG_IDLE_THRESHOLD			(0)	// ZZ: default hotplug idle threshold
 #define DEF_HOTPLUG_IDLE_FREQ				(0)	// ZZ: default hotplug idle freq
 #define DEF_HOTPLUG_ENGAGE_FREQ				(0)	// ZZ: default hotplug engage freq. the frequency below which we run on only one core (0 = disabled) (ffolkes)
@@ -850,6 +851,7 @@ static struct dbs_tuners {
 	unsigned int disable_hotplug_sleep;			// ZZ: hotplug switch for sleep tuneable for early suspend
 	unsigned int hotplug_block_up_cycles;			// ZZ: hotplug up block cycles tuneable
 	unsigned int hotplug_block_down_cycles;			// ZZ: hotplug down block cycles tuneable
+	unsigned int hotplug_stagger_up;				// ff: hotplug stagger up tuneable
 	unsigned int hotplug_idle_threshold;			// ZZ: hotplug idle threshold tuneable
 	unsigned int hotplug_idle_freq;				// ZZ: hotplug idle freq tuneable
 	unsigned int hotplug_engage_freq;			// ZZ: frequency below which we run on only one core (ffolkes)
@@ -951,6 +953,7 @@ static struct dbs_tuners {
 	.disable_hotplug_sleep = DEF_DISABLE_HOTPLUG_SLEEP,
 	.hotplug_block_up_cycles = DEF_HOTPLUG_BLOCK_UP_CYCLES,
 	.hotplug_block_down_cycles = DEF_HOTPLUG_BLOCK_DOWN_CYCLES,
+	.hotplug_stagger_up = DEF_HOTPLUG_STAGGER_UP,
 	.hotplug_idle_threshold = DEF_HOTPLUG_IDLE_THRESHOLD,
 	.hotplug_idle_freq = DEF_HOTPLUG_IDLE_FREQ,
 	.hotplug_engage_freq = DEF_HOTPLUG_ENGAGE_FREQ,
@@ -1508,6 +1511,7 @@ show_one(disable_hotplug, disable_hotplug);						// ZZ: hotplug switch tuneable
 show_one(disable_hotplug_sleep, disable_hotplug_sleep);					// ZZ: hotplug switch tuneable for sleep
 show_one(hotplug_block_up_cycles, hotplug_block_up_cycles);				// ZZ: hotplug up block cycles tuneable
 show_one(hotplug_block_down_cycles, hotplug_block_down_cycles);				// ZZ: hotplug down block cycles tuneable
+show_one(hotplug_stagger_up, hotplug_stagger_up);							// ff: hotplug stagger up tuneable
 show_one(hotplug_idle_threshold, hotplug_idle_threshold);				// ZZ: hotplug idle threshold tuneable
 show_one(hotplug_idle_freq, hotplug_idle_freq);						// ZZ: hotplug idle freq tuneable
 show_one(hotplug_engage_freq, hotplug_engage_freq);					// ZZ: hotplug engage freq tuneable (ffolkes)
@@ -2515,6 +2519,29 @@ static ssize_t store_hotplug_block_down_cycles(struct kobject *a, struct attribu
 	return count;
 }
 
+// ZZ: tuneable hotplug stagger up -> possible values: 0 to disable, any value above 0 to enable, if not set default is 0
+static ssize_t store_hotplug_stagger_up(struct kobject *a, struct attribute *b, const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	
+	if (ret != 1 || input < 0 || set_profile_active == true)
+	return -EINVAL;
+	
+	input = !!input;
+	
+	// ZZ: set profile number to 0 and profile name to custom mode if value changed
+	if (!dbs_tuners_ins.profile_sticky_mode && dbs_tuners_ins.profile_number != 0 && dbs_tuners_ins.hotplug_stagger_up != input) {
+	    dbs_tuners_ins.profile_number = 0;
+	    strncpy(dbs_tuners_ins.profile, custom_profile, sizeof(dbs_tuners_ins.profile));
+	}
+	
+	dbs_tuners_ins.hotplug_stagger_up = input;
+	
+	return count;
+}
+
 // ZZ: tuneable hotplug idle threshold -> possible values: range from 0 disabled to 100, if not set default is 0
 static ssize_t store_hotplug_idle_threshold(struct kobject *a, struct attribute *b, const char *buf, size_t count)
 {
@@ -3494,6 +3521,10 @@ static inline int set_profile(int profile_num)
 			if (zzmoove_profiles[i].hotplug_block_down_cycles >= 0)
 		    dbs_tuners_ins.hotplug_block_down_cycles = zzmoove_profiles[i].hotplug_block_down_cycles;
 			
+			// ZZ: set hotplug_stagger_up value
+			if (zzmoove_profiles[i].hotplug_stagger_up >= 0)
+		    dbs_tuners_ins.hotplug_stagger_up = zzmoove_profiles[i].hotplug_stagger_up;
+			
 			// ZZ: set hotplug_idle_threshold value
 			if (zzmoove_profiles[i].hotplug_idle_threshold >= 0 && zzmoove_profiles[i].hotplug_idle_threshold < 100)
 		    dbs_tuners_ins.hotplug_idle_threshold = zzmoove_profiles[i].hotplug_idle_threshold;
@@ -4140,6 +4171,7 @@ define_one_global_rw(disable_hotplug);
 define_one_global_rw(disable_hotplug_sleep);
 define_one_global_rw(hotplug_block_up_cycles);
 define_one_global_rw(hotplug_block_down_cycles);
+define_one_global_rw(hotplug_stagger_up);
 define_one_global_rw(hotplug_idle_threshold);
 define_one_global_rw(hotplug_idle_freq);
 define_one_global_rw(hotplug_engage_freq);
@@ -4323,6 +4355,7 @@ static struct attribute *dbs_attributes[] = {
 	&disable_hotplug_sleep.attr,
 	&hotplug_block_up_cycles.attr,
 	&hotplug_block_down_cycles.attr,
+	&hotplug_stagger_up.attr,
 	&hotplug_idle_threshold.attr,
 	&hotplug_idle_freq.attr,
 	&hotplug_engage_freq.attr,
@@ -5006,8 +5039,17 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 		if (!cpu_online(i) && hotplug_thresholds[0][i-1] != 0 && cur_load >= hotplug_thresholds[0][i-1]
 			&& (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)
 		    && (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1]
-				|| boost_hotplug || max_freq_too_low))
-		cpu_up(i);
+				|| boost_hotplug || max_freq_too_low)
+			) {
+			
+			cpu_up(i);
+			
+			if (dbs_tuners_ins.hotplug_stagger_up) {
+				// ff: break after first core added.
+				hotplug_up_in_progress = false;
+				return;
+			}
+		}
 	}
 	
 	hotplug_up_in_progress = false;

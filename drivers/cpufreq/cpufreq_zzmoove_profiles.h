@@ -128,6 +128,7 @@ struct zzmoove_profile {
 	unsigned int grad_up_threshold_sleep;
 	unsigned int hotplug_block_up_cycles;
 	unsigned int hotplug_block_down_cycles;
+	unsigned int hotplug_stagger_up;
 	unsigned int hotplug_idle_threshold;
 	unsigned int hotplug_idle_freq;
 	unsigned int hotplug_sleep;
@@ -222,6 +223,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep (range from 1 to 100)
 		0,		// hotplug_up_block_cycles (0=disable, any value above 0)
 		5,		// hotplug_block_down_cycles (0=disable, any value above 0)
+		0,		// hotplug_stagger_up (0=disable, any value above 0)
 		0,		// hotplug_idle_threshold (0=disable, range from 1 to 100)
 		0,		// hotplug_idle_freq (0=disable, range in system table from freq->min to freq->max in khz)
 		0,		// hotplug_sleep (0=all cores enabled, range 1 to MAX_CORES - 1)
@@ -314,6 +316,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -406,6 +409,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -498,6 +502,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		5,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -590,6 +595,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		5,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -682,6 +688,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		5,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -774,6 +781,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		10,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -866,6 +874,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		10,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -958,6 +967,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		10,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1050,6 +1060,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		5,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1105,7 +1116,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 	},
 	{
 		11,
-		"plasmalegacy",	// Plasma kernel classic profile
+		"plasmalegacy",	// Plasma kernel legacy profile
 		0,		// disable_hotplug
 		0,		// disable_hotplug_sleep
 		65,		// down_threshold
@@ -1142,6 +1153,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1197,10 +1209,10 @@ struct zzmoove_profile zzmoove_profiles[] = {
 	},
 	{
 		12,
-		"plasmadefault",	// Plasma kernel default profile
+		"plasmadefault",	// Plasma kernel default/optimized profile
 		0,		// disable_hotplug
 		0,		// disable_hotplug_sleep
-		65,		// down_threshold
+		75,		// down_threshold
 		20,		// down_threshold_hotplug1
 		50,		// down_threshold_hotplug2
 		70,		// down_threshold_hotplug3
@@ -1215,7 +1227,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// down_threshold_hotplug_freq5
 		0,		// down_threshold_hotplug_freq6
 		0,		// down_threshold_hotplug_freq7
-		44,		// down_threshold_sleep
+		55,		// down_threshold_sleep
 		0,		// early_demand
 		0,		// early_demand_sleep
 		0,		// fast_scaling_up
@@ -1227,13 +1239,14 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		70,		// afs_threshold3
 		90,		// afs_threshold4
 		0,		// freq_limit
-		400000,	// freq_limit_sleep
-		25,		// freq_step
+		500000,	// freq_limit_sleep
+		10,		// freq_step
 		1,		// freq_step_sleep
 		50,		// grad_up_threshold
 		50,		// grad_up_threshold_sleep
-		0,		// hotplug_block_up_cycles
+		20,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		1,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1262,11 +1275,11 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		1200000,// scaling_fastdown_freq
 		95,		// scaling_fastdown_up_threshold
 		90,		// scaling_fastdown_down_threshold
-		400000,	// scaling_responsiveness_freq
-		40,		// scaling_responsiveness_up_threshold
-		70,		// smooth_up
-		70,		// smooth_up_sleep
-		80,		// up_threshold
+		0,		// scaling_responsiveness_freq
+		65,		// scaling_responsiveness_up_threshold
+		80,		// smooth_up
+		80,		// smooth_up_sleep
+		90,		// up_threshold
 		40,		// up_threshold_hotplug1
 		65,		// up_threshold_hotplug2
 		90,		// up_threshold_hotplug3
@@ -1274,18 +1287,18 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		68,		// up_threshold_hotplug5
 		68,		// up_threshold_hotplug6
 		68,		// up_threshold_hotplug7
-		400000,	// up_threshold_hotplug_freq1
+		800000,	// up_threshold_hotplug_freq1
 		1200000,// up_threshold_hotplug_freq2
 		1600000,// up_threshold_hotplug_freq3
 		0,		// up_threshold_hotplug_freq4
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		90,		// up_threshold_sleep
+		95,		// up_threshold_sleep
 		25,		// inputboost_cycles
-		70,		// inputboost_up_threshold
-		10,		// inputboost_punch_cycles
-		1000000	// inputboost_punch_freq
+		80,		// inputboost_up_threshold
+		2,		// inputboost_punch_cycles
+		800000	// inputboost_punch_freq
 	},
 	{
 		PROFILE_TABLE_END,
@@ -1326,6 +1339,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
 		0,		// hotplug_block_down_cycles
+		0,		// hotplug_stagger_up
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		0,		// hotplug_sleep
