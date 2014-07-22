@@ -57,7 +57,7 @@ unsigned int bb_color_r = 0;
 unsigned int bb_color_g = 0;
 unsigned int bb_color_b = 0;
 
-unsigned int sttg_bb_mode = 1; // 0 = off, 1 = on
+unsigned int sttg_bb_mode = 0; // 0 = off, 1 = on
 bool sttg_bb_magcheck = true;
 int sttg_bb_magcheck_z_min = 2350;
 int sttg_bb_magcheck_z_max = 2600;
