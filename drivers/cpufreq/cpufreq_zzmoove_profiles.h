@@ -127,8 +127,15 @@ struct zzmoove_profile {
 	unsigned int grad_up_threshold;
 	unsigned int grad_up_threshold_sleep;
 	unsigned int hotplug_block_up_cycles;
+	unsigned int block_up_multiplier_hotplug1;
+	unsigned int block_up_multiplier_hotplug2;
+	unsigned int block_up_multiplier_hotplug3;
 	unsigned int hotplug_block_down_cycles;
+	unsigned int block_down_multiplier_hotplug1;
+	unsigned int block_down_multiplier_hotplug2;
+	unsigned int block_down_multiplier_hotplug3;
 	unsigned int hotplug_stagger_up;
+	unsigned int hotplug_stagger_down;
 	unsigned int hotplug_idle_threshold;
 	unsigned int hotplug_idle_freq;
 	unsigned int hotplug_sleep;
@@ -222,8 +229,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		25,		// grad_up_threshold (range from 1 to 100)
 		28,		// grad_up_threshold_sleep (range from 1 to 100)
 		0,		// hotplug_up_block_cycles (0=disable, any value above 0)
+		1,		// block_up_multiplier_hotplug1 (0=disable hotplug_up_block_cycles for 2nd core, 1 to 10x)
+		1,		// block_up_multiplier_hotplug2 (0=disable hotplug_up_block_cycles for 3rd core, 1 to 10x)
+		1,		// block_up_multiplier_hotplug3 (0=disable hotplug_up_block_cycles for 4th core, 1 to 10x)
 		5,		// hotplug_block_down_cycles (0=disable, any value above 0)
+		1,		// block_down_multiplier_hotplug1 (0=disable hotplug_down_block_cycles for 2nd core, 1 to 10x)
+		1,		// block_down_multiplier_hotplug2 (0=disable hotplug_down_block_cycles for 3rd core, 1 to 10x)
+		1,		// block_down_multiplier_hotplug3 (0=disable hotplug_down_block_cycles for 4th core, 1 to 10x)
 		0,		// hotplug_stagger_up (0=disable, any value above 0)
+		0,		// hotplug_stagger_down (0=disable, any value above 0)
 		0,		// hotplug_idle_threshold (0=disable, range from 1 to 100)
 		0,		// hotplug_idle_freq (0=disable, range in system table from freq->min to freq->max in khz)
 		0,		// hotplug_sleep (0=all cores enabled, range 1 to MAX_CORES - 1)
@@ -315,8 +329,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -408,8 +429,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -501,8 +529,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		5,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -594,8 +629,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		60,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		5,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -687,8 +729,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		35,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		5,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -780,8 +829,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		40,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		10,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -873,8 +929,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		25,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		10,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -966,8 +1029,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		25,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		10,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1059,8 +1129,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		25,		// grad_up_threshold
 		28,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		5,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1152,8 +1229,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold
 		50,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1245,8 +1329,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		50,		// grad_up_threshold
 		50,		// grad_up_threshold_sleep
 		20,		// hotplug_block_up_cycles
+		1,		// block_up_multiplier_hotplug1
+		1,		// block_up_multiplier_hotplug2
+		1,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		1,		// block_down_multiplier_hotplug1
+		1,		// block_down_multiplier_hotplug2
+		1,		// block_down_multiplier_hotplug3
 		1,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1338,8 +1429,15 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// grad_up_threshold
 		0,		// grad_up_threshold_sleep
 		0,		// hotplug_block_up_cycles
+		0,		// block_up_multiplier_hotplug1
+		0,		// block_up_multiplier_hotplug2
+		0,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
+		0,		// block_down_multiplier_hotplug1
+		0,		// block_down_multiplier_hotplug2
+		0,		// block_down_multiplier_hotplug3
 		0,		// hotplug_stagger_up
+		0,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		0,		// hotplug_sleep
