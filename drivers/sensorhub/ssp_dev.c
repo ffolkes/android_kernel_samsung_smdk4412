@@ -18,6 +18,12 @@
 /* ssp mcu device ID */
 #define DEVICE_ID			0x55
 
+extern bool sttg_touchwake_persistent;
+extern unsigned int sttg_kw_mode;
+extern bool flg_ssp_on;
+
+struct ssp_data *sspdata;
+
 unsigned int staysleeping = 0;
 unsigned int alreadyresumed = 1;
 
@@ -300,6 +306,8 @@ static int ssp_probe(struct i2c_client *client,
 	pr_info("[SSP]: %s - probe success!\n", __func__);
 
 	enable_debug_timer(data);
+	
+	sspdata = data;
 
 	iRet = 0;
 	goto exit;
@@ -476,6 +484,39 @@ static const struct dev_pm_ops ssp_pm_ops = {
 };
 
 #endif /* CONFIG_HAS_EARLYSUSPEND */
+
+void ssp_manual_suspend(void)
+{
+	pr_info("[SSP_DEV/ssp_manual_suspend] called\n");
+	
+	if (sttg_touchwake_persistent || sttg_kw_mode)
+		return;
+	
+	func_dbg();
+	disable_debug_timer(sspdata);
+	
+	if (atomic_read(&sspdata->aSensorEnable) > 0)
+		ssp_sleep_mode(sspdata);
+	
+	sspdata->bCheckSuspend = true;
+}
+
+void ssp_manual_resume(void)
+{
+	pr_info("[SSP_DEV/ssp_manual_resume] called\n");
+	
+	// don't resume if it's already on.
+	if (flg_ssp_on)
+		return;
+	
+	func_dbg();
+	enable_debug_timer(sspdata);
+	
+	sspdata->bCheckSuspend = false;
+	
+	if (atomic_read(&sspdata->aSensorEnable) > 0)
+		ssp_resume_mode(sspdata);
+}
 
 static const struct i2c_device_id ssp_id[] = {
 	{"ssp", 0},

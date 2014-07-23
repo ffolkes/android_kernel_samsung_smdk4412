@@ -17,12 +17,14 @@
 
 #define LIMIT_DELAY_CNT		200
 
+bool flg_ssp_on = true;
+
 int waiting_wakeup_mcu(struct ssp_data *data)
 {
 	int iDelaycnt = 0;
 	
-	if (sttg_touchwake_persistent || sttg_kw_mode)
-		return SUCCESS;
+	//if (sttg_touchwake_persistent || sttg_kw_mode)
+	//	return SUCCESS;
 
 	while (!data->check_mcu_busy() && (iDelaycnt++ < LIMIT_DELAY_CNT)
 		&& (data->bSspShutdown == false))
@@ -107,6 +109,8 @@ int ssp_sleep_mode(struct ssp_data *data)
 	
 	if (sttg_touchwake_persistent || sttg_kw_mode)
 		return SUCCESS;
+		
+	flg_ssp_on = false;
 
 	if (waiting_wakeup_mcu(data) < 0)
 		return ERROR;
@@ -146,8 +150,11 @@ int ssp_resume_mode(struct ssp_data *data)
 	char chTxBuf = MSG2SSP_AP_STATUS_WAKEUP;
 	int iRet = 0, iRetries = DEFAULT_RETRIES;
 	
-	if (sttg_touchwake_persistent || sttg_kw_mode)
+	// don't resume if it's already on.
+	if (flg_ssp_on)
 		return SUCCESS;
+	
+	flg_ssp_on = true;
 
 	if (waiting_wakeup_mcu(data) < 0)
 		return ERROR;

@@ -643,7 +643,7 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 				
 				flg_bb_magpassed = true;
 				flg_bb_magcheck = false;
-				ssp_dbg("[SSP/mag/bb] flg_bb_magpassed = true, ctr: %d\n", ctr_bb_magcheck);
+				ssp_dbg("[SSP/mag/bb] flg_bb_magpassed = true, ctr: %d, z-value is: %d\n", ctr_bb_magcheck, magdata->z);
 			}
 
 		} else {
@@ -651,7 +651,7 @@ void report_mag_data(struct ssp_data *data, struct sensor_value *magdata)
 			
 			// abort.
 			flg_bb_magcheck = false;
-			ssp_dbg("[SSP/mag/bb] out of parameters, aborted.\n", ctr_bb_magcheck);
+			ssp_dbg("[SSP/mag/bb] out of parameters, aborted. z-value was: %d\n", magdata->z);
 		}
 	}
 	

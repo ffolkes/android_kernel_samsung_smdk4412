@@ -41,6 +41,8 @@ extern int ctr_kw_gyro_skip;
 extern void toggleRearLED(unsigned int level);
 extern void controlRearLED(unsigned int level);
 extern struct timeval time_ledtriggered;
+extern void ssp_manual_suspend(void);
+extern void ssp_manual_resume(void);
 
 static struct timer_list timer_backblink;
 bool flg_bb_active = false;
@@ -61,15 +63,15 @@ unsigned int sttg_bb_mode = 0; // 0 = off, 1 = on
 bool sttg_bb_magcheck = true;
 int sttg_bb_magcheck_z_min = 2350;
 int sttg_bb_magcheck_z_max = 2600;
-unsigned int sttg_bb_dutycycle_on = 200; // duration in ms rear led is on
-unsigned int sttg_bb_dutycycle_off = 500; // duration in ms rear led is off
-unsigned int sttg_bb_limit = 3; // how many blinks
+unsigned int sttg_bb_dutycycle_on = 50; // duration in ms rear led is on
+unsigned int sttg_bb_dutycycle_off = 750; // duration in ms rear led is off
+unsigned int sttg_bb_limit = 10; // how many blinks
 bool sttg_bb_poweron_clearedobstacle = false; // turn power on when device picked up
 unsigned int sttg_bb_brightness = 1; // brightness step 1 to 15
 unsigned int sttg_bb_blinkgroup_on_size = 0; // how many flashes-on in each group
 unsigned int sttg_bb_blinkgroup_on_delay = 500; // how long between each group
-unsigned int sttg_bb_blinkgroup_off_size = 0; // how many flashes-on in each group
-unsigned int sttg_bb_blinkgroup_off_delay = 1000; // how long between each group
+unsigned int sttg_bb_blinkgroup_off_size = 2; // how many flashes-on in each group
+unsigned int sttg_bb_blinkgroup_off_delay = 2000; // how long between each group
 
 unsigned int use_sttg_bb_dutycycle_on = 0;
 unsigned int use_sttg_bb_dutycycle_off = 0;
@@ -1733,7 +1735,6 @@ static ssize_t ww_trigger_noti_only_write(struct device * dev, struct device_att
 static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
 {
 	unsigned int data;
-	//static struct timeval time_now;
 	//static unsigned int time_since_manualtrigger;
 	//static unsigned int time_since_ledtriggered;
 	
@@ -1742,6 +1743,9 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 		// the purpose of this is to let us know when to ignore the antiredundancy checks
 		// in the led hook. otherwise, repeated things (sms, etc) wouldn't know to trigger
 		// a new ww/bb event.
+		
+		// i forgot, this is also used if the user wants to ignore the led hook (perhaps
+		// from too many false positives), in which case that needs to be reflected here.
 		
 		pr_info("[TW/ww/manual] userspace has requested a manual noti\n");
 		
@@ -1759,14 +1763,55 @@ static ssize_t ww_trigger_noti_write(struct device * dev, struct device_attribut
 				flg_ctr_cpuboost_mid = 50; // ~10 seconds
 			}
 			
-			pr_info("[TW/ww/manual] flg_ctr_cpuboost: %d\n", flg_ctr_cpuboost);
+			pr_info("[TW/ww/manual] flg_ctr_cpuboost_mid: %d\n", flg_ctr_cpuboost);
 			
 			flg_ww_userspace_noti = true;
 			pr_info("[TW/ww/manual] userspace has set flg_ww_userspace_noti\n");
 			
+			// now, what if the led hook is disabled? we need to start it manually.
+			if (!flg_ww_prox_on && sttg_ww_trigger_noti_only) {
+				
+				// if we're here, it means a noti was detected but we're being told to ignore
+				// the led hook. so now is our only chance to start ww/bb.
+				
+				pr_info("[TW/ww/manual] manually triggering ww/bb since there is no led hook\n");
+				
+				// if we don't use the led hook, we don't know the color, so just set this to default.
+				pr_info("[TW/ww/manual] resetting bb_colors\n");
+				
+				bb_color_r = 0;
+				bb_color_g = 0;
+				bb_color_b = 0;
+				
+				if (sttg_ww_linger > 0) {
+					// boost cpu. multiply by 5, since sampling rate is probably ~200ms. hardcoded 30 sec max.
+					flg_ctr_cpuboost_mid = min((int) (5 * (sttg_ww_linger / 1000)), 150);
+				} else {
+					// boost cpu. if sttg_ww_linger is set to unlimited it will be 0, so we cannot use it.
+					flg_ctr_cpuboost_mid = 50; // ~10 seconds
+				}
+				
+				pr_info("[TW/ww/manual] recalculated flg_ctr_cpuboost_mid: %d\n", flg_ctr_cpuboost);
+				
+				pr_info("[TW/ww/manual] locking wavewake_wake_lock\n");
+				wake_lock(&wavewake_wake_lock);
+				pr_info("[TW/ww/manual] immediately starting PROX\n");
+				forceEnableSensor(5, false);
+				
+				if (sttg_ww_mode) {
+					// if this is a ww event, schedule normal linger.
+					ww_set_disable_prox(1);
+					
+				} else if (sttg_bb_mode) {
+					// if this is a bb event, schedule just a blip.
+					ww_set_disable_prox(200);
+				}
+			}
+			
 		}
 		
-		/*if (!sttg_ww_trigger_noti_mode) {
+		/* // old code
+		 if (!sttg_ww_trigger_noti_mode) {
 			// user doesn't want manual noti's.
 			return size;
 		}
@@ -1880,7 +1925,7 @@ static ssize_t kw_mode_write(struct device * dev, struct device_attribute * attr
 
 static ssize_t kw_resolution_read(struct device * dev, struct device_attribute * attr, char * buf)
 {
-	return sprintf(buf, "%u\n", sttg_kw_resolution);
+	return sprintf(buf, "%lld\n", sttg_kw_resolution);
 }
 
 static ssize_t kw_resolution_write(struct device * dev, struct device_attribute * attr, const char * buf, size_t size)
@@ -1892,7 +1937,7 @@ static ssize_t kw_resolution_write(struct device * dev, struct device_attribute 
 	
 	sttg_kw_resolution = data;
 	forceChangeDelay(1, data);
-	pr_info("[TW/kw] sttg_kw_resolution has been set to %u %lld\n", sttg_kw_resolution, sttg_kw_resolution);
+	pr_info("[TW/kw] sttg_kw_resolution has been set to %lld\n", sttg_kw_resolution);
 	
 	return size;
 }
@@ -2953,6 +2998,9 @@ static void bb_magcheck_off_work(struct work_struct * work_bb_magcheck_off)
 		// turn off the sensor.
 		pr_info("[TW/bb/magcheckoff] TURNING OFF - MAG\n");
 		forceDisableSensor(2);
+		
+		// turn off the MCU.
+		ssp_manual_suspend();
 	}
 	
 	// was the magcheck successful?
@@ -3119,6 +3167,7 @@ void proximity_detected(void)
 {
 	struct timeval time_now;
 	unsigned int time_since_ledtriggered;
+	unsigned int time_since_manualtrigger;
 	
 	// remember to reset prox_near if exiting early, or else tsp will
 	// lock itself out because it thinks there is always something there.
@@ -3150,11 +3199,16 @@ void proximity_detected(void)
 	
 	// calculate time since led hook triggered prox on.
 	time_since_ledtriggered = (time_now.tv_sec - time_ledtriggered.tv_sec) * MSEC_PER_SEC +
-	(time_now.tv_usec - time_ledtriggered.tv_usec) / USEC_PER_MSEC;
+								(time_now.tv_usec - time_ledtriggered.tv_usec) / USEC_PER_MSEC;
+	
+	// calculate time since manual hook triggered prox on.
+	time_since_manualtrigger = (time_now.tv_sec - time_ww_last_manualtrigger.tv_sec) * MSEC_PER_SEC +
+								(time_now.tv_usec - time_ww_last_manualtrigger.tv_usec) / USEC_PER_MSEC;
 	
 	// we need to know if the sensor was already blocked when it came on,
-	// or did something move in the way.
-	if (time_since_ledtriggered > 400) {
+	// or did something move in the way. don't forget to check for manual time,
+	// in case the led hook isn't being used.
+	if (time_since_ledtriggered > 400 && time_since_manualtrigger > 400) {
 		// if the sensor hasn't said it is blocked by now, assume it's clear.
 		
 		if (sttg_ww_mode > 0) {
@@ -3242,7 +3296,10 @@ void proximity_detected(void)
 				// does the user want a magcheck?
 				if (sttg_bb_magcheck) {
 					
-					pr_info("[TW/ww/bb/proximity_detected] holding out prox, turning on mag sensor, and scheduling work to check it in %d ms\n", 500);
+					pr_info("[TW/ww/bb/proximity_detected] holding out prox, turning on ssp & mag sensor, and scheduling work to check it in %d ms\n", 500);
+					
+					// power up mcu.
+					ssp_manual_resume();
 					
 					// extend prox timeout to give mag sensor a chance to work.
 					ww_set_disable_prox(550);

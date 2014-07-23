@@ -934,7 +934,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 			tmp_flg_ctr_cpuboost_mid = 50; // ~10 seconds
 		}
 		
-		if (!flg_ww_userspace_noti) {
+		/*if (!flg_ww_userspace_noti) {
 			// if this is being triggered by a manual noti, we can't have the
 			// led hook put its timestamp on this, because the manual hook already
 			// called for prox a few seconds ago, and if the user were to hover just as this code here
@@ -947,7 +947,7 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 		} else {
 
 			pr_info("[LED/ww] not getting new ledwenton time because it's already on\n");
-		}
+		}*/
 		
 		pr_info("[LED/ww] getting new ledwenton time\n");
 		do_gettimeofday(&time_ledwenton);
@@ -1025,6 +1025,9 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 			}
 			
 		} else {
+			
+			pr_info("[LED/ww] too soon! it has been %d ms since suspended, %d ms since cable\n", time_since_suspend, time_since_usbcable_attached);
+			
 			if (sttg_ww_dismissled) {
 				// let's do some time differences
 				
