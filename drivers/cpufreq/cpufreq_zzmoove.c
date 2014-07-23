@@ -519,7 +519,7 @@ extern bool flg_power_cableattached;
 
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #include "cpufreq_zzmoove_profiles.h"
-#define DEF_PROFILE_NUMBER				(0)	// ZZ: default profile number (profile = 0 = 'none' = tuneable mode)
+#define DEF_PROFILE_NUMBER				(12)	// ZZ: default profile number (profile = 0 = 'none' = tuneable mode)
 static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any profile value has changed
 
 #define DEF_PROFILE_STICKY_MODE			(1) // ff: allows tuneables to be tweaked without reverting to "custom" profile
@@ -549,7 +549,7 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define MIN_SAMPLING_RATE_RATIO				(2)	// ZZ: default min sampling rate ratio
 
 // ZZ: general tuneable defaults
-#define DEF_FREQUENCY_UP_THRESHOLD			(70)	// ZZ: default regular scaling up threshold
+#define DEF_FREQUENCY_UP_THRESHOLD			(95)	// ZZ: default regular scaling up threshold
 #define DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG		(68)	// ZZ: default hotplug up threshold for all cpus (cpu0 stays allways on)
 #define DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG_FREQ		(0)	// Yank: default hotplug up threshold frequency for all cpus (0 = disabled)
 #define DEF_SMOOTH_UP					(75)	// ZZ: default cpu load trigger for 'boosting' scaling frequency
@@ -4946,7 +4946,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			// in the future there may be other boost options,
 			// so be prepared for this one to be 0.
 			if (flg_debug > 2)
-				pr_info("[zzmoove] inputboost - boosting up threshold to: %d, from: %d, %d more times\n", dbs_tuners_ins.inputboost_up_threshold, scaling_up_threshold, flg_ctr_inputboost);
+				pr_info("[zzmoove/dbs_check_cpu] inputboost - boosting up threshold to: %d, from: %d, %d more times\n", dbs_tuners_ins.inputboost_up_threshold, scaling_up_threshold, flg_ctr_inputboost);
 			scaling_up_threshold = dbs_tuners_ins.inputboost_up_threshold;
 		}
 		flg_ctr_inputboost--;
@@ -5037,6 +5037,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	    }
 	    return;
 	}
+	
+	if (flg_debug > 2)
+		pr_info("[zzmoove/dbs_check_cpu] not increasing frequency\n");
 	
 	// ZZ: block cycles to be able to slow down hotplugging
 	if (!dbs_tuners_ins.disable_hotplug && num_online_cpus() != 1 && !hotplug_idle_flag) {
@@ -5171,8 +5174,8 @@ static void __cpuinit hotplug_offline_work_fn(struct work_struct *work)
 	
 	hotplug_down_in_progress = true;
 	
-	//if (flg_debug > 1)
-	//	pr_info("[zzmoove/hotplug_offline_work] checking for cpus to bring down\n");
+	if (flg_debug > 2)
+		pr_info("[zzmoove/hotplug_offline_work] checking for cpus to bring down\n");
 	
 	if (dbs_tuners_ins.hotplug_lock > 0) {
 		for (cpu = num_possible_cpus() - 1; cpu >= 1; cpu--) {
@@ -5185,10 +5188,10 @@ static void __cpuinit hotplug_offline_work_fn(struct work_struct *work)
 	
 	// Yank: added frequency thresholds
 	for_each_online_cpu(cpu) {
-		if (flg_debug > 1)
-			//pr_info("[zzmoove/hotplug_offline_work] cpu: %d (%d), load: %d / %d, min_limit: %d, min_touchbooster: %d, freq: %d / %d, mftl: %d\n",
-			//		cpu, cpu_online(cpu), cur_load, hotplug_thresholds[1][cpu-1], dbs_tuners_ins.hotplug_min_limit,
-			//		dbs_tuners_ins.hotplug_min_limit_touchbooster, hotplug_thresholds_freq[1][cpu-1], cur_freq, max_freq_too_low);
+		if (flg_debug > 2)
+			pr_info("[zzmoove/hotplug_offline_work] online cpu: %d (%d), load: %d / %d, min_limit: %d, min_touchbooster: %d, freq: %d / %d, mftl: %d\n",
+					cpu, cpu_online(cpu), cur_load, hotplug_thresholds[1][cpu-1], dbs_tuners_ins.hotplug_min_limit,
+					dbs_tuners_ins.hotplug_min_limit_touchbooster, hotplug_thresholds_freq[1][cpu-1], cur_freq, max_freq_too_low);
 	    if (likely(cpu_online(cpu) && (cpu)) && cpu != 0
 			&& cur_load <= hotplug_thresholds[1][cpu-1]
 			&& (!dbs_tuners_ins.hotplug_min_limit || cpu >= dbs_tuners_ins.hotplug_min_limit)

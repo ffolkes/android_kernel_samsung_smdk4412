@@ -1297,7 +1297,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// disable_hotplug
 		0,		// disable_hotplug_sleep
 		75,		// down_threshold
-		20,		// down_threshold_hotplug1
+		30,		// down_threshold_hotplug1
 		50,		// down_threshold_hotplug2
 		70,		// down_threshold_hotplug3
 		55,		// down_threshold_hotplug4
@@ -1318,7 +1318,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// fast_scaling_down
 		0,		// fast_scaling_sleep_up
 		0,		// fast_scaling_sleep_down
-		30,		// afs_threshold1
+		25,		// afs_threshold1
 		50,		// afs_threshold2
 		70,		// afs_threshold3
 		90,		// afs_threshold4
@@ -1328,16 +1328,16 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		1,		// freq_step_sleep
 		50,		// grad_up_threshold
 		50,		// grad_up_threshold_sleep
-		20,		// hotplug_block_up_cycles
-		1,		// block_up_multiplier_hotplug1
-		1,		// block_up_multiplier_hotplug2
-		1,		// block_up_multiplier_hotplug3
+		1,		// hotplug_block_up_cycles
+		5,		// block_up_multiplier_hotplug1
+		10,		// block_up_multiplier_hotplug2
+		15,		// block_up_multiplier_hotplug3
 		0,		// hotplug_block_down_cycles
-		1,		// block_down_multiplier_hotplug1
-		1,		// block_down_multiplier_hotplug2
-		1,		// block_down_multiplier_hotplug3
+		20,		// block_down_multiplier_hotplug1
+		5,		// block_down_multiplier_hotplug2
+		0,		// block_down_multiplier_hotplug3
 		1,		// hotplug_stagger_up
-		0,		// hotplug_stagger_down
+		1,		// hotplug_stagger_down
 		0,		// hotplug_idle_threshold
 		0,		// hotplug_idle_freq
 		1,		// hotplug_sleep
@@ -1368,9 +1368,9 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		90,		// scaling_fastdown_down_threshold
 		0,		// scaling_responsiveness_freq
 		65,		// scaling_responsiveness_up_threshold
-		80,		// smooth_up
+		90,		// smooth_up
 		80,		// smooth_up_sleep
-		90,		// up_threshold
+		95,		// up_threshold
 		40,		// up_threshold_hotplug1
 		65,		// up_threshold_hotplug2
 		90,		// up_threshold_hotplug3
@@ -1385,7 +1385,7 @@ struct zzmoove_profile zzmoove_profiles[] = {
 		0,		// up_threshold_hotplug_freq5
 		0,		// up_threshold_hotplug_freq6
 		0,		// up_threshold_hotplug_freq7
-		95,		// up_threshold_sleep
+		90,		// up_threshold_sleep
 		25,		// inputboost_cycles
 		80,		// inputboost_up_threshold
 		2,		// inputboost_punch_cycles
