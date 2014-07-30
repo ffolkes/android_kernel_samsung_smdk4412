@@ -103,6 +103,7 @@ extern unsigned int bb_color_r;
 extern unsigned int bb_color_g;
 extern unsigned int bb_color_b;
 extern struct timeval time_usbcable_attached;
+static bool flg_stop_incoming_leds = false;
 
 struct wake_lock wavewake_wake_lock;
 
@@ -112,6 +113,22 @@ unsigned int led_b_brightness_orig_last = 0;
 
 struct timeval time_ledwenton;
 struct timeval time_ledtriggered;
+
+static struct timer_list timer_alternatefrontled;
+struct an30259a_data *leddata;
+struct work_struct work_controlFrontLED;
+static struct workqueue_struct *wq_controlFrontLED;
+static unsigned int alternateFrontLED_duty1 = 0;
+static unsigned int alternateFrontLED_r1 = 0;
+static unsigned int alternateFrontLED_g1 = 0;
+static unsigned int alternateFrontLED_b1 = 0;
+
+static unsigned int alternateFrontLED_duty2 = 0;
+static unsigned int alternateFrontLED_r2 = 0;
+static unsigned int alternateFrontLED_g2 = 0;
+static unsigned int alternateFrontLED_b2 = 0;
+
+static unsigned int alternatefrontled_mode = 0;
 
 u8 led_lowpower_mode = 0x0;
 
@@ -748,6 +765,10 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	int led_r_brightness_wbcheck = 0;
 	int led_g_brightness_wbcheck = 0;
 	int led_b_brightness_wbcheck = 0;
+	
+	if (flg_stop_incoming_leds) {
+		return count;
+	}
 
 	retval = sscanf(buf, "0x%x %d %d", &led_brightness,
 				&delay_on_time, &delay_off_time);
@@ -1092,7 +1113,152 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	return count;
 }
 
+static void controlFrontLED_work(struct work_struct *work)
+{
+	leds_i2c_write_all(leddata->client);
+}
 
+void controlFrontLED(unsigned int r, unsigned int g, unsigned int b)
+{
+	// make sure nothing is out of range.
+	if (r > 255)
+		r = 255;
+	
+	if (g > 255)
+		g = 255;
+	
+	if (b > 255)
+		b = 255;
+	
+	if (!r)
+		leds_on(LED_R, false, false, 0);
+	else
+		leds_on(LED_R, true, false, r);
+	
+	if (!g)
+		leds_on(LED_G, false, false, 0);
+	else
+		leds_on(LED_G, true, false, g);
+	
+	if (!b)
+		leds_on(LED_B, false, false, 0);
+	else
+		leds_on(LED_B, true, false, b);
+	
+	//pr_info("[LED/controlFrontLED] turning on led\n");
+	
+	queue_work_on(0, wq_controlFrontLED, &work_controlFrontLED);
+	
+}
+EXPORT_SYMBOL(controlFrontLED);
+
+static void timerhandler_alternatefrontled()
+{
+	unsigned int tmp_duty = 0;
+	
+	if (!alternateFrontLED_duty1 || !alternateFrontLED_duty2) {
+		// no duty cycle set one or more colors, just turn all the leds off and exit.
+		
+		// reset led.
+		controlFrontLED(0, 0, 0);
+		
+		flg_stop_incoming_leds = false;
+		
+		return;
+	}
+	
+	if (!alternatefrontled_mode) {
+		// mode was 0 (aka 1)
+		
+		//pr_info("[LED/timerhandler_alternatefrontled] turning on led2\n");
+		
+		// start color 2.
+		controlFrontLED(alternateFrontLED_r2, alternateFrontLED_g2, alternateFrontLED_b2);
+		tmp_duty = alternateFrontLED_duty2;
+		alternatefrontled_mode = 1;
+		
+	} else {
+		// mode was 1 (aka 2)
+		
+		//pr_info("[LED/timerhandler_alternatefrontled] turning on led1\n");
+		
+		// start color 1.
+		controlFrontLED(alternateFrontLED_r1, alternateFrontLED_g1, alternateFrontLED_b1);
+		tmp_duty = alternateFrontLED_duty1;
+		alternatefrontled_mode = 0;
+	}
+	
+	//pr_info("[LED/timerhandler_alternatefrontled] recycling in %d ms\n", tmp_duty);
+	
+	// start timer that will turn the other color on.
+	mod_timer(&timer_alternatefrontled,
+			  jiffies + msecs_to_jiffies(tmp_duty));
+}
+
+void alternateFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, unsigned int b1,
+				   unsigned int duty2, unsigned int r2, unsigned int g2, unsigned int b2)
+{
+	if (!duty1 || !duty2) {
+		// disable it.
+		
+		pr_info("[LED/alternateFrontLED] stopping\n");
+		del_timer(&timer_alternatefrontled);
+		
+		// reset led.
+		controlFrontLED(0, 0, 0);
+		
+		flg_stop_incoming_leds = false;
+		
+		return;
+	}
+	
+	flg_stop_incoming_leds = true;
+	
+	// reset led.
+	controlFrontLED(0, 0, 0);
+	
+	pr_info("[LED/alternateFrontLED] starting\n");
+	
+	// save timing and colors.
+	alternateFrontLED_duty1 = duty1;
+	alternateFrontLED_r1 = r1;
+	alternateFrontLED_g1 = g1;
+	alternateFrontLED_b1 = b1;
+	
+	alternateFrontLED_duty2 = duty2;
+	alternateFrontLED_r2 = r2;
+	alternateFrontLED_g2 = g2;
+	alternateFrontLED_b2 = b2;
+	
+	// start first color.
+	controlFrontLED(r1, g1, b1);
+	alternatefrontled_mode = 0;
+
+	// start timer that will turn the second color on.
+	mod_timer(&timer_alternatefrontled,
+			  jiffies + msecs_to_jiffies(duty1));
+}
+EXPORT_SYMBOL(alternateFrontLED);
+
+void flashFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, unsigned int b1)
+{
+	flg_stop_incoming_leds = true;
+	
+	// reset led.
+	controlFrontLED(0, 0, 0);
+	
+	// no duty cycle for either color.
+	alternateFrontLED_duty1 = 0;
+	alternateFrontLED_duty2 = 0;
+	
+	// start first color.
+	controlFrontLED(r1, g1, b1);
+	
+	// start timer that will turn it off.
+	mod_timer(&timer_alternatefrontled,
+			  jiffies + msecs_to_jiffies(duty1));
+}
+EXPORT_SYMBOL(flashFrontLED);
 
 static ssize_t store_led_r(struct device *dev,
 	struct device_attribute *devattr, const char *buf, size_t count)
@@ -1512,6 +1678,14 @@ static int __devinit an30259a_initialize(struct i2c_client *client,
 	}
 
 	leds_set_imax(client, 0x00);
+	
+	leddata = data;
+	
+	wq_controlFrontLED = alloc_workqueue("controlFrontLED_wq", WQ_HIGHPRI, 0);
+	
+	INIT_WORK(&work_controlFrontLED, controlFrontLED_work);
+	
+	setup_timer(&timer_alternatefrontled, timerhandler_alternatefrontled, 0);
 
 	return 0;
 }
