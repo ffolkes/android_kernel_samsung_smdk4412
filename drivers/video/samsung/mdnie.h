@@ -12,6 +12,7 @@ enum MODE {
 	MOVIE,
 	NIGHTMODE,
 	GRAYMODE,
+	BLACKOUT,
 	MODE_MAX,
 };
 

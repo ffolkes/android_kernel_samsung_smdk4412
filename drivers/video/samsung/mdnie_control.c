@@ -31,6 +31,8 @@ struct mdnie_info *mdnie = NULL;
 
 extern struct mdnie_info *g_mdnie;
 extern void set_mdnie_value(struct mdnie_info *mdnie, u8 force);
+extern bool flg_pu_blackout;
+extern bool prev_sequence_hook;
 
 /* Defined as negative deltas */
 static int br_reduction = 75;
@@ -461,6 +463,13 @@ update_previous:
 inline void scheduled_refresh(void)
 {
 	cancel_delayed_work_sync(&mdnie_refresh_work);
+	
+	if (flg_pu_blackout) {
+		// if we're blacked out, don't refresh this.
+		pr_info("[mdnie-control/scheduled_refresh] skipping refresh because blackout on\n");
+		return;
+	}
+	
 	schedule_delayed_work_on(0, &mdnie_refresh_work, REFRESH_DELAY);
 }
 
@@ -534,6 +543,33 @@ refresh:
 	return count;
 };
 
+static ssize_t show_sequence_intercept(struct device *dev,
+											struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d", sequence_hook);
+};
+
+static ssize_t store_sequence_intercept(struct device *dev,
+											 struct device_attribute *attr,
+											 const char *buf, size_t count)
+{
+	int val;
+	
+	if(sscanf(buf, "%d", &val) != 1)
+	return -EINVAL;
+	
+	if (flg_pu_blackout) {
+		pr_info("[mdnie-control/sequence_intercept_store] buffering value because blackout on\n");
+		prev_sequence_hook = val;
+	} else {
+		sequence_hook = val;
+	}
+	
+	scheduled_refresh();
+	
+	return count;
+};
+
 #define MAIN_CONTROL(_name, _var, _callback) \
 static ssize_t show_##_name(struct device *dev,					\
 				    struct device_attribute *attr, char *buf)	\
@@ -548,7 +584,7 @@ static ssize_t store_##_name(struct device *dev,				\
 										\
 	if(sscanf(buf, "%d", &val) != 1)					\
 		return -EINVAL;							\
-										\
+									\
 	_var = val;								\
 										\
 	_callback();								\
@@ -557,7 +593,7 @@ static ssize_t store_##_name(struct device *dev,				\
 };
 
 MAIN_CONTROL(reg_hook, reg_hook, scheduled_refresh);
-MAIN_CONTROL(sequence_intercept, sequence_hook, scheduled_refresh);
+//MAIN_CONTROL(sequence_intercept, sequence_hook, scheduled_refresh);
 MAIN_CONTROL(br_reduction, br_reduction, forced_brightness);
 MAIN_CONTROL(br_takeover_point, br_takeover_point, forced_brightness);
 MAIN_CONTROL(br_brightness_delta, br_brightness_delta, forced_brightness);

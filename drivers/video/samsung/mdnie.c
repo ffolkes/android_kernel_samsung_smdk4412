@@ -112,6 +112,11 @@
 	((SCENARIO_IS_COLOR(scenario)) || (scenario < SCENARIO_MAX))
 #endif
 
+extern bool flg_pu_blackout;
+
+struct work_struct work_mdnie_toggle_blackout;
+static struct workqueue_struct *wq_mdnie_toggle_blackout;
+
 static char tuning_file_name[50];
 
 struct class *mdnie_class;
@@ -465,6 +470,16 @@ static ssize_t mode_store(struct device *dev,
 	struct mdnie_info *mdnie = dev_get_drvdata(dev);
 	unsigned int value;
 	int ret;
+	
+	if (flg_pu_blackout) {
+		// screen is blacked out, so we can't apply this.
+		// but save it so it'll get restored.
+		prev_mdnie_mode = value;
+		
+		dev_info(dev, "%s :: can't set during blackout. saving %d to prev_mdnie_mode (existing: %d)\n",
+				 __func__, value, prev_mdnie_mode);
+		return count;
+	}
 
 	ret = strict_strtoul(buf, 0, (unsigned long *)&value);
 
@@ -993,6 +1008,9 @@ static int mdniemod_create_sysfs(void)
 //gm
 void mdnie_toggle_negative(void)
 {
+	if (flg_pu_blackout)
+		return;
+	
 	mutex_lock(&g_mdnie->lock);
 	g_mdnie->negative = !g_mdnie->negative;    
 	mutex_unlock(&g_mdnie->lock);
@@ -1002,6 +1020,9 @@ void mdnie_toggle_negative(void)
 
 void mdnie_toggle_nightmode(void)
 {
+	if (flg_pu_blackout)
+		return;
+	
 	mutex_lock(&g_mdnie->lock);
     
     if (prev_mdnie_mode == -1) {
@@ -1038,6 +1059,9 @@ void mdnie_toggle_nightmode(void)
 
 void mdnie_toggle_graymode(void)
 {
+	if (flg_pu_blackout)
+		return;
+	
 	mutex_lock(&g_mdnie->lock);
     
     if (prev_mdnie_mode == -1) {
@@ -1070,6 +1094,47 @@ void mdnie_toggle_graymode(void)
 	mutex_unlock(&g_mdnie->lock);
     
 	set_mdnie_value(g_mdnie, 0);
+}
+
+static void mdnie_toggle_blackout_work(struct work_struct *work)
+{
+	mutex_lock(&g_mdnie->lock);
+    
+    if (prev_mdnie_mode == -1) {
+        // sequence_hook disables mdnie modes, so save previous sequence_hook
+        // and then disable it.
+        prev_sequence_hook = sequence_hook;
+        sequence_hook = false;
+        scheduled_refresh();
+        
+        // save previous mode.
+        prev_mdnie_mode = g_mdnie->mode;
+        g_mdnie->mode = BLACKOUT;
+    } else {
+        
+        if (!sequence_hook) {
+            // sequence_hook should still be false. but if someone started with it off, toggled this, then
+            // enabled the seequence_hook via sysfs, then this would get out of sync and
+            // we'd end up "overwriting" the user's change.
+            
+            // restore previous sequence_hook.
+            sequence_hook = prev_sequence_hook;
+            scheduled_refresh();
+        }
+        
+        // restore previous mode.
+        g_mdnie->mode = prev_mdnie_mode;
+        prev_mdnie_mode = -1;
+    }
+    
+	mutex_unlock(&g_mdnie->lock);
+    
+	set_mdnie_value(g_mdnie, 0);
+}
+
+void mdnie_toggle_blackout(void)
+{
+	queue_work_on(0, wq_mdnie_toggle_blackout, &work_mdnie_toggle_blackout);
 }
 
 static int mdnie_probe(struct platform_device *pdev)
@@ -1197,6 +1262,10 @@ static int mdnie_probe(struct platform_device *pdev)
 #ifdef CONFIG_FB_S5P_MDNIE_CONTROL
 	mdniemod_create_sysfs();
 #endif
+	
+	wq_mdnie_toggle_blackout = alloc_workqueue("mdnie_toggle_blackout_wq", WQ_HIGHPRI, 0);
+	
+	INIT_WORK(&work_mdnie_toggle_blackout, mdnie_toggle_blackout_work);
 
 	return 0;
 
