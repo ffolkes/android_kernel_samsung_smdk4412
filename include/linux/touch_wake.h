@@ -17,7 +17,7 @@ void powerkey_pressed(void);
 void powerkey_released(void);
 void proximity_detected(void);
 void proximity_off(void);
-void touch_press(void);
+void touch_press(bool forceunlock);
 int get_touchoff_delay(void);
 bool device_is_suspended(void);
 void set_powerkeydev(struct input_dev * input_device);
@@ -56,6 +56,27 @@ extern bool sttg_ww_noredundancies;
 extern bool sttg_ww_trigger_noti_only;
 
 extern bool flg_bb_mag_on;
+
+extern unsigned int sttg_pu_mode;
+//extern bool sttg_pu_allow_s2w;
+extern bool flg_pu_recording;
+extern bool flg_pu_tamperevident;
+extern bool flg_pu_locktsp;
+extern bool flg_pu_locktsp_saved_beforesuspend;
+extern bool flg_pu_blackout;
+extern unsigned int pu_recording_end(void);
+extern bool pu_valid_pattern(void);
+extern bool pu_valid(void);
+extern void pu_clearAll(void);
+extern void pu_setFrontLED(unsigned int mode);
+extern void alternateFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, unsigned int b1,
+							  unsigned int duty2, unsigned int r2, unsigned int g2, unsigned int b2);
+extern void flashFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, unsigned int b1);
+
+extern bool sttg_pu_tamperevident;
+extern bool sttg_pu_warnled;
+
+extern struct timeval time_homekey_lastpressed;
 
 extern unsigned int sttg_ka_mode;
 extern unsigned int sttg_ka_knock2_window;

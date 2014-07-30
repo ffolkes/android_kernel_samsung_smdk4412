@@ -56,6 +56,8 @@ bool flg_touchkey_pressed = false;
 bool flg_touchkey_was_pressed = false;
 bool flg_cypress_suspended = false;
 
+static bool flg_skip_next = false;
+
 static unsigned int tk_key_keycode = 0;
 static unsigned int sttg_tk_key1_key_code = 0;
 static unsigned int sttg_tk_key2_key_code = 0;
@@ -748,6 +750,24 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 
 	keycode_type = (data[0] & TK_BIT_KEYCODE);
 	pressed = !(data[0] & TK_BIT_PRESS_EV);
+	
+	if (flg_pu_locktsp && pu_valid()) {
+		// device is locked out. disable touchkeys.
+		printk("[TouchKey] input skipped (flg_pu_locktsp)\n");
+		return IRQ_HANDLED;
+	}
+	
+	if (flg_skip_next) {
+		// avoid sending the key-up event.
+		flg_skip_next = false;
+		return IRQ_HANDLED;
+	}
+	
+	if (pu_recording_end()) {
+		// pu was recording, drop this press.
+		flg_skip_next = true;
+		return IRQ_HANDLED;
+	}
 
 	if (keycode_type <= 0 || keycode_type >= touchkey_count) {
 		printk(KERN_DEBUG "[Touchkey] keycode_type err\n");
@@ -898,7 +918,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 			if (sttg_touchwake_ignoretkeys) {
 				//pr_info("[touchkey/touchwake] ignoring touchkey press\n");
 			} else {
-				touch_press();
+				touch_press(true);
 		}
 		return IRQ_HANDLED;
 	}
@@ -1064,7 +1084,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		input_sync(touchkey_driver->input_dev);
 
 #ifdef CONFIG_TOUCH_WAKE
-	touch_press();
+	touch_press(true);
 #endif
 		/* printk(KERN_DEBUG "[TouchKey] keycode:%d pressed:%d\n",
 		   touchkey_keycode[keycode_index], pressed); */

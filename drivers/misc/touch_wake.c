@@ -43,6 +43,7 @@ extern void controlRearLED(unsigned int level);
 extern struct timeval time_ledtriggered;
 extern void ssp_manual_suspend(void);
 extern void ssp_manual_resume(void);
+extern void mdnie_toggle_blackout(void);
 
 static struct timer_list timer_backblink;
 bool flg_bb_active = false;
@@ -499,16 +500,9 @@ static void touchwake_early_suspend(struct early_suspend * h)
     flg_touchwake_pressed = false;
     flg_touchwake_active = true;
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
-	
-	if (sttg_touchwake_ignoretkeys) {
-		// touchkeys are being ignored, so turn the hardware off.
-		
-		if (touchwake_imp) {
-			pr_info("[TW/early_suspend] TKEYS - TURNING OFF\n");
-			touchwake_imp->disable();
-		}
-	}
     
+	// allow persistent mode only if pu is off, or on and s2w allowed.
+	//if (sttg_touchwake_persistent && (!sttg_pu_mode || sttg_pu_allow_s2w)) {
     if (sttg_touchwake_persistent) {
         // if we are in persistent mode, don't go beyond this if-statement.
         
@@ -551,6 +545,15 @@ static void touchwake_early_suspend(struct early_suspend * h)
             schedule_delayed_work(&touchwake_reset_swipeonly_work, msecs_to_jiffies(touchoff_delay));
             
         }
+		
+		if (sttg_touchwake_ignoretkeys) {
+			// touchkeys are being ignored, so turn the hardware off.
+			
+			if (touchwake_imp) {
+				pr_info("[TW/early_suspend] TKEYS - TURNING OFF\n");
+				touchwake_imp->disable();
+			}
+		}
         
         // always on, so skip the rest.
         return;
@@ -3420,7 +3423,7 @@ void powerkey_released(void)
 }
 EXPORT_SYMBOL(powerkey_released);
 
-void touch_press(void)
+void touch_press(bool forceunlock)
 {
 #ifdef DEBUG_PRINT
 	pr_info("[TOUCHWAKE] Touch press detected\n");
@@ -3428,8 +3431,30 @@ void touch_press(void)
     
     flg_touchwake_pressed = true;
     
-	if (unlikely(device_suspended && touchwake_enabled && !prox_near && mutex_trylock(&lock)))
+	if (unlikely(device_suspended && touchwake_enabled && !prox_near && mutex_trylock(&lock))) {
+		
+		// what if someone turns the screen on, doesn't unlock, lets it time out,
+		// lets tw start, then taps it. that will bypass pu because we're forcing
+		// the lock off here. we need to know the lock status when the screen went
+		// off so we can know not to restore it if it was never unlocked.
+		
+		if (forceunlock && !flg_pu_locktsp_saved_beforesuspend) {
+			// drop the pu lock because we were unlocked when the screen went off.
+			
+			pu_clearAll();
+			
+			// what about the screenblank?
+			if (flg_pu_blackout) {
+				
+				// unblackout the screen.
+				pr_info("[TW/touch_press/pu] unblacking out screen\n");
+				flg_pu_blackout = false;
+				mdnie_toggle_blackout();
+			}
+		}
+		
 		schedule_work(&presspower_work);
+	}
 
 	return;
 }
