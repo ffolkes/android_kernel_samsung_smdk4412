@@ -751,6 +751,25 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	keycode_type = (data[0] & TK_BIT_KEYCODE);
 	pressed = !(data[0] & TK_BIT_PRESS_EV);
 	
+	if (pressed && touchwake_enabled && flg_touchwake_active) {
+		// if touchwake is enabled and active, decide if it should be triggered.
+		// either way, exit early so the tap doesn't vibrate.
+		
+		if (!sttg_touchwake_ignoretkeys) {
+			pr_info("[touchkey/touchwake] got touchkey press\n");
+			
+			// if input is locked, see if we should unlock when we wake.
+			if (flg_pu_locktsp) {
+				touch_press(sttg_pu_allow_tw);
+			} else {
+				// input isn't locked or pu isn't being used.
+				touch_press(false);
+			}
+		}
+		
+		return IRQ_HANDLED;
+	}
+	
 	if (flg_pu_locktsp && pu_valid()) {
 		// device is locked out. disable touchkeys.
 		printk("[TouchKey] input skipped (flg_pu_locktsp)\n");
@@ -911,17 +930,26 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 		
 #ifdef CONFIG_TOUCH_WAKE
 
-        	if (pressed && touchwake_enabled && flg_touchwake_active) {
-			// if touchwake is enable and active, decide if it should be triggered.
+		/*if (pressed && touchwake_enabled && flg_touchwake_active) {
+			// if touchwake is enabled and active, decide if it should be triggered.
 			// either way, exit early so the tap doesn't vibrate.
-            
-			if (sttg_touchwake_ignoretkeys) {
+			
+			if (!sttg_touchwake_ignoretkeys) {
+				pr_info("[touchkey/touchwake] got touchkey press\n");
+				
+				// if input is locked, see if we should unlock when we wake.
+				if (flg_pu_locktsp) {
+					touch_press(sttg_pu_allow_tw);
+				} else {
+					// input isn't locked or pu isn't being used.
+					touch_press(false);
+				}
+			}// else {
 				//pr_info("[touchkey/touchwake] ignoring touchkey press\n");
-			} else {
-				touch_press(true);
-		}
-		return IRQ_HANDLED;
-	}
+			//}
+			
+			return IRQ_HANDLED;
+		}*/
 
 #endif
 		if (flg_screen_on)

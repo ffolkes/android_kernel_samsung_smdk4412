@@ -75,6 +75,7 @@ extern void flashFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, 
 
 extern bool sttg_pu_tamperevident;
 extern bool sttg_pu_warnled;
+extern bool sttg_pu_allow_tw;
 
 extern struct timeval time_homekey_lastpressed;
 

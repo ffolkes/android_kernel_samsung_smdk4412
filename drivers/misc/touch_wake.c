@@ -88,10 +88,11 @@ bool flg_bb_mag_on = false;
 bool touchwake_enabled = false;
 static bool touch_disabled = false;
 static bool device_suspended = false;
-static bool timed_out = true;
+bool timed_out = true;
 bool prox_near = false;
 bool ignore_once = false;
 bool flg_touchwake_active = false;
+static bool flg_touchwake_allowforceunlock = false;
 unsigned int touchoff_delay = 10000;
 bool sttg_tw_usewavewake = false;
 bool sttg_touchwake_swipe_only = false;
@@ -500,7 +501,21 @@ static void touchwake_early_suspend(struct early_suspend * h)
     flg_touchwake_pressed = false;
     flg_touchwake_active = true;
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
+	
+	if (sttg_touchwake_persistent && !sttg_touchwake_force_timedout_tapwake) {
+		// this is a dirty hack because i don't have time to rewrite tw.
+		// if we aren't going to schedule work, always enforce the lock.
+		// TODO: make this into scheduled work that will change this var
+		// x ms after suspend regardless of any other settings.
+		flg_touchwake_allowforceunlock = false;
+		
+	} else {
+		
+		flg_touchwake_allowforceunlock = true;
+	}
     
+	pr_info("[TOUCHWAKE] flg_touchwake_allowforceunlock: %d\n", flg_touchwake_allowforceunlock);
+	
 	// allow persistent mode only if pu is off, or on and s2w allowed.
 	//if (sttg_touchwake_persistent && (!sttg_pu_mode || sttg_pu_allow_s2w)) {
     if (sttg_touchwake_persistent) {
@@ -518,7 +533,7 @@ static void touchwake_early_suspend(struct early_suspend * h)
 		
 		flg_ctr_cpuboost_mid = 10;
         
-        if (timed_out && sttg_touchwake_swipe_only && sttg_touchwake_force_timedout_tapwake) {
+        if (timed_out && sttg_touchwake_force_timedout_tapwake) {
             // the user might want to hold a persistent lock and use slide2wake, but still be able to
             // just single tap to wake up after a timeout event. so we have to schedule delayed work
             // to reset sttg_touchwake_swipe_only back to the real value.
@@ -723,6 +738,9 @@ static void touchwake_touchoff(struct work_struct * touchoff_work)
 {
     flg_touchwake_active = false;
 	
+	// now that tw has timed out, don't allow it to bypass the pu input lock.
+	flg_touchwake_allowforceunlock = false;
+	
 	if (flg_tw_prox_on) {
 		pr_info("[TW/SSP] PROX - DISABLE - touchwake has timed out\n");
 		flg_tw_prox_on = false;
@@ -763,6 +781,7 @@ static void touchwake_reset_swipeonly(struct work_struct * touchwake_reset_swipe
 		flg_tw_prox_on = false;
 		forceDisableSensor(5);
 	}
+	flg_touchwake_allowforceunlock = false;
     flg_touchwake_swipe_only = sttg_touchwake_swipe_only;
     pr_info("touchwake: reset_swipeonly set %d to %d\n", flg_touchwake_swipe_only, sttg_touchwake_swipe_only);
     //if (!sttg_touchwake_persistent_wakelock) { /* TODO: disabled IF-block until deepsleep wake works */
@@ -3192,7 +3211,7 @@ void proximity_detected(void)
 		
 		// turn on.
 		pr_info("[TW/proximity_detected] PRESSPOWER\n");
-		press_power();
+		touch_press(sttg_pu_allow_tw);
 		
 		// we're done.
 		return;
@@ -3426,7 +3445,7 @@ EXPORT_SYMBOL(powerkey_released);
 void touch_press(bool forceunlock)
 {
 #ifdef DEBUG_PRINT
-	pr_info("[TOUCHWAKE] Touch press detected\n");
+	pr_info("[TOUCHWAKE] Touch press detected, timed_out: %d\n", timed_out);
 #endif
     
     flg_touchwake_pressed = true;
@@ -3438,7 +3457,7 @@ void touch_press(bool forceunlock)
 		// the lock off here. we need to know the lock status when the screen went
 		// off so we can know not to restore it if it was never unlocked.
 		
-		if (forceunlock && !flg_pu_locktsp_saved_beforesuspend) {
+		if (forceunlock && timed_out && flg_touchwake_allowforceunlock && !flg_pu_locktsp_saved_beforesuspend && !flg_touchwake_swipe_only) {
 			// drop the pu lock because we were unlocked when the screen went off.
 			
 			pu_clearAll();
