@@ -533,10 +533,11 @@ static void touchwake_early_suspend(struct early_suspend * h)
 		
 		flg_ctr_cpuboost_mid = 10;
         
-        if (timed_out && sttg_touchwake_force_timedout_tapwake) {
+        if (timed_out && sttg_touchwake_force_timedout_tapwake && !ignore_once) {
             // the user might want to hold a persistent lock and use slide2wake, but still be able to
             // just single tap to wake up after a timeout event. so we have to schedule delayed work
             // to reset sttg_touchwake_swipe_only back to the real value.
+            // also check for ignore_once, in case we shouldn't start traditional tw.
             
             pr_info("[TOUCHWAKE] Early suspend - swipeonly and force_tap set. scheduling work...\n");
             
@@ -570,7 +571,8 @@ static void touchwake_early_suspend(struct early_suspend * h)
 			}
 		}
         
-        // always on, so skip the rest.
+        // always on, so reset the ignore flag and skip the rest.
+        ignore_once = false;
         return;
     }
 
