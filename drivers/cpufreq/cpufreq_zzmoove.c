@@ -4958,8 +4958,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		// decrease the up_threshold, if requested.
 		if (sttg_typingbooster_upthreshold && sttg_typingbooster_upthreshold < scaling_up_threshold) {
 			scaling_up_threshold = sttg_typingbooster_upthreshold;
-			if (flg_debug)
-				pr_info("[zzmoove/dbs_check_cpu/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
+			//if (flg_debug)
+			//	pr_info("[zzmoove/dbs_check_cpu/typingbooster] up_threshold set to %d\n", sttg_typingbooster_upthreshold);
 		}
 		
 		flg_ctr_typingbooster_cycles--;
@@ -5189,8 +5189,8 @@ static void __cpuinit hotplug_offline_work_fn(struct work_struct *work)
 	// Yank: added frequency thresholds
 	for_each_online_cpu(cpu) {
 		if (flg_debug > 2)
-			pr_info("[zzmoove/hotplug_offline_work] online cpu: %d (%d), load: %d / %d, min_limit: %d, min_touchbooster: %d, freq: %d / %d, mftl: %d\n",
-					cpu, cpu_online(cpu), cur_load, hotplug_thresholds[1][cpu-1], dbs_tuners_ins.hotplug_min_limit,
+			pr_info("[zzmoove/hotplug_offline_work] online cpu: %d (%d), load: %d / %d, min_limit: %d (saved: %d), min_touchbooster: %d, freq: %d / %d, mftl: %d\n",
+					cpu, cpu_online(cpu), cur_load, hotplug_thresholds[1][cpu-1], dbs_tuners_ins.hotplug_min_limit, dbs_tuners_ins.hotplug_min_limit_saved,
 					dbs_tuners_ins.hotplug_min_limit_touchbooster, hotplug_thresholds_freq[1][cpu-1], cur_freq, max_freq_too_low);
 	    if (likely(cpu_online(cpu) && (cpu)) && cpu != 0
 			&& cur_load <= hotplug_thresholds[1][cpu-1]
