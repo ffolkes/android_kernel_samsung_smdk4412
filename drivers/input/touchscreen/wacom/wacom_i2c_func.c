@@ -34,6 +34,7 @@
 #endif
 
 extern int flg_ctr_tsp_touching;
+extern bool flg_pu_locktsp;
 extern void press_button(int keycode, bool delayed, bool force, bool elastic);
 
 bool flg_epen_pressed = false;
@@ -145,7 +146,7 @@ static void epen_activity_lockout(struct wacom_i2c *wac_i2c, bool on)
 
 void forced_release(struct wacom_i2c *wac_i2c)
 {
-	if (!flg_ctr_tsp_touching) {
+	if (!flg_ctr_tsp_touching && !flg_pu_locktsp) {
 #if defined(CONFIG_SAMSUNG_KERNEL_DEBUG_USER)
 		printk(KERN_DEBUG "[E-PEN] %s\n", __func__);
 #endif
@@ -191,7 +192,7 @@ void forced_hover(struct wacom_i2c *wac_i2c)
 #if defined(CONFIG_SAMSUNG_KERNEL_DEBUG_USER)
 	printk(KERN_DEBUG "[E-PEN] %s\n", __func__);
 #endif
-	if (!flg_ctr_tsp_touching) {
+	if (!flg_ctr_tsp_touching && !flg_pu_locktsp) {
 		input_report_key(wac_i2c->input_dev, KEY_PEN_PDCT, 1);
 		input_sync(wac_i2c->input_dev);
 		//printk("[E-PEN] input_sync (forced_hover workaround)\n");
@@ -985,7 +986,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			y = y + tilt_offsetY[user_hand][screen_rotate];
 		}
 #endif
-		if (wacom_i2c_coord_range(&x, &y) && !flg_ctr_tsp_touching) {
+		if (wacom_i2c_coord_range(&x, &y) && !flg_ctr_tsp_touching && !flg_pu_locktsp) {
 			// the hover state is constantly reported.
 		
 			// activate the touchkey lockout, if enabled.
@@ -1116,7 +1117,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 	} else {
 
 #ifdef WACOM_IRQ_WORK_AROUND
-		if (!gpio_get_value(wac_i2c->wac_pdata->gpio_pendct) && !flg_ctr_tsp_touching) {
+		if (!gpio_get_value(wac_i2c->wac_pdata->gpio_pendct) && !flg_ctr_tsp_touching && !flg_pu_locktsp) {
 			x = ((u16) data[1] << 8) + (u16) data[2];
 			y = ((u16) data[3] << 8) + (u16) data[4];
 
@@ -1154,7 +1155,7 @@ int wacom_i2c_coord(struct wacom_i2c *wac_i2c)
 			   ABS_X, x); */
 			/* input_report_abs(wac->input_dev,
 			   ABS_Y, y); */
-			if (!flg_ctr_tsp_touching) {
+			if (!flg_ctr_tsp_touching && !flg_pu_locktsp) {
 				input_report_abs(wac_i2c->input_dev, ABS_PRESSURE, 0);
 				input_report_key(wac_i2c->input_dev, BTN_STYLUS, 0);
 				input_report_key(wac_i2c->input_dev, BTN_TOUCH, 0);
