@@ -894,28 +894,28 @@ static ssize_t store_an30259a_led_blink(struct device *dev,
 	
 	if (led_r_brightness_orig == 0 && led_g_brightness_orig == 23 && led_b_brightness_orig == 0) {
 		// charged.
-		led_r_brightness = 0;
+		/*led_r_brightness = 0;
 		led_g_brightness = 100;
-		led_b_brightness = 0;
+		led_b_brightness = 0;*/
 		flg_system_noti = 1;
 	} else if ((led_r_brightness_orig == 22 && led_g_brightness_orig == 23 && led_b_brightness_orig == 0)
 			   || (led_r_brightness_orig == 20 && led_g_brightness_orig == 13 && led_b_brightness_orig == 0)) {
 		// charging 70%-89%
-		led_r_brightness = 255;
+		/*led_r_brightness = 255;
 		led_g_brightness = 50;
-		led_b_brightness = 0;
+		led_b_brightness = 0;*/
 		flg_system_noti = 1;
 	} else if (led_r_brightness_orig == 25 && led_g_brightness_orig == 11 && led_b_brightness_orig == 0) {
 		// charging <70%
-		led_r_brightness = 255;
+		/*led_r_brightness = 255;
 		led_g_brightness = 10;
-		led_b_brightness = 0;
+		led_b_brightness = 0;*/
 		flg_system_noti = 1;
 	} else if (led_r_brightness_orig == 20 && led_g_brightness_orig == 6 && led_b_brightness_orig == 0) {
 		// charging even less than above.
-		led_r_brightness = 255;
+		/*led_r_brightness = 255;
 		led_g_brightness = 10;
-		led_b_brightness = 0;
+		led_b_brightness = 0;*/
 		flg_system_noti = 1;
 	} else {
 		flg_system_noti = 0;

@@ -62,6 +62,16 @@ static unsigned int tk_key_keycode = 0;
 static unsigned int sttg_tk_key1_key_code = 0;
 static unsigned int sttg_tk_key2_key_code = 0;
 
+// tk dt (double tap)
+static unsigned int sttg_tk_mt_key1_mode = 1; // 0 = off, 1+ = on & number of presses required
+static unsigned int sttg_tk_mt_key2_mode = 0; // 0 = off, 1+ = on & number of presses required
+static unsigned int sttg_tk_mt_minimum_between = 100;
+static unsigned int sttg_tk_mt_maximum_between = 500;
+static unsigned int tk_mt_last_keycode_type = 0;
+static int ctr_tk_mt_presses = 0;
+static struct timeval time_tk_lastpress;
+static unsigned int time_since_tk_mt_lastpress = 0;
+
 extern bool epen_is_active;
 extern int touch_is_pressed;
 extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
@@ -728,6 +738,7 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	int retry = 10;
 	int keycode_type = 0;
 	int pressed;
+	static struct timeval time_now_tk_mt;
 
 	set_touchkey_debug('a');
 
@@ -796,6 +807,65 @@ static irqreturn_t touchkey_interrupt(int irq, void *dev_id)
 	if (flg_touchkey_ignore || touch_is_pressed || epen_is_active || flg_epen_worryfree_mode) {
 		printk("[TouchKey] input skipped (flg_touchkey_ignore)\n");
 		return IRQ_HANDLED;
+	}
+	
+	if (pressed  // touchkey down-state
+		&& (
+			(keycode_type == 1 && sttg_tk_mt_key1_mode)  // key1 is being pressed, is it enabled?
+			 || (keycode_type == 2 && sttg_tk_mt_key2_mode)  // key2 is being pressed, is it enabled?
+			)
+		) {
+		
+		// get the time.
+		do_gettimeofday(&time_now_tk_mt);
+		
+		time_since_tk_mt_lastpress = (time_now_tk_mt.tv_sec - time_tk_lastpress.tv_sec) * MSEC_PER_SEC +
+										(time_now_tk_mt.tv_usec - time_tk_lastpress.tv_usec) / USEC_PER_MSEC;
+		
+		// save the time now that we've read it.
+		do_gettimeofday(&time_tk_lastpress);
+		
+		if (time_since_tk_mt_lastpress < sttg_tk_mt_minimum_between  // not too fast
+			|| time_since_tk_mt_lastpress > sttg_tk_mt_maximum_between   // not too slow
+			|| keycode_type != tk_mt_last_keycode_type  // the same keycode must bind them all. right, frodo?
+			) {
+			// event is invalid, start a new one.
+			
+			printk(KERN_DEBUG "[TOUCHKEY/mt] first press (lastpress: %d, keycode: %d)\n", time_since_tk_mt_lastpress, keycode_type);
+			ctr_tk_mt_presses = 1;
+			
+			// save which key this event is bound to.
+			tk_mt_last_keycode_type = keycode_type;
+			
+			// ditch this press, and the up-state following it.
+			flg_skip_next = true;
+			return IRQ_HANDLED;
+		}
+		
+		if (
+			(keycode_type == 1 && ctr_tk_mt_presses == sttg_tk_mt_key1_mode)  // check for key1 nth
+			|| (keycode_type == 2 && ctr_tk_mt_presses == sttg_tk_mt_key2_mode)  // check for key2 nth
+			) {
+			// this is the nth press, so let it through.
+			
+			printk(KERN_DEBUG "[TOUCHKEY/mt] nth press found (lastpress: %d, keycode: %d)\n", time_since_tk_mt_lastpress, keycode_type);
+			
+			// this shouldn't matter, but just to be safe reset it.
+			ctr_tk_mt_presses = 0;
+			
+		} else {
+			// this isn't the nth press. ignore it.
+			
+			// increment counter.
+			ctr_tk_mt_presses++;
+			printk(KERN_DEBUG "[TOUCHKEY/mt] ignoring press %d (%d - %d)\n", ctr_tk_mt_presses, keycode_type, pressed);
+			
+			// ditch the up-state following this press.
+			flg_skip_next = true;
+			
+			// ditch this press.
+			return IRQ_HANDLED;
+		}
 	}
 
 	if (pressed) {
@@ -2110,6 +2180,102 @@ static ssize_t tk_key2_key_code_store(struct device *dev,
 	
 	return size;
 }
+	
+static ssize_t tk_mt_key1_mode_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_mt_key1_mode);
+	return ret;
+}
+
+static ssize_t tk_mt_key1_mode_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_mt_key1_mode = data;
+	pr_info("[TK/custom] STORE - sttg_tk_mt_key1_mode has been set to: %d\n", data);
+	
+	return size;
+}
+
+static ssize_t tk_mt_key2_mode_show(struct device *dev,
+									struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_mt_key2_mode);
+	return ret;
+}
+
+static ssize_t tk_mt_key2_mode_store(struct device *dev,
+									 struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_mt_key2_mode = data;
+	pr_info("[TK/custom] STORE - sttg_tk_mt_key2_mode has been set to: %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t tk_mt_minimum_between_show(struct device *dev,
+										  struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_mt_minimum_between);
+	return ret;
+}
+
+static ssize_t tk_mt_minimum_between_store(struct device *dev,
+										   struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5000)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_mt_minimum_between = data;
+	pr_info("[TK/custom] STORE - sttg_tk_mt_minimum_between has been set to: %d\n", data);
+	
+	return size;
+}
+	
+static ssize_t tk_mt_maximum_between_show(struct device *dev,
+										  struct device_attribute *attr, char *buf)
+{
+	int ret;
+	ret = sprintf(buf, "%d\n", sttg_tk_mt_maximum_between);
+	return ret;
+}
+
+static ssize_t tk_mt_maximum_between_store(struct device *dev,
+										   struct device_attribute *attr, const char *buf, size_t size)
+{
+	int data, ret;
+	
+	ret = sscanf(buf, "%d\n", &data);
+	if (unlikely(ret != 1 || data < 0 || data > 5000)) {
+		return -EINVAL;
+	}
+	
+	sttg_tk_mt_maximum_between = data;
+	pr_info("[TK/custom] STORE - sttg_tk_mt_maximum_between has been set to: %d\n", data);
+	
+	return size;
+}
 
 static ssize_t mali_asv_show(struct device *dev,
 									struct device_attribute *attr, char *buf)
@@ -2793,6 +2959,10 @@ static DEVICE_ATTR(gesture_delay, S_IRUGO | S_IWUSR | S_IWGRP,
 #endif
 static DEVICE_ATTR(tk_key1_key_code, S_IRUGO | S_IWUSR | S_IWGRP, tk_key1_key_code_show, tk_key1_key_code_store);
 static DEVICE_ATTR(tk_key2_key_code, S_IRUGO | S_IWUSR | S_IWGRP, tk_key2_key_code_show, tk_key2_key_code_store);
+static DEVICE_ATTR(tk_mt_key1_mode, S_IRUGO | S_IWUSR | S_IWGRP, tk_mt_key1_mode_show, tk_mt_key1_mode_store);
+static DEVICE_ATTR(tk_mt_key2_mode, S_IRUGO | S_IWUSR | S_IWGRP, tk_mt_key2_mode_show, tk_mt_key2_mode_store);
+static DEVICE_ATTR(tk_mt_minimum_between, S_IRUGO | S_IWUSR | S_IWGRP, tk_mt_minimum_between_show, tk_mt_minimum_between_store);
+static DEVICE_ATTR(tk_mt_maximum_between, S_IRUGO | S_IWUSR | S_IWGRP, tk_mt_maximum_between_show, tk_mt_maximum_between_store);
 static DEVICE_ATTR(mali_asv, S_IRUGO | S_IWUSR | S_IWGRP,mali_asv_show, mali_asv_store);
 static DEVICE_ATTR(mali_cur_freq, S_IRUGO, mali_cur_freq_show, NULL);
 static DEVICE_ATTR(mali_step_lock, S_IRUGO | S_IWUSR | S_IWGRP, mali_step_lock_show, mali_step_lock_store);
@@ -2864,6 +3034,10 @@ static struct attribute *touchkey_attributes[] = {
 #endif
 	&dev_attr_tk_key1_key_code.attr,
 	&dev_attr_tk_key2_key_code.attr,
+	&dev_attr_tk_mt_key1_mode.attr,
+	&dev_attr_tk_mt_key2_mode.attr,
+	&dev_attr_tk_mt_minimum_between.attr,
+	&dev_attr_tk_mt_maximum_between.attr,
 	&dev_attr_mali_asv.attr,
 	&dev_attr_mali_cur_freq.attr,
 	&dev_attr_mali_step_lock.attr,
