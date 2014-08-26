@@ -1047,13 +1047,15 @@ static void interactive_input_event(struct input_handle *handle,
 
 static int input_dev_filter(const char *input_dev_name)
 {
-	if (strstr(input_dev_name, "touchscreen") ||
-	    strstr(input_dev_name, "touch_dev") ||
-	    strstr(input_dev_name, "sec-touchscreen") ||
+	if (//strstr(input_dev_name, "touchscreen") || // these aren't used on Note 2
+	    //strstr(input_dev_name, "touch_dev") ||
+	    //strstr(input_dev_name, "sec-touchscreen") ||
 	    strstr(input_dev_name, "sec_touchscreen") ||
+		strstr(input_dev_name, "sec_e-pen") ||
 	    strstr(input_dev_name, "gpio-keys") ||
-	    strstr(input_dev_name, "sec_touchkey") ||
-	    strstr(input_dev_name, "keypad")) {
+	    strstr(input_dev_name, "sec_touchkey")
+	    //strstr(input_dev_name, "keypad")
+		) {
 		
 		pr_info("[zzmoove] inputboost - found input device: %s\n", input_dev_name);
 		
