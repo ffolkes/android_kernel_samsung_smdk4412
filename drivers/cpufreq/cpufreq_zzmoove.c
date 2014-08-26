@@ -1233,10 +1233,10 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 																				 * freq_table_order, 0, freq_table_size)].frequency);
 			}
 			pr_info("[zzmoove] we shouldn't be here: %d\n", curfreq);
-			return (curfreq);				// Yank: we should never get here...
+			return (table[limit_table_start].frequency);				// Yank: we should never get here...
 		}
 	}
-	return (curfreq);					// ZZ: ...neither here -> freq not found
+	return (table[limit_table_start].frequency);					// ZZ: ...neither here -> freq not found
 }
 
 // ZZ: function for enabling cores from offline state
