@@ -1212,7 +1212,8 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 	// ZZ: feq search loop with optimization
 	for (i = limit_table_start; (likely(table[i].frequency != limit_table_end)); i++) {
 		
-		//pr_info("[zzmoove] table loop: %d\n", table[i].frequency);
+		if (flg_debug > 3)
+			pr_info("[zzmoove] table loop: %d\n", table[i].frequency);
 		
 	    if (unlikely(curfreq == table[i].frequency)) {	// Yank: we found where we currently are (i)
 			
@@ -1259,6 +1260,9 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 	
 	table = cpufreq_frequency_get_table(0);			// Yank: get system frequency table
 	
+	if (flg_debug == 6)
+	pr_info("[zzmoove/evaluate_scaling_order_limit_range] 0 (max_freq: %d)\n", max_freq);
+	
 	/*
 	 * ZZ: execute at start and at limit case and in combination with limit case 3 times
 	 * to catch all scaling max/min changes at/after gov start
@@ -1275,6 +1279,9 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 		
 	    freq_table_size = i - 1;						// Yank: upper index limit of freq. table
 		
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 1 (freq_table_size: %d)\n", freq_table_size);
+		
 	    /*
 	     * ZZ: we have to take care about where we are in the frequency table. when using kernel sources without OC capability
 	     * it might be that index 0 and 1 contains no frequencies so a save index start point is needed.
@@ -1282,6 +1289,9 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 	    calc_index = freq_table_size - max_scaling_freq_hard;		// ZZ: calculate the difference and use it as start point
 	    if (calc_index == freq_table_size)					// ZZ: if we are at the end of the table
 		calc_index = calc_index - 1;					// ZZ: shift in range for order calculation below
+		
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 2 (calc_index: %d)\n", calc_index);
 		
 	    // Yank: assert if CPU freq. table is in ascending or descending order
 	    if (table[calc_index].frequency > table[calc_index+1].frequency) {
@@ -1294,6 +1304,9 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 			limit_table_start = 0;						// ZZ: start searching at lowest frequency
 			limit_table_end = table[freq_table_size].frequency;		// ZZ: end searching at highest frequency limit
 	    }
+		
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 3 (min_scaling_freq: %d, limit_table_start: %d, limit_table_end: %d)\n", min_scaling_freq, limit_table_start, limit_table_end);
 	}
 	
 	// ZZ: execute at limit case but not at suspend and in combination with start case 3 times at/after gov start
@@ -1313,14 +1326,21 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 			}
 	    }
 		
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 2_1 (max_scaling_freq_hard: %d)\n", max_scaling_freq_hard);
+		
 	    if (dbs_tuners_ins.freq_limit == 0 ||					// Yank: if there is no awake freq. limit
 			dbs_tuners_ins.freq_limit > table[max_scaling_freq_hard].frequency) {	// Yank: or it is higher than hard max frequency
 			max_scaling_freq_soft = max_scaling_freq_hard;				// Yank: use hard max frequency
+			if (flg_debug == 6)
+			pr_info("[zzmoove/evaluate_scaling_order_limit_range] 2_2 (max_scaling_freq_soft: %d)\n", max_scaling_freq_soft);
 			if (freq_table_order == 1)						// ZZ: if descending ordered table is used
 		    limit_table_start = max_scaling_freq_soft;				// ZZ: we should use the actual scaling soft limit value as search start point
 			else
 		    limit_table_end = table[freq_table_size].frequency;			// ZZ: set search end point to max frequency when using ascending table
 	    } else {
+			if (flg_debug == 6)
+			pr_info("[zzmoove/evaluate_scaling_order_limit_range] 2_3\n");
 			for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++) {
 				if (unlikely(dbs_tuners_ins.freq_limit == table[i].frequency)) {	// Yank: else lookup awake max. frequency index
 					max_scaling_freq_soft = i;
@@ -1332,6 +1352,8 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 				}
 			}
 	    }
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 2_4 (max_scaling_freq_soft: %d, limit_table_start: %d, limit_table_end: %d)\n", max_scaling_freq_soft, limit_table_start, limit_table_end);
 	    if (freq_init_count < 2)							// ZZ: execute start and limit part together 3 times to catch a possible setting of
 	    freq_init_count++;								// ZZ: hard freq limit after gov start - after that skip 'start' part during
 	}										// ZZ: normal operation and use only limit part to adjust limit optimizations
@@ -1357,12 +1379,18 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 				}
 			}
 	    }
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 3_1 (max_scaling_freq_soft: %d, limit_table_start: %d, limit_table_end: %d)\n",
+				max_scaling_freq_soft, limit_table_start, limit_table_end);
 	}
 	
 	// ZZ: execute only at resume but not at limit or start case
 	if (!suspend && !limit && !start) {						// ZZ: only if we are not at suspend
 	    if (freq_limit_awake == 0 ||						// Yank: if there is no awake frequency limit
 			freq_limit_awake > table[max_scaling_freq_hard].frequency) {		// Yank: or it is higher than hard max frequency
+			if (flg_debug == 6)
+			pr_info("[zzmoove/evaluate_scaling_order_limit_range] 4_1 (max_scaling_freq_soft: %d, max_scaling_freq_hard: %d)\n",
+					max_scaling_freq_soft, max_scaling_freq_hard);
 			max_scaling_freq_soft = max_scaling_freq_hard;				// Yank: use hard max frequency
 			if (freq_table_order == 1)						// ZZ: if descending ordered table is used
 		    limit_table_start = max_scaling_freq_soft;				// ZZ: we should use the actual scaling soft limit value as search start point
@@ -1380,6 +1408,9 @@ static inline void evaluate_scaling_order_limit_range(bool start, bool limit, bo
 				}
 			}
 	    }
+		if (flg_debug == 6)
+		pr_info("[zzmoove/evaluate_scaling_order_limit_range] 4_2 (max_scaling_freq_soft: %d, limit_table_start: %d, limit_table_end: %d)\n",
+				max_scaling_freq_soft, limit_table_start, limit_table_end);
 	}
 }
 
@@ -5078,6 +5109,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	// Check for frequency decrease
 	if (max_load < scaling_down_threshold || force_down_scaling) {				// ZZ: added force down switch
 		
+		if (flg_debug > 2)
+			pr_info("[zzmoove/dbs_check_cpu] starting decrease check\n");
+		
 	    // ZZ: Sampling rate idle
 	    if (dbs_tuners_ins.sampling_rate_idle != dbs_tuners_ins.sampling_rate
 			&& max_load < dbs_tuners_ins.sampling_rate_idle_threshold && !suspend_flag
@@ -5091,12 +5125,18 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			sampling_rate_step_down_delay++;
 		}
 		
+		if (flg_debug > 2)
+			pr_info("[zzmoove/dbs_check_cpu] decrease 1 (cur: %d, min: %d)\n", policy->cur, policy->min);
+		
 		// ZZ: Sampling down momentum - no longer fully busy, reset rate_mult
 		this_dbs_info->rate_mult = 1;
 		
 		// if we cannot reduce the frequency anymore, break out early
 		if (policy->cur == policy->min)
 		return;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove/dbs_check_cpu] decrease 2 (cur: %d, max_load: %d)\n", policy->cur, max_load);
 		
 		this_dbs_info->requested_freq = zz_get_next_freq(policy->cur, 2, max_load);
 		
@@ -5106,6 +5146,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 				pr_info("[zzmoove/dbs_check_cpu] inputboost - DOWN too low - repunched freq to %d, from %d\n", dbs_tuners_ins.inputboost_punch_freq, this_dbs_info->requested_freq);
 			this_dbs_info->requested_freq = dbs_tuners_ins.inputboost_punch_freq;
 		}
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove/dbs_check_cpu] decrease 3 (freq_limit: %d)\n", dbs_tuners_ins.freq_limit);
 		
 		if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
 		    > dbs_tuners_ins.freq_limit)
@@ -5117,7 +5160,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			// this is after the freq limit check, otherwise the
 			// cable limit would be overridden by it.
 			this_dbs_info->requested_freq = dbs_tuners_ins.cable_min_freq;
+			if (flg_debug > 2)
+				pr_info("[zzmoove/dbs_check_cpu] decrease 4 (cable_freq: %d)\n", dbs_tuners_ins.cable_min_freq);
 		}
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove/dbs_check_cpu] decrease 5 (requested_freq: %d)\n", this_dbs_info->requested_freq);
 		
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_L);								// ZZ: changed to relation low
@@ -5582,6 +5630,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			freq_init_count = 0;						// ZZ: reset init flag for governor reload
 			evaluate_scaling_order_limit_range(1, 0, 0, policy->max);	// ZZ: table order detection and limit optimizations
 			
+			if (flg_debug == 5)
+			pr_info("[zzmoove/goat] gov start (policymax: %d)\n", policy->max);
+			
 			// ZZ: save default values in threshold array
 			for (i = 0; i < possible_cpus; i++) {
 				hotplug_thresholds[0][i] = DEF_FREQUENCY_UP_THRESHOLD_HOTPLUG;
@@ -5697,6 +5748,8 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			 * now we should catch all freq max changes during start of the governor
 			 */
 			evaluate_scaling_order_limit_range(0, 1, suspend_flag, policy->max);
+			if (flg_debug == 5)
+			pr_info("[zzmoove/goat] gov limits (policymax: %d)\n", policy->max);
 			
 			/*
 			 * ZZ: check if maximal freq is lower than any hotplug freq thresholds,
