@@ -3454,6 +3454,8 @@ void touch_press(bool forceunlock)
     
 	if (unlikely(device_suspended && touchwake_enabled && !prox_near && mutex_trylock(&lock))) {
 		
+		flg_ctr_cpuboost = 15;
+		
 		// what if someone turns the screen on, doesn't unlock, lets it time out,
 		// lets tw start, then taps it. that will bypass pu because we're forcing
 		// the lock off here. we need to know the lock status when the screen went
