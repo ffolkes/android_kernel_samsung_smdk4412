@@ -63,7 +63,7 @@ static unsigned int sttg_tk_key1_key_code = 0;
 static unsigned int sttg_tk_key2_key_code = 0;
 
 // tk dt (double tap)
-static unsigned int sttg_tk_mt_key1_mode = 1; // 0 = off, 1+ = on & number of presses required
+static unsigned int sttg_tk_mt_key1_mode = 0; // 0 = off, 1+ = on & number of presses required
 static unsigned int sttg_tk_mt_key2_mode = 0; // 0 = off, 1+ = on & number of presses required
 static unsigned int sttg_tk_mt_minimum_between = 100;
 static unsigned int sttg_tk_mt_maximum_between = 500;
