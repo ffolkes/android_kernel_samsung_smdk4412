@@ -513,9 +513,13 @@
 #include <linux/earlysuspend.h>
 #include <linux/slab.h>
 #include <linux/input.h>
+#include <linux/wakelock.h>
 
 extern bool flg_screen_on;
 extern bool flg_power_cableattached;
+extern void press_button(int keycode, bool delayed, bool force, bool elastic, bool powerfirst);
+extern void alternateFrontLED(unsigned int duty1, unsigned int r1, unsigned int g1, unsigned int b1,
+							  unsigned int duty2, unsigned int r2, unsigned int g2, unsigned int b2);
 
 // ZZ: include profiles header file and set name for 'custom' profile (informational for a changed profile value)
 #include "cpufreq_zzmoove_profiles.h"
@@ -648,6 +652,16 @@ static char custom_profile[20] = "custom";			// ZZ: name to show in sysfs if any
 #define DEF_INPUTBOOST_ON_TK			(1)			// ff: default to boost on touchkey input events
 
 #define DEF_CABLE_MIN_FREQ				(0)			// ff: default minimum freq to maintain while cable plugged in
+#define DEF_MUSIC_MAX_FREQ				(0)			// ff: default maximum freq to maintain while music is on
+#define DEF_MUSIC_MIN_FREQ				(0)			// ff: default minimum freq to maintain while music is on
+#define DEF_RPC_THRESHOLD				(3000)		// ff: default number of maxed-load cycles before Runaway Process Compensation kicks in
+#define DEF_RPC_LED						(1)			// ff: default for led flashing
+#define DEF_RPC_FAST_RESET_THRESHOLD_SLEEP	(200)	// ff: default threshold below which just 1 nonrunaway sample will reset rpc
+#define DEF_RPC_LOAD_THRESHOLD			(95)		// ff: default load threshold before Runaway Process Compensation kicks
+#define DEF_RPC_LOAD_THRESHOLD_SLEEP	(95)		// ff: default load threshold before Runaway Process Compensation kicks in while sleeping
+#define DEF_RPC_CUTOFF_THRESHOLD_CYCLES	(3900)		// ff: default number of rpc cycles before frequency/cores are reduced
+#define DEF_RPT_MODE					(1)			// ff: default state of Runaway Process Termination. 0 = off, 1 = on
+#define DEF_RPC_DISABLEONCABLE			(1)			// ff: default for whether or not RPC will suspend while a cable is plugged in
 
 // ZZ: Sampling Down Momentum variables
 static unsigned int min_sampling_rate;				// ZZ: minimal possible sampling rate
@@ -746,6 +760,19 @@ static int flg_ctr_inputboost_punch = 0;
 
 // ff: misc. variables
 static unsigned int flg_debug = DEBUG_LEVEL;
+static int ctr_runaway_cycles = 0;
+static int ctr_runaway_reset_cycles = 0;
+static unsigned int flg_booted = 0;
+static struct timeval time_boot;
+static bool flg_runaway_ledon = false;
+static unsigned int freq_limit_runaway = 0;
+static unsigned int core_limit_runaway = 0;
+static int music_max_freq_step = 0;
+static unsigned int stats_total_maxed_load = 0;
+
+static struct wake_lock rpt_wake_lock;
+static void rpt_wakeunlock_work(struct work_struct * work_rpt_wakeunlock);
+static DECLARE_DELAYED_WORK(work_rpt_wakeunlock, rpt_wakeunlock_work);
 
 struct work_struct hotplug_offline_work;			// ZZ: hotplugging down work
 struct work_struct hotplug_online_work;				// ZZ: hotplugging up work
@@ -890,6 +917,17 @@ static struct dbs_tuners {
 	unsigned int inputboost_punch_freq;				// ff: default frequency to keep cur_freq at or above
 	unsigned int debug_level;						// ff: verbose debugging
 	unsigned int cable_min_freq;					// ff: cable min freq
+	unsigned int music_max_freq;					// ff: music max freq
+	unsigned int music_min_freq;					// ff: music min freq
+	unsigned int music_state;						// ff: music state
+	unsigned int rpc_led;							// ff:
+	unsigned int rpc_load_threshold;				// ff: runaway process compensation load threshold
+	unsigned int rpc_load_threshold_sleep;			// ff: runaway process compensation load threshold while sleeping
+	unsigned int rpc_fast_reset_threshold_sleep;	// ff:
+	unsigned int rpc_threshold_cycles;				// ff: runaway process compensation threshold cycles
+	unsigned int rpc_cutoff_threshold_cycles;		// ff: runaway process compensation freq/core reduction threshold
+	unsigned int rpt_mode;							// ff: runaway process termination mode
+	unsigned int rpc_disableoncable;				// ff:
 	
 	// ZZ: set tuneable default values
 } dbs_tuners_ins = {
@@ -999,7 +1037,25 @@ static struct dbs_tuners {
 	.inputboost_punch_freq = DEF_INPUTBOOST_PUNCH_FREQ,
 	.debug_level = DEBUG_LEVEL,
 	.cable_min_freq = DEF_CABLE_MIN_FREQ,
+	.music_max_freq = DEF_MUSIC_MAX_FREQ,
+	.music_min_freq = DEF_MUSIC_MIN_FREQ,
+	.music_state = 0,
+	.rpc_led = DEF_RPC_LED,
+	.rpc_load_threshold = DEF_RPC_LOAD_THRESHOLD,
+	.rpc_load_threshold_sleep = DEF_RPC_LOAD_THRESHOLD_SLEEP,
+	.rpc_fast_reset_threshold_sleep = DEF_RPC_FAST_RESET_THRESHOLD_SLEEP,
+	.rpc_threshold_cycles = DEF_RPC_THRESHOLD,
+	.rpc_cutoff_threshold_cycles = DEF_RPC_CUTOFF_THRESHOLD_CYCLES,
+	.rpt_mode = DEF_RPT_MODE,
+	.rpc_disableoncable = DEF_RPC_DISABLEONCABLE
 };
+
+static void rpt_wakeunlock_work(struct work_struct * work_rpt_wakeunlock)
+{
+	
+	pr_info("[zzmoove/rpt_wakeunlock_work] unlocking wakelock\n");
+	wake_unlock(&rpt_wake_lock);
+}
 
 // ff: inputbooster code needs to be here so it is available for tuneables.
 
@@ -1203,6 +1259,8 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 	int i = 0;
 	int smooth_up_steps = 0;				// Yank: smooth up steps
 	struct cpufreq_frequency_table *table;			// Yank: use system frequency table
+	static int tmp_limit_table_start = 7;  // give an arbitrary level
+	static int tmp_max_scaling_freq_soft = 7;
 	
 	table = cpufreq_frequency_get_table(0);			// Yank: get system frequency table
 	
@@ -1211,8 +1269,33 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 	else
 	smooth_up_steps = 1;				// Yank: load reached, move by two steps
 	
+	//if (flg_debug > 2)
+	//pr_info("[zzmoove] limit_table_start: %d, limit_table_end: %d, max_scaling_freq_soft: %d (%d), max_scaling_freq_hard: %d (%d)\n",
+	//		limit_table_start, limit_table_end, table[max_scaling_freq_soft].frequency, max_scaling_freq_soft, table[max_scaling_freq_hard].frequency, max_scaling_freq_hard);
+	
+	if (!flg_booted) {
+		tmp_limit_table_start = max_scaling_freq_hard;
+		tmp_max_scaling_freq_soft = max_scaling_freq_hard;
+	} else {
+		tmp_limit_table_start = limit_table_start;
+		tmp_max_scaling_freq_soft = max_scaling_freq_soft;
+	}
+	
+	if (suspend_flag
+		&& dbs_tuners_ins.freq_limit_sleep
+		&& dbs_tuners_ins.freq_limit_sleep < dbs_tuners_ins.music_max_freq
+		&& dbs_tuners_ins.music_state
+		) {
+		
+		if (flg_debug > 2)
+		pr_info("[zzmoove] music\n");
+		
+		tmp_limit_table_start = music_max_freq_step;
+		tmp_max_scaling_freq_soft = music_max_freq_step;
+	}
+	
 	// ZZ: feq search loop with optimization
-	for (i = limit_table_start; (likely(table[i].frequency != limit_table_end)); i++) {
+	for (i = tmp_limit_table_start; (likely(table[i].frequency != limit_table_end)); i++) {
 		
 		if (flg_debug > 3)
 			pr_info("[zzmoove] table loop: %d\n", table[i].frequency);
@@ -1222,10 +1305,11 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 			if (updown == 1) {			// Yank: scale up, but don't go above softlimit
 				
 				if (flg_debug > 2)
-					pr_info("[zzmoove] UP min(%d MHz [%d], %d). freq_table_size: %d, table_end: %d\n", table[max_scaling_freq_soft].frequency, max_scaling_freq_soft, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up  ) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size, CPUFREQ_TABLE_END);
+					pr_info("[zzmoove] UP min(%d MHz [%d], %d). freq_table_size: %d, table_end: %d\n", table[tmp_max_scaling_freq_soft].frequency, tmp_max_scaling_freq_soft, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up  ) * freq_table_order, 0, freq_table_size)].frequency, freq_table_size, CPUFREQ_TABLE_END);
 				
-				return	min(table[max_scaling_freq_soft].frequency, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up)
-																					   * freq_table_order, 0, freq_table_size)].frequency);
+				return	min(table[tmp_max_scaling_freq_soft].frequency, table[validate_min_max((i - 1 - smooth_up_steps - scaling_mode_up)
+																							   * freq_table_order, 0, freq_table_size)].frequency);
+				
 			} else {						// Yank: scale down, but don't go below min. freq.
 				
 				if (flg_debug > 2)
@@ -1238,6 +1322,7 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 			return (table[limit_table_start].frequency);				// Yank: we should never get here...
 		}
 	}
+	pr_info("[zzmoove] we shouldn't be here 2: %d\n", curfreq);
 	return (table[limit_table_start].frequency);					// ZZ: ...neither here -> freq not found
 }
 
@@ -1245,6 +1330,8 @@ static int zz_get_next_freq(unsigned int curfreq, unsigned int updown, unsigned 
 static inline void enable_offline_cores(void)
 {
 	int i = 0;
+	
+	pr_info("[zzmoove] enable_offline_cores\n");
 	
 	for (i = 1; i < possible_cpus; i++) {			// ZZ: enable all offline cores
 	    if (!cpu_online(i))
@@ -1595,6 +1682,17 @@ show_one(inputboost_punch_cycles, inputboost_punch_cycles);					// ff: inputboos
 show_one(inputboost_punch_freq, inputboost_punch_freq);						// ff: inputbooster punch freq
 show_one(debug_level, debug_level);										// ff: verbose debugging
 show_one(cable_min_freq, cable_min_freq);
+show_one(music_max_freq, music_max_freq);
+show_one(music_min_freq, music_min_freq);
+show_one(music_state, music_state);
+show_one(rpc_led, rpc_led);
+show_one(rpc_load_threshold, rpc_load_threshold);
+show_one(rpc_load_threshold_sleep, rpc_load_threshold_sleep);
+show_one(rpc_fast_reset_threshold_sleep, rpc_fast_reset_threshold_sleep);
+show_one(rpc_threshold_cycles, rpc_threshold_cycles);
+show_one(rpc_cutoff_threshold_cycles, rpc_cutoff_threshold_cycles);
+show_one(rpt_mode, rpt_mode);
+show_one(rpc_disableoncable, rpc_disableoncable);
 
 // ZZ: tuneable for showing the currently active governor settings profile
 static ssize_t show_profile(struct kobject *kobj, struct attribute *attr, char *buf)
@@ -3343,6 +3441,286 @@ static ssize_t store_cable_min_freq(struct kobject *a, struct attribute *b,
 	return count;
 }
 
+// ff: added tuneable music_max_freq -> possible values: range from 0 disabled to policy->max, if not set default is 0
+static ssize_t store_music_max_freq(struct kobject *a, struct attribute *b,
+									const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	struct cpufreq_frequency_table *table;	// Yank: use system frequency table
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (!input) {
+		// input was 0, disable.
+		
+		music_max_freq_step = 0;
+		dbs_tuners_ins.music_max_freq = input;
+		return count;
+	}
+	
+	// profiles don't apply to this tuneable.
+	
+	table = cpufreq_frequency_get_table(0);					// Yank: get system frequency table
+	
+	if (!table) {
+	    return -EINVAL;
+	} else if (input > table[max_scaling_freq_hard].frequency) {		// Yank: allow only frequencies below or equal to hard max
+		return -EINVAL;
+	} else {
+	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
+		if (unlikely(table[i].frequency == input)) {
+		    dbs_tuners_ins.music_max_freq = input;
+			music_max_freq_step = i;
+		    return count;
+		}
+	}
+	return -EINVAL;
+	
+	dbs_tuners_ins.music_max_freq = input;
+	return count;
+}
+
+// ff: added tuneable music_min_freq -> possible values: range from 0 disabled to policy->max, if not set default is 0
+static ssize_t store_music_min_freq(struct kobject *a, struct attribute *b,
+									const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int i;
+	struct cpufreq_frequency_table *table;	// Yank: use system frequency table
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (!input) {
+		// input was 0, disable.
+		
+		//music_min_freq_step = 0;
+		dbs_tuners_ins.music_min_freq = input;
+		return count;
+	}
+	
+	// profiles don't apply to this tuneable.
+	
+	table = cpufreq_frequency_get_table(0);					// Yank: get system frequency table
+	
+	if (!table) {
+	    return -EINVAL;
+	} else if (input > table[max_scaling_freq_hard].frequency) {		// Yank: allow only frequencies below or equal to hard max
+		return -EINVAL;
+	} else {
+	    for (i = 0; (likely(table[i].frequency != CPUFREQ_TABLE_END)); i++)
+		if (unlikely(table[i].frequency == input)) {
+		    dbs_tuners_ins.music_min_freq = input;
+			//music_min_freq_step = i;
+		    return count;
+		}
+	}
+	return -EINVAL;
+	
+	dbs_tuners_ins.music_min_freq = input;
+	return count;
+}
+
+// ff: added tuneable music_state -> possible values: 0 or 1
+static ssize_t store_music_state(struct kobject *a, struct attribute *b,
+									const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+		return -EINVAL;
+	
+	if (input > 0) {
+		dbs_tuners_ins.music_state = 1;
+	} else {
+		dbs_tuners_ins.music_state = 0;
+	}
+	
+	return count;
+}
+
+// ff: added tuneable rpc_led -> possible values: 0 or 1
+static ssize_t store_rpc_led(struct kobject *a, struct attribute *b,
+								 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (input > 0) {
+		dbs_tuners_ins.rpc_led = 1;
+	} else {
+		dbs_tuners_ins.rpc_led = 0;
+		
+		if (flg_runaway_ledon) {
+			
+			// turn front led off.
+			flg_runaway_ledon = false;
+			
+			alternateFrontLED(0, 0, 0, 0,
+							  0, 0, 0, 0);
+			
+			wake_unlock(&rpt_wake_lock);
+		}
+	}
+	
+	return count;
+}
+
+// ff: added tuneable rpc_load_threshold -> possible values: 0 or 1
+static ssize_t store_rpc_load_threshold(struct kobject *a, struct attribute *b,
+											  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (input > 100) {
+		input = 100;
+	} else if (input < 10) {
+		input = 10;
+	}
+	
+	dbs_tuners_ins.rpc_load_threshold = input;
+	return count;
+}
+
+// ff: added tuneable rpc_load_threshold_sleep -> possible values: 0 or 1
+static ssize_t store_rpc_load_threshold_sleep(struct kobject *a, struct attribute *b,
+								 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0)
+	return -EINVAL;
+	
+	if (input > 100) {
+		input = 100;
+	} else if (input < 10) {
+		input = 10;
+	}
+	
+	dbs_tuners_ins.rpc_load_threshold_sleep = input;
+	return count;
+}
+
+// ff: added tuneable rpc_fast_reset_threshold_sleep -> possible values: range from 0 disabled to 1000, if not set default is 0
+static ssize_t store_rpc_fast_reset_threshold_sleep(struct kobject *a, struct attribute *b,
+										  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 100000)
+	return -EINVAL;
+	
+	dbs_tuners_ins.rpc_fast_reset_threshold_sleep = input;
+	return count;
+}
+
+// ff: added tuneable rpc_threshold_cycles -> possible values: range from 0 disabled to 1000, if not set default is 0
+static ssize_t store_rpc_threshold_cycles(struct kobject *a, struct attribute *b,
+									   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 100000)
+	return -EINVAL;
+	
+	if (!input && dbs_tuners_ins.rpc_threshold_cycles != input) {
+		// turning off.
+		
+	} else if (input && dbs_tuners_ins.rpc_threshold_cycles == 0) {
+		// turning on.
+		
+	}
+	
+	dbs_tuners_ins.rpc_threshold_cycles = input;
+	return count;
+}
+
+// ff: added tuneable rpc_cutoff_threshold_cycles -> possible values: range from 0 disabled to 1000, if not set default is 0
+static ssize_t store_rpc_cutoff_threshold_cycles(struct kobject *a, struct attribute *b,
+										  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1 || input < 0 || input > 100000)
+	return -EINVAL;
+	
+	if (!input && dbs_tuners_ins.rpc_cutoff_threshold_cycles != input) {
+		// turning off.
+		
+	} else if (input && dbs_tuners_ins.rpc_cutoff_threshold_cycles == 0) {
+		// turning on.
+		
+	}
+	
+	dbs_tuners_ins.rpc_cutoff_threshold_cycles = input;
+	return count;
+}
+
+// ff: added tuneable rpt_mode -> possible values: range from 0 disabled to 1000, if not set default is 0
+static ssize_t store_rpt_mode(struct kobject *a, struct attribute *b,
+												 const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1)
+	return -EINVAL;
+	
+	if (input > 0) {
+		dbs_tuners_ins.rpt_mode = 1;
+	} else {
+		dbs_tuners_ins.rpt_mode = 0;
+	}
+	
+	return count;
+}
+
+// ff: added tuneable rpc_disableoncable -> possible values: range from 0 disabled to anything on, if not set default is 1
+static ssize_t store_rpc_disableoncable(struct kobject *a, struct attribute *b,
+							  const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+    
+	if (ret != 1)
+	return -EINVAL;
+	
+	if (input > 0) {
+		dbs_tuners_ins.rpc_disableoncable = 1;
+	} else {
+		dbs_tuners_ins.rpc_disableoncable = 0;
+	}
+	
+	return count;
+}
+
 // ZZ: function for switching a settings profile either at governor start by macro 'DEF_PROFILE_NUMBER' or later by tuneable 'profile_number'
 static inline int set_profile(int profile_num)
 {
@@ -4365,6 +4743,17 @@ define_one_global_rw(inputboost_punch_cycles);
 define_one_global_rw(inputboost_punch_freq);
 define_one_global_rw(debug_level);
 define_one_global_rw(cable_min_freq);
+define_one_global_rw(music_max_freq);
+define_one_global_rw(music_min_freq);
+define_one_global_rw(music_state);
+define_one_global_rw(rpc_led);
+define_one_global_rw(rpc_load_threshold);
+define_one_global_rw(rpc_load_threshold_sleep);
+define_one_global_rw(rpc_fast_reset_threshold_sleep);
+define_one_global_rw(rpc_threshold_cycles);
+define_one_global_rw(rpc_cutoff_threshold_cycles);
+define_one_global_rw(rpt_mode);
+define_one_global_rw(rpc_disableoncable);
 
 // Yank: version info tunable
 static ssize_t show_version(struct device *dev, struct device_attribute *attr, char *buf)
@@ -4441,7 +4830,18 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   "inputboost punch_cycles        : %d\n"
 				   "inputboost punch freq          : %d\n"
 				   "cable min freq                 : %d\n"
-				   "cable attached                 : %d\n",
+				   "cable attached                 : %d\n"
+				   "music max freq                 : %d\n"
+				   "music min freq                 : %d\n"
+				   "music state                    : %d\n"
+				   "rpc disable on cable           : %d\n"
+				   "rpc load threshold             : %d\n"
+				   "rpc load threshold sleep       : %d\n"
+				   "rpc fast reset threshold sleep : %d\n"
+				   "rpc cycles threshold           : %d\n"
+				   "rpc counter                    : %d\n"
+				   "rpc cutoff threshold           : %d\n"
+				   "rpt mode                       : %d\n",
 				   possible_cpus,
 				   cpu_online(0),
 				   cpu_online(1),
@@ -4482,7 +4882,18 @@ static ssize_t show_debug(struct device *dev, struct device_attribute *attr, cha
 				   dbs_tuners_ins.inputboost_punch_cycles,
 				   dbs_tuners_ins.inputboost_punch_freq,
 				   dbs_tuners_ins.cable_min_freq,
-				   flg_power_cableattached);
+				   flg_power_cableattached,
+				   dbs_tuners_ins.music_max_freq,
+				   dbs_tuners_ins.music_min_freq,
+				   dbs_tuners_ins.music_state,
+				   dbs_tuners_ins.rpc_disableoncable,
+				   dbs_tuners_ins.rpc_load_threshold,
+				   dbs_tuners_ins.rpc_load_threshold_sleep,
+				   dbs_tuners_ins.rpc_fast_reset_threshold_sleep,
+				   dbs_tuners_ins.rpc_threshold_cycles,
+				   ctr_runaway_cycles,
+				   dbs_tuners_ins.rpc_cutoff_threshold_cycles,
+				   dbs_tuners_ins.rpt_mode);
 }
 
 static DEVICE_ATTR(debug, S_IRUGO , show_debug, NULL);
@@ -4587,6 +4998,17 @@ static struct attribute *dbs_attributes[] = {
 	&inputboost_punch_cycles.attr,
 	&inputboost_punch_freq.attr,
 	&cable_min_freq.attr,
+	&music_max_freq.attr,
+	&music_min_freq.attr,
+	&music_state.attr,
+	&rpc_led.attr,
+	&rpc_load_threshold.attr,
+	&rpc_load_threshold_sleep.attr,
+	&rpc_fast_reset_threshold_sleep.attr,
+	&rpc_threshold_cycles.attr,
+	&rpc_cutoff_threshold_cycles.attr,
+	&rpt_mode.attr,
+	&rpc_disableoncable.attr,
 	&dev_attr_version.attr,
 	&dev_attr_version_profiles.attr,
 	&dev_attr_profile_list.attr,
@@ -4617,6 +5039,14 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int num_online_cpus;
 	unsigned int zz_hotplug_block_up_cycles = 0;
 	unsigned int zz_hotplug_block_down_cycles = 0;
+	unsigned int ctr_maxed_cores = 0;
+	static struct timeval time_now;
+	static unsigned int time_since_boot;
+	static unsigned int rpc_load_threshold = 100;
+	unsigned int runaway_threshold_multiplier = 1;
+	unsigned int runaway_cycle_multiplier = 1;
+	unsigned int runaway_fast_reset_threshold = 25;
+	unsigned int stats_avg_maxed_core_load = 0;
 	
 	boost_freq = false;					// ZZ: reset early demand boost freq flag
 	boost_hotplug = false;					// ZZ: reset early demand boost hotplug flag
@@ -4624,6 +5054,56 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	cancel_up_scaling = false;				// ZZ: reset cancel up scaling flag
 	
 	policy = this_dbs_info->cur_policy;
+	
+	if (!flg_booted) {
+		
+		do_gettimeofday(&time_now);
+		
+		if (time_now.tv_sec < 1000000 || time_boot.tv_sec < 1000000) {
+			
+			// save boot time.
+			do_gettimeofday(&time_boot);
+			//pr_info("[zzmoove/dbs_check_cpu/boot] time_boot: %i\n", time_boot.tv_sec);
+			
+		} else {
+		
+			// compare boot time.
+			time_since_boot = (time_now.tv_sec - time_boot.tv_sec);
+		}
+		
+		if (time_since_boot < 90) {
+			// turn on boot boost.
+			
+			// max cpu.
+			if (policy->cur < policy->max) {
+				__cpufreq_driver_target(policy, policy->max, CPUFREQ_RELATION_H);
+			}
+			
+			// all cores on.
+			if (num_online_cpus() != num_possible_cpus()) {
+				for (i = 1; i < num_possible_cpus(); i++) {
+					if (!cpu_online(i)) {
+						cpu_up(i);
+						pr_info("[zzmoove/dbs_check_cpu/boot] core%d brought online\n", i);
+					}
+				}
+			}
+			
+			//pr_info("[zzmoove/dbs_check_cpu/boot] cur_freq: %d, cores: %d\n", policy->cur, num_online_cpus());
+			return;
+			
+		} else if (time_since_boot < 240) {
+			// stop overriding.
+			
+			//pr_info("[zzmoove/dbs_check_cpu/boot] half booted\n");
+			
+		} else {
+			// turn off boot boost.
+			
+			flg_booted = true;
+			pr_info("[zzmoove/dbs_check_cpu/boot] booted\n");
+		}
+	}
 	
 	if (flg_ctr_cpuboost > 0) {
 		
@@ -4735,6 +5215,26 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		
 		if (load > max_load)
 		cur_load = max_load = load;		// ZZ: added static cur_load for hotplugging functions
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] load%d: %d (%d mhz)\n", j, load, policy->cur);
+		
+		if (suspend_flag && !dbs_tuners_ins.music_state) {
+			rpc_load_threshold = dbs_tuners_ins.rpc_load_threshold_sleep;
+		} else {
+			rpc_load_threshold = dbs_tuners_ins.rpc_load_threshold;
+		}
+		
+		if (rpc_load_threshold && load >= rpc_load_threshold) {
+			ctr_maxed_cores++;
+			
+			// caclulate average.
+			stats_total_maxed_load += load;
+			stats_avg_maxed_core_load = (stats_total_maxed_load / max(1, ctr_runaway_cycles));  // use max to keep from dividing by 0
+			
+			if (flg_debug > 2)
+				pr_info("[zzmoove] load%d: avg %d (%d total / %d)\n", j, stats_avg_maxed_core_load, stats_total_maxed_load, ctr_runaway_cycles);
+		}
 		
 		cur_freq = policy->cur;			// Yank: store current frequency for hotplugging frequency thresholds
 		
@@ -4864,6 +5364,209 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (dbs_tuners_ins.early_demand || dbs_tuners_ins.scaling_block_cycles != 0
 		    || dbs_tuners_ins.fast_scaling_up > 4 || dbs_tuners_ins.fast_scaling_down > 4 || (dbs_tuners_ins.early_demand_sleep && !suspend_flag))
 		this_dbs_info->prev_load = max_load;
+	}
+	
+	// compensate for sampling rates by incrementing again.
+	if (dbs_tuners_ins.sampling_rate_current >= 400000) {
+		
+		runaway_threshold_multiplier = 1;
+		runaway_cycle_multiplier = 5;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] 1 sampling_rate: %d, current: %d\n", dbs_tuners_ins.sampling_rate, dbs_tuners_ins.sampling_rate_current);
+		
+	} else if (dbs_tuners_ins.sampling_rate_current >= 200000) {
+		
+		runaway_threshold_multiplier = 1;
+		runaway_cycle_multiplier = 2;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] 3 sampling_rate: %d, current: %d\n", dbs_tuners_ins.sampling_rate, dbs_tuners_ins.sampling_rate_current);
+		
+	} else if (dbs_tuners_ins.sampling_rate_current <= 30000) {
+		
+		runaway_threshold_multiplier = 4;
+		runaway_cycle_multiplier = 1;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] 4 sampling_rate: %d, current: %d\n", dbs_tuners_ins.sampling_rate, dbs_tuners_ins.sampling_rate_current);
+		
+	} else if (dbs_tuners_ins.sampling_rate_current < 50000) {
+		
+		runaway_threshold_multiplier = 3;
+		runaway_cycle_multiplier = 1;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] 5 sampling_rate: %d, current: %d\n", dbs_tuners_ins.sampling_rate, dbs_tuners_ins.sampling_rate_current);
+		
+	} else if (dbs_tuners_ins.sampling_rate_current < 80000) {
+		
+		runaway_threshold_multiplier = 2;
+		runaway_cycle_multiplier = 1;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] 6 sampling_rate: %d, current: %d\n", dbs_tuners_ins.sampling_rate, dbs_tuners_ins.sampling_rate_current);
+	}
+	
+	if (suspend_flag) {
+		runaway_fast_reset_threshold = dbs_tuners_ins.rpc_fast_reset_threshold_sleep;
+	} else {
+		runaway_fast_reset_threshold = 25;
+	}
+	
+	// check for runaway processes.
+	if (ctr_maxed_cores
+		&& flg_booted
+		&& (dbs_tuners_ins.rpc_threshold_cycles * runaway_threshold_multiplier)
+		&& (!dbs_tuners_ins.rpc_disableoncable || (dbs_tuners_ins.rpc_disableoncable && !flg_power_cableattached))
+		) {
+		// at least 1 core is maxed.
+		
+		// increment counter.
+		ctr_runaway_cycles = (ctr_runaway_cycles + runaway_cycle_multiplier);
+		
+		// reset the reset counter.
+		ctr_runaway_reset_cycles = 0;
+		
+		if (flg_debug > 2)
+			pr_info("[zzmoove] ctr_runaway_cycles: %d, tmulti: %d, cmulti: %d\n", ctr_runaway_cycles, runaway_threshold_multiplier, runaway_cycle_multiplier);
+		
+		// check for threshold.
+		if (ctr_runaway_cycles >= (dbs_tuners_ins.rpc_threshold_cycles * runaway_threshold_multiplier)) {
+			// alert user.
+			
+			if (flg_debug > 2)
+				pr_info("[zzmoove] runaway! %d\n", ctr_runaway_cycles);
+			
+			// we need to turn the led on, but we don't want to do it every cycle,
+			// because that might cause weirdness. so do it once every, say, 100 cycles.
+			
+			if (ctr_runaway_cycles % 100 == 0 && dbs_tuners_ins.rpc_led) {
+				
+				pr_info("[zzmoove/rpc] turning led on and wakelocking! %d\n", ctr_runaway_cycles);
+				
+				wake_lock(&rpt_wake_lock);
+				
+				// turn front led on.
+				flg_runaway_ledon = true;
+				
+				if (stats_avg_maxed_core_load >= 90) {
+					// very high load.
+					
+					alternateFrontLED(100, 100, 0, 0,
+									  100, 40, 0, 20);
+					
+				} else if (stats_avg_maxed_core_load >= 70) {
+					// high load.
+					
+					alternateFrontLED(175, 100, 0, 0,
+									  175, 40, 0, 20);
+					
+				} else if (stats_avg_maxed_core_load >= 50) {
+					// high load.
+					
+					alternateFrontLED(250, 100, 0, 0,
+									  250, 40, 0, 20);
+					
+				} else if (stats_avg_maxed_core_load >= 30) {
+					// medium load.
+					
+					alternateFrontLED(400, 100, 0, 0,
+									  400, 40, 0, 20);
+					
+				} else if (stats_avg_maxed_core_load >= 15) {
+					// low load.
+					
+					alternateFrontLED(600, 100, 0, 0,
+									  600, 40, 0, 20);
+					
+				}
+			}
+			
+			if (dbs_tuners_ins.rpc_cutoff_threshold_cycles
+				&& ctr_runaway_cycles >= (dbs_tuners_ins.rpc_cutoff_threshold_cycles * runaway_threshold_multiplier)
+				&& (ctr_runaway_cycles % 300 == 0 || ctr_runaway_cycles == (dbs_tuners_ins.rpc_cutoff_threshold_cycles * runaway_threshold_multiplier))) {
+				// safe mode.
+				
+				if (dbs_tuners_ins.rpt_mode) {
+					
+					//wake_lock(&rpt_wake_lock);
+					
+					//schedule_delayed_work(&work_rpt_wakeunlock, msecs_to_jiffies(20000));
+					
+					//pr_info("[zzmoove/dbs_check_cpu/rpt] locking wakelock and scheduling work in 20 seconds to turn it off\n");
+					
+					// tell vkhandler to start RPT script.
+					press_button(9997, 0, 1, 0, 0);
+				}
+				
+				// reduce frequency.
+				pr_info("[zzmoove] safe mode enabled at %d cycles\n", ctr_runaway_cycles);
+				freq_limit_runaway = 1000000;
+				
+				// limit cores.
+				core_limit_runaway = 2;
+				
+				// turn off core 3 and 4.
+				cpu_down(2);
+				cpu_down(3);
+			}
+		}
+		
+	} else {
+		
+		// we can't reset the counter this easily, since load may drop a few percent
+		// for just 1 or 2 samples.
+		
+		if (ctr_runaway_cycles > (runaway_fast_reset_threshold * runaway_threshold_multiplier)) {
+			// the counter was set.
+			
+			// increment counter.
+			ctr_runaway_reset_cycles = (ctr_runaway_reset_cycles + runaway_cycle_multiplier);
+			
+			if (flg_debug > 2)
+				pr_info("[zzmoove] runaway! ctr_reset: %d\n", ctr_runaway_reset_cycles);
+			
+		} else if (ctr_runaway_cycles > 10) {
+			
+			// give it one grace sample.
+			ctr_runaway_reset_cycles++;
+			
+			if (ctr_runaway_reset_cycles > 1) {
+				// make it reset immediately.
+				ctr_runaway_reset_cycles = 999999;
+			} else {
+				if (flg_debug > 2)
+				pr_info("[zzmoove] runaway! used one grace, ctr_runaway_cycles: %d, ctr_runaway_reset_cycles: %d\n", ctr_runaway_cycles, ctr_runaway_reset_cycles);
+			}
+			
+		} else {
+			// make it reset immediately.
+			ctr_runaway_reset_cycles = 999999;
+		}
+		
+		if (ctr_runaway_reset_cycles >= (10 * runaway_threshold_multiplier)) {
+			
+			// reset counter.
+			ctr_runaway_cycles = 0;
+			ctr_runaway_reset_cycles = 0;
+			freq_limit_runaway = 0;
+			core_limit_runaway = 0;
+			stats_total_maxed_load = 0;
+			stats_avg_maxed_core_load = 0;
+			
+			if (flg_runaway_ledon) {
+				
+				// turn front led off.
+				flg_runaway_ledon = false;
+				
+				alternateFrontLED(0, 0, 0, 0,
+								  0, 0, 0, 0);
+				
+				wake_unlock(&rpt_wake_lock);
+				//cancel_delayed_work_sync(&work_rpt_wakeunlock)
+			}
+		}
 	}
 	
 	/*
@@ -5015,26 +5718,57 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		    sampling_rate_step_up_delay++;
 	    }
 		
+		//pr_info("[zzmoove/dbs_check_cpu] increase 1 (cur: %d, max: %d)\n", policy->cur, policy->max);
+		
 	    // ZZ: Sampling down momentum - if momentum is inactive switch to 'down_skip' method
 	    if (zz_sampling_down_max_mom == 0 && zz_sampling_down_factor > 1)
 		this_dbs_info->down_skip = 0;
 		
 	    // ZZ: Frequency Limit: if we are at freq_limit break out early
-	    if (dbs_tuners_ins.freq_limit != 0 && policy->cur == dbs_tuners_ins.freq_limit)
-		return;
+	    if (flg_booted
+			&& !freq_limit_runaway
+			&& dbs_tuners_ins.freq_limit != 0
+			&& policy->cur == dbs_tuners_ins.freq_limit) {
+			
+			// but what if the music max freq wants to take over?
+			if (suspend_flag && dbs_tuners_ins.music_max_freq && dbs_tuners_ins.music_state && policy->cur < dbs_tuners_ins.music_max_freq) {
+				// this is ugly, but this IF is so much easier like this.
+			} else {
+				return;
+			}
+		}
 		
-	    // if we are already at full speed then break out early
-	    if (policy->cur == policy->max)					// ZZ: changed check from reqested_freq to current freq (DerTeufel1980)
-		return;
+		//pr_info("[zzmoove/dbs_check_cpu] increase 2 (cur: %d, max: %d)\n", policy->cur, policy->max);
 		
 	    // ZZ: Sampling down momentum - if momentum is active and we are switching to max speed, apply sampling_down_factor
 	    if (zz_sampling_down_max_mom != 0 && policy->cur < policy->max)
 		this_dbs_info->rate_mult = zz_sampling_down_factor;
 		
+		//pr_info("[zzmoove/dbs_check_cpu] increase 3 (cur: %d, max: %d, requested: %d)\n", policy->cur, policy->max, this_dbs_info->requested_freq);
+		
 		this_dbs_info->requested_freq = zz_get_next_freq(policy->cur, 1, max_load);
-	    if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
-			> dbs_tuners_ins.freq_limit)
-		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
+		
+		//pr_info("[zzmoove/dbs_check_cpu] increase 4 (cur: %d, max: %d, requested: %d)\n", policy->cur, policy->max, this_dbs_info->requested_freq);
+		
+	    if (flg_booted && dbs_tuners_ins.freq_limit != 0
+			&& this_dbs_info->requested_freq > dbs_tuners_ins.freq_limit) {
+			
+			// right now we normally would let the freq_limit snub this, but we have to see if music needs to take over.
+			
+			if (suspend_flag && dbs_tuners_ins.music_max_freq && dbs_tuners_ins.music_state) {
+				// screen is off, music freq is set, and music is playing.
+				
+				// make sure we haven't exceeded the music freq.
+				if (this_dbs_info->requested_freq > dbs_tuners_ins.music_max_freq) {
+					this_dbs_info->requested_freq = dbs_tuners_ins.music_max_freq;
+				}
+				
+			} else {
+				this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
+			}
+		}
+		
+		//pr_info("[zzmoove/dbs_check_cpu] increase 5 (cur: %d, max: %d, requested: %d)\n", policy->cur, policy->max, this_dbs_info->requested_freq);
 		
 		if (flg_ctr_inputboost_punch > 0 && this_dbs_info->requested_freq < dbs_tuners_ins.inputboost_punch_freq) {
 			// inputbooster punch is active and the the target freq needs to be at least that high.
@@ -5055,6 +5789,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			// and the target freq is below it.
 			this_dbs_info->requested_freq = dbs_tuners_ins.cable_min_freq;
 		}
+		
+		if (freq_limit_runaway && this_dbs_info->requested_freq > freq_limit_runaway) {
+			this_dbs_info->requested_freq = freq_limit_runaway;
+		}
+		
+		//pr_info("[zzmoove/dbs_check_cpu] increase 6 (cur: %d, max: %d, requested: %d)\n", policy->cur, policy->max, this_dbs_info->requested_freq);
 		
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
 								CPUFREQ_RELATION_H);
@@ -5134,7 +5874,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		this_dbs_info->rate_mult = 1;
 		
 		// if we cannot reduce the frequency anymore, break out early
-		if (policy->cur == policy->min)
+		if (policy->cur == policy->min || (dbs_tuners_ins.music_min_freq
+										   && dbs_tuners_ins.music_state
+										   && policy->cur == dbs_tuners_ins.music_min_freq))
 		return;
 		
 		if (flg_debug > 2)
@@ -5153,7 +5895,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			pr_info("[zzmoove/dbs_check_cpu] decrease 3 (freq_limit: %d)\n", dbs_tuners_ins.freq_limit);
 		
 		if (dbs_tuners_ins.freq_limit != 0 && this_dbs_info->requested_freq
-		    > dbs_tuners_ins.freq_limit)
+		    > dbs_tuners_ins.freq_limit && flg_booted)
 		this_dbs_info->requested_freq = dbs_tuners_ins.freq_limit;
 		
 		if (flg_power_cableattached && dbs_tuners_ins.cable_min_freq && this_dbs_info->requested_freq < dbs_tuners_ins.cable_min_freq) {
@@ -5164,6 +5906,18 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			this_dbs_info->requested_freq = dbs_tuners_ins.cable_min_freq;
 			if (flg_debug > 2)
 				pr_info("[zzmoove/dbs_check_cpu] decrease 4 (cable_freq: %d)\n", dbs_tuners_ins.cable_min_freq);
+		}
+		
+		if (freq_limit_runaway && this_dbs_info->requested_freq > freq_limit_runaway) {
+			this_dbs_info->requested_freq = freq_limit_runaway;
+		}
+		
+		if (dbs_tuners_ins.music_min_freq
+			&& this_dbs_info->requested_freq < dbs_tuners_ins.music_min_freq
+			&& dbs_tuners_ins.music_state
+			) {
+			
+			this_dbs_info->requested_freq = dbs_tuners_ins.music_min_freq;
 		}
 		
 		if (flg_debug > 2)
@@ -5296,6 +6050,8 @@ static void __cpuinit hotplug_online_work_fn(struct work_struct *work)
 			&& (!dbs_tuners_ins.hotplug_max_limit || i < dbs_tuners_ins.hotplug_max_limit)
 		    && (hotplug_thresholds_freq[0][i-1] == 0 || cur_freq >= hotplug_thresholds_freq[0][i-1]
 				|| boost_hotplug || max_freq_too_low)
+			//&& (!suspend_flag || !dbs_tuners_ins.hotplug_sleep || i < dbs_tuners_ins.hotplug_sleep)
+			&& (!core_limit_runaway || i < core_limit_runaway)
 			) {
 			
 			cpu_up(i);
@@ -5372,6 +6128,8 @@ EXPORT_SYMBOL(zzmoove_touchbooster_mincores);
 // raise sampling rate to SR*multiplier and adjust sampling rate/thresholds/hotplug/scaling/freq limit/freq step on blank screen
 static void __cpuinit powersave_early_suspend(struct early_suspend *handler)
 {
+	static unsigned int i = 0;
+	
 	suspend_flag = true;				// ZZ: we want to know if we are at suspend because of things that shouldn't be executed at suspend
 	sampling_rate_awake = dbs_tuners_ins.sampling_rate_current;		// ZZ: save current sampling rate for restore on awake
 	up_threshold_awake = dbs_tuners_ins.up_threshold;			// ZZ: save up threshold for restore on awake
@@ -5520,6 +6278,24 @@ static void __cpuinit powersave_early_suspend(struct early_suspend *handler)
 			hotplug_thresholds[0][6] = 0;
 	    }
 #endif
+	}
+	
+	if (flg_booted && dbs_tuners_ins.hotplug_sleep && num_online_cpus() > dbs_tuners_ins.hotplug_sleep) {
+		// check for any cores to turn off. only do this if we're booted.
+		
+		pr_info("[zzmoove/early_suspend] too many cores! %d\n", num_online_cpus());
+		
+		for (i = 1; i < num_possible_cpus(); i++) {
+			if (!cpu_online(i) && i < dbs_tuners_ins.hotplug_sleep) {
+				// this core is less than the lock, so bring it up.
+				cpu_up(i);
+				pr_info("[zzmoove] hotplug_sleep: CPU%d forced up\n", i);
+			} else if (cpu_online(i) && i >= dbs_tuners_ins.hotplug_sleep) {
+				// this core is more than the lock, so turn it off.
+				cpu_down(i);
+				pr_info("[zzmoove] hotplug_sleep: CPU%d forced down\n", i);
+			}
+        }
 	}
 	
 	// reset some stuff.
@@ -5701,6 +6477,17 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			enable_cores = true;
 			queue_work_on(0, dbs_wq, &hotplug_online_work);
 			
+			if (flg_runaway_ledon) {
+				
+				// turn front led off.
+				flg_runaway_ledon = false;
+				
+				alternateFrontLED(0, 0, 0, 0,
+								  0, 0, 0, 0);
+				
+				wake_unlock(&rpt_wake_lock);
+			}
+			
 			dbs_timer_exit(this_dbs_info);
 			
 			this_dbs_info->idle_exit_time = 0;					// ZZ: idle exit time handling
@@ -5822,6 +6609,8 @@ static int __init cpufreq_gov_dbs_init(void)						// ZZ: idle exit time handling
 	
     INIT_WORK(&hotplug_offline_work, hotplug_offline_work_fn);				// ZZ: init hotplug offline work
     INIT_WORK(&hotplug_online_work, hotplug_online_work_fn);				// ZZ: init hotplug online work
+	
+	wake_lock_init(&rpt_wake_lock, WAKE_LOCK_SUSPEND, "rpt_wake");
 	
 	return cpufreq_register_governor(&cpufreq_gov_zzmoove);
 }
