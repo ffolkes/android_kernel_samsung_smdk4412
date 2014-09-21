@@ -918,7 +918,7 @@ static ssize_t fsg_show_cdrom (struct device *dev, struct device_attribute *attr
 {
 	struct fsg_lun  *curlun = fsg_lun_from_dev(dev);
 
-	return sprintf(buf, "%d\n", curlun->cdrom);
+	return sprintf(buf, "%u\n", curlun->cdrom);
 }
 
 static ssize_t fsg_store_cdrom(struct device *dev, struct device_attribute *attr,
@@ -942,7 +942,7 @@ static ssize_t fsg_store_cdrom(struct device *dev, struct device_attribute *attr
 		LDBG(curlun, "cdrom status change prevented\n");
 		rc = -EBUSY;
 	} else {
-		curlun->cdrom = cdrom;
+		curlun->cdrom = !!cdrom;
 		LDBG(curlun, "cdrom status set to %d\n", curlun->cdrom);
 		rc = count;
 	}
